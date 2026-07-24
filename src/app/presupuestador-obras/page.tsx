@@ -510,6 +510,10 @@ export default function PresupuestadorObrasPage() {
     return presupuestoManoObra.reduce((acc, item) => acc + (item.cantidad * item.precioUnitario), 0);
   }, [presupuestoManoObra]);
 
+  const subtotalMateriales = useMemo(() => {
+    return listaMaterialesUnificada.reduce((acc, item) => acc + (item.cantidad * (item.precioUnitario || 0)), 0);
+  }, [listaMaterialesUnificada]);
+
   const totalGeneral = subtotalManoObra;
 
   // --- GUARDADO ---
