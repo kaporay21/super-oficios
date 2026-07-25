@@ -8,11 +8,22 @@ import {
   Calendar, Send, Home, ClipboardList, MessageSquare, User, Loader2, CheckCircle, Lock 
 } from 'lucide-react';
 import Logo from '@/components/Logo';
+import AuthGuard from '@/components/AuthGuard';
+import { useAuth } from '@/components/AuthContext';
 import { dbHelper } from '@/lib/supabase';
 import { compressImage } from '@/lib/supabaseStorage';
 
 export default function PublicarTrabajoPage() {
+  return (
+    <AuthGuard requiredRole="cliente">
+      <PublicarTrabajoContent />
+    </AuthGuard>
+  );
+}
+
+function PublicarTrabajoContent() {
   const router = useRouter();
+  const { user, profile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Estados para la interactividad del formulario
@@ -80,9 +91,6 @@ export default function PublicarTrabajoPage() {
     setIsSubmitting(true);
     
     try {
-      const storedClient = localStorage.getItem('oficiosya_cliente_perfil');
-      const clientPerfil = storedClient ? JSON.parse(storedClient) : null;
-
       const nuevoTrabajo = {
         categoria: selectedCategory,
         oficio: selectedCategory,
@@ -94,9 +102,9 @@ export default function PublicarTrabajoPage() {
         tipo: urgency === 'urgent' ? 'Temporal' : 'Por obra',
         tiempo: 'Hace unos instantes',
         urgente: urgency === 'urgent',
-        empleador: clientPerfil?.nombre || 'Cliente Anónimo',
-        empleadorAvatar: clientPerfil?.fotoPerfil || 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?q=80&w=1000&auto=format&fit=crop',
-        // Solo guardamos la primera foto si existe; omitimos para no saturar localStorage
+        cliente_id: user?.id,
+        empleador: profile?.nombre || profile?.name || 'Cliente',
+        empleadorAvatar: profile?.avatar || profile?.fotoPerfil || 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?q=80&w=1000&auto=format&fit=crop',
         imagen: fotos.length > 0 ? fotos[0].url : null
       };
       

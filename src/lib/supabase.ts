@@ -5,34 +5,96 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
-    'Advertencia: Las variables NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY no están configuradas en el archivo .env.local. La aplicación usará datos locales simulados (localStorage) hasta que se conecte un proyecto de Supabase activo.'
+    'Advertencia: NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY no están configuradas.'
   );
 }
 
 // Inicialización del cliente de Supabase
-export const supabase = createClient(supabaseUrl || 'https://tu-proyecto.supabase.co', supabaseAnonKey || 'public-anon-key');
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-const isMock = !supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('tu-proyecto');
+// Email del administrador
+const ADMIN_EMAIL = 'gonzalohumacata1992@gmail.com';
 
-// Función auxiliar para emitir notificaciones simuladas
-const emitirNotificacion = (notif: any) => {
-  if (typeof window !== 'undefined') {
-    const stored = JSON.parse(localStorage.getItem('oficiosya_user_notifications') || '[]');
-    stored.unshift({ id: Date.now(), leida: false, tiempo: 'Ahora', ...notif });
-    localStorage.setItem('oficiosya_user_notifications', JSON.stringify(stored));
-  }
-};
+// ============================================================
+// AUTH HELPERS
+// ============================================================
 
 /**
- * Helper de base de datos para la transición progresiva de Mock a Supabase
- * Si las credenciales no están configuradas, el Helper automáticamente recurre al localStorage.
+ * Obtiene el usuario autenticado actual desde Supabase Auth.
+ * Retorna null si no hay sesión activa.
  */
+export async function getCurrentUser() {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) return null;
+  return user;
+}
+
+/**
+ * Obtiene el perfil completo del usuario desde la tabla 'perfiles'.
+ */
+export async function getCurrentProfile() {
+  const user = await getCurrentUser();
+  if (!user) return null;
+
+  const { data, error } = await supabase.from('perfiles').select('*').eq('id', user.id).single();
+  if (error) {
+    console.error('Error al obtener perfil:', error);
+    return null;
+  }
+  return data;
+}
+
+/**
+ * Verifica si el usuario actual es administrador.
+ */
+export async function isAdmin(): Promise<boolean> {
+  const user = await getCurrentUser();
+  if (!user) return false;
+  return user.email === ADMIN_EMAIL;
+}
+
+/**
+ * Cierra sesión completa: Supabase Auth + limpieza de localStorage.
+ */
+export async function logout() {
+  await supabase.auth.signOut();
+  clearAllLocalData();
+}
+
+/**
+ * Limpia todos los datos de oficiosya en localStorage.
+ */
+export function clearAllLocalData() {
+  if (typeof window === 'undefined') return;
+  const keysToRemove = [
+    'oficiosya_session',
+    'oficiosya_cliente_perfil',
+    'oficiosya_profesional_perfil',
+    'oficiosya_profiles',
+    'oficiosya_admin_users',
+    'oficiosya_resenas',
+    'oficiosya_muro_jobs',
+    'oficiosya_empleos',
+    'oficiosya_postulaciones',
+    'oficiosya_tickets',
+    'oficiosya_clientes_v2',
+    'oficiosya_obras_v2',
+    'oficiosya_presupuestos_guardados',
+    'oficiosya_user_notifications',
+    'oficiosya_trabajos_activos',
+    'oficiosya_calendar_notes',
+    'show_confetti',
+  ];
+  keysToRemove.forEach(key => localStorage.removeItem(key));
+}
+
+// ============================================================
+// DB HELPER — Solo Supabase (sin modo mock)
+// ============================================================
+
 export const dbHelper = {
   // --- USERS / PROFILES ---
   async getAllUsers(): Promise<any[]> {
-    if (isMock) {
-      return JSON.parse(localStorage.getItem('oficiosya_admin_users') || '[]');
-    }
     const { data, error } = await supabase.from('perfiles').select('*');
     if (error) throw error;
     
@@ -46,68 +108,59 @@ export const dbHelper = {
       date: p.created_at ? new Date(p.created_at).toLocaleDateString() : 'Reciente',
       verificacion: p.verificado ? 'Verificado' : (p.rol === 'profesional' ? 'Pendiente' : 'Sin Solicitud'),
       trade: p.oficios && p.oficios.length > 0 ? p.oficios.join(', ') : '',
-      rating: 5.0, // placeholder
+      rating: 5.0,
       docMatricula: '-',
       avatar: p.foto_perfil || 'https://i.pravatar.cc/150?u=' + p.id,
-      location: p.ciudad && p.provincia ? `${p.ciudad}, ${p.provincia}` : (p.provincia || 'Tucumán'),
-      category: p.oficios && p.oficios.length > 0 ? p.oficios[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : ''
+      location: p.ciudad && p.provincia ? `${p.ciudad}, ${p.provincia}` : (p.provincia || ''),
+      category: p.oficios && p.oficios.length > 0 ? p.oficios[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '',
+      telefono: p.telefono || '',
+      provincia: p.provincia || '',
+      ciudad: p.ciudad || '',
+      oficios: p.oficios || [],
+      fotoPerfil: p.foto_perfil || '',
+      nombre: p.nombre,
+      rol: p.rol,
     }));
   },
 
   async getUserProfile(id: string): Promise<any> {
-    if (isMock) {
-      const stored = JSON.parse(localStorage.getItem('oficiosya_admin_users') || '[]');
-      const user = stored.find((u: any) => u.id === id);
-      if (!user) return null;
-      // Add placeholders for description/experience if not present
-      return {
-        ...user,
-        experiencia: user.experiencia || 'Más de 5 años en el rubro',
-        biografia: user.biografia || 'Compromiso y puntualidad.',
-        montoMinimo: user.montoMinimo || '10000'
-      };
-    }
     const { data, error } = await supabase.from('perfiles').select('*').eq('id', id).single();
-    if (error) throw error;
+    if (error) return null;
+    if (!data) return null;
     return {
       id: data.id,
       name: data.nombre,
+      nombre: data.nombre,
       email: data.email,
       role: data.rol === 'profesional' ? 'Profesional' : 'Cliente',
+      rol: data.rol,
       plan: data.plan || 'Gratis',
       status: 'Activo',
       date: data.created_at ? new Date(data.created_at).toLocaleDateString() : 'Reciente',
       verificacion: data.verificado ? 'Verificado' : (data.rol === 'profesional' ? 'Pendiente' : 'Sin Solicitud'),
       trade: data.oficios && data.oficios.length > 0 ? data.oficios.join(', ') : '',
-      rating: 5.0, // placeholder
+      rating: 5.0,
       docMatricula: '-',
       avatar: data.foto_perfil || 'https://i.pravatar.cc/150?u=' + data.id,
-      location: data.ciudad && data.provincia ? `${data.ciudad}, ${data.provincia}` : (data.provincia || 'Tucumán'),
+      fotoPerfil: data.foto_perfil || '',
+      location: data.ciudad && data.provincia ? `${data.ciudad}, ${data.provincia}` : (data.provincia || ''),
       category: data.oficios && data.oficios.length > 0 ? data.oficios[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '',
-      experiencia: data.experiencia || 'Más de 5 años en el rubro',
-      biografia: data.biografia || 'Compromiso y puntualidad.',
-      montoMinimo: data.monto_minimo || '10000'
+      experiencia: data.experiencia || '',
+      biografia: data.biografia || '',
+      montoMinimo: data.monto_minimo || '',
+      telefono: data.telefono || '',
+      provincia: data.provincia || '',
+      ciudad: data.ciudad || '',
+      oficios: data.oficios || [],
     };
   },
 
   async updateUserPlan(id: string, plan: string): Promise<void> {
-    if (isMock) {
-      const stored = JSON.parse(localStorage.getItem('oficiosya_admin_users') || '[]');
-      const updated = stored.map((u: any) => u.id === id ? { ...u, plan } : u);
-      localStorage.setItem('oficiosya_admin_users', JSON.stringify(updated));
-      return;
-    }
     const { error } = await supabase.from('perfiles').update({ plan }).eq('id', id);
     if (error) throw error;
   },
 
   async updateUserVerification(id: string, verificado: boolean, estadoDni?: string): Promise<void> {
-    if (isMock) {
-      const stored = JSON.parse(localStorage.getItem('oficiosya_admin_users') || '[]');
-      const updated = stored.map((u: any) => u.id === id ? { ...u, verificacion: verificado ? 'Verificado' : 'Rechazado' } : u);
-      localStorage.setItem('oficiosya_admin_users', JSON.stringify(updated));
-      return;
-    }
     const updates: any = { verificado };
     if (estadoDni) {
       updates.estado_dni = estadoDni;
@@ -117,117 +170,136 @@ export const dbHelper = {
   },
 
   async updateUserStatus(id: string, status: string): Promise<void> {
-    if (isMock) {
-      const stored = JSON.parse(localStorage.getItem('oficiosya_admin_users') || '[]');
-      const updated = stored.map((u: any) => u.id === id ? { ...u, status } : u);
-      localStorage.setItem('oficiosya_admin_users', JSON.stringify(updated));
-    }
+    // Status tracking - could be added to perfiles table if needed
+    console.log(`Status update for ${id}: ${status}`);
   },
 
-  async deleteJob(id: number | string): Promise<void> {
-    if (isMock) {
-      const stored = JSON.parse(localStorage.getItem('oficiosya_empleos') || '[]');
-      const filtered = stored.filter((j: any) => j.id !== id);
-      localStorage.setItem('oficiosya_empleos', JSON.stringify(filtered));
-      
-      const storedMuro = JSON.parse(localStorage.getItem('oficiosya_muro_jobs') || '[]');
-      const filteredMuro = storedMuro.filter((j: any) => j.id !== id);
-      localStorage.setItem('oficiosya_muro_jobs', JSON.stringify(filteredMuro));
-      return;
-    }
-    const { error } = await supabase.from('trabajos').delete().eq('id', id);
+  async updateProfile(id: string, updates: any): Promise<void> {
+    const dbUpdates: any = {};
+    if (updates.nombre !== undefined) dbUpdates.nombre = updates.nombre;
+    if (updates.telefono !== undefined) dbUpdates.telefono = updates.telefono;
+    if (updates.provincia !== undefined) dbUpdates.provincia = updates.provincia;
+    if (updates.ciudad !== undefined) dbUpdates.ciudad = updates.ciudad;
+    if (updates.biografia !== undefined) dbUpdates.biografia = updates.biografia;
+    if (updates.experiencia !== undefined) dbUpdates.experiencia = updates.experiencia;
+    if (updates.foto_perfil !== undefined) dbUpdates.foto_perfil = updates.foto_perfil;
+    if (updates.oficios !== undefined) dbUpdates.oficios = updates.oficios;
+    if (updates.monto_minimo !== undefined) dbUpdates.monto_minimo = updates.monto_minimo;
+    
+    const { error } = await supabase.from('perfiles').update(dbUpdates).eq('id', id);
     if (error) throw error;
   },
-
 
   // --- AUTHENTICATION ---
   async login(email: string, password: string): Promise<any> {
-    if (isMock) {
-      const storedProfiles = JSON.parse(localStorage.getItem('oficiosya_profiles') || '[]');
-      const user = storedProfiles.find((p: any) => p.email === email && p.password === password);
-      if (!user) throw new Error("Credenciales inválidas");
-      
-      // Simulate login session
-      localStorage.setItem('oficiosya_session', JSON.stringify(user));
-      
-      // Update specific legacy variables for backwards compatibility during mock
-      if (user.rol === 'profesional') {
-        localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(user));
-      } else {
-        localStorage.setItem('oficiosya_cliente_perfil', JSON.stringify(user));
-      }
-      return { user };
-    }
-    
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
     
-    // Fetch profile
+    // Fetch profile from perfiles table
     const { data: profile } = await supabase.from('perfiles').select('*').eq('id', data.user.id).single();
+    
+    // Store profile in localStorage for backward compatibility
+    if (profile) {
+      const profileData = {
+        id: profile.id,
+        nombre: profile.nombre,
+        email: profile.email,
+        telefono: profile.telefono,
+        rol: profile.rol,
+        oficios: profile.oficios || [],
+        fotoPerfil: profile.foto_perfil || '',
+        provincia: profile.provincia || '',
+        ciudad: profile.ciudad || '',
+        biografia: profile.biografia || '',
+        experiencia: profile.experiencia || '',
+        plan: profile.plan || 'Gratis',
+        verificado: profile.verificado || false,
+      };
+      
+      if (profile.rol === 'profesional') {
+        localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(profileData));
+        localStorage.removeItem('oficiosya_cliente_perfil');
+      } else {
+        localStorage.setItem('oficiosya_cliente_perfil', JSON.stringify(profileData));
+        localStorage.removeItem('oficiosya_profesional_perfil');
+      }
+      localStorage.setItem('oficiosya_session', JSON.stringify(profileData));
+    }
+    
     return { user: data.user, profile };
   },
 
   async registerCliente(fullName: string, email: string, phone: string, password: string): Promise<any> {
-    if (isMock) {
-      const newUser = { id: Date.now().toString(), nombre: fullName, email, telefono: phone, password, rol: 'cliente' };
-      const storedProfiles = JSON.parse(localStorage.getItem('oficiosya_profiles') || '[]');
-      if (storedProfiles.some((p: any) => p.email === email)) throw new Error("El correo ya está registrado");
-      storedProfiles.push(newUser);
-      localStorage.setItem('oficiosya_profiles', JSON.stringify(storedProfiles));
-      localStorage.setItem('oficiosya_session', JSON.stringify(newUser));
-      localStorage.setItem('oficiosya_cliente_perfil', JSON.stringify(newUser));
-      return { user: newUser };
-    }
-    
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
     
     if (data.user) {
-      await supabase.from('perfiles').insert([{ id: data.user.id, nombre: fullName, email, telefono: phone, rol: 'cliente' }]);
+      const { error: profileError } = await supabase.from('perfiles').insert([{
+        id: data.user.id,
+        nombre: fullName,
+        email,
+        telefono: phone,
+        rol: 'cliente'
+      }]);
+      if (profileError) throw profileError;
+
+      // Store in localStorage for backward compatibility
+      const profileData = {
+        id: data.user.id,
+        nombre: fullName,
+        email,
+        telefono: phone,
+        rol: 'cliente',
+        fotoPerfil: '',
+      };
+      localStorage.setItem('oficiosya_cliente_perfil', JSON.stringify(profileData));
+      localStorage.setItem('oficiosya_session', JSON.stringify(profileData));
     }
     return data;
   },
 
-  async registerProfesional(fullName: string, email: string, phone: string, password: string, oficios: string[]): Promise<any> {
-    if (isMock) {
-      const newUser = { id: Date.now().toString(), nombre: fullName, email, telefono: phone, password, oficios, rol: 'profesional', fotoPerfil: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBJFksOrbm_vwGQaTq5Vuqr1acUBEH2jxptCR5CusLDf2Sb5qZ8fqxqznYXUigT9dEfKpCENJlHaLhC_WoPDhEQJYKRkRbxGiFrH2Jf4hrRkaq4pffxxwX2ietvZfajbBEyvOb665wnkChMjc88JXD3dUq70dprcIy22fOVZalBnuC390ApdZb18RNQjeSD56KQnd4KnVj3W9Vf6W_rfyL2JkZDhnRQLKr0smIh2slCZIjrr0crl5Ri-6h1zRMK70Hxc9PXqDijgpuj' };
-      const storedProfiles = JSON.parse(localStorage.getItem('oficiosya_profiles') || '[]');
-      if (storedProfiles.some((p: any) => p.email === email)) throw new Error("El correo ya está registrado");
-      storedProfiles.push(newUser);
-      localStorage.setItem('oficiosya_profiles', JSON.stringify(storedProfiles));
-      localStorage.setItem('oficiosya_session', JSON.stringify(newUser));
-      localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(newUser));
-      return { user: newUser };
-    }
-    
+  async registerProfesional(fullName: string, email: string, phone: string, password: string, oficios: string[], provincia?: string, ciudad?: string): Promise<any> {
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
     
     if (data.user) {
-      await supabase.from('perfiles').insert([{ id: data.user.id, nombre: fullName, email, telefono: phone, oficios, rol: 'profesional' }]);
+      const { error: profileError } = await supabase.from('perfiles').insert([{
+        id: data.user.id,
+        nombre: fullName,
+        email,
+        telefono: phone,
+        oficios,
+        rol: 'profesional',
+        provincia: provincia || '',
+        ciudad: ciudad || '',
+      }]);
+      if (profileError) throw profileError;
+
+      const profileData = {
+        id: data.user.id,
+        nombre: fullName,
+        email,
+        telefono: phone,
+        oficios,
+        rol: 'profesional',
+        fotoPerfil: '',
+        provincia: provincia || '',
+        ciudad: ciudad || '',
+      };
+      localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(profileData));
+      localStorage.setItem('oficiosya_session', JSON.stringify(profileData));
     }
     return data;
   },
 
   // --- TICKETS ---
   async getTickets(): Promise<any[]> {
-    if (isMock) {
-      return JSON.parse(localStorage.getItem('oficiosya_tickets') || '[]');
-    }
     const { data, error } = await supabase.from('tickets_soporte').select('*').order('created_at', { ascending: false });
     if (error) throw error;
     return data || [];
   },
 
   async createTicket(ticket: any): Promise<any> {
-    if (isMock) {
-      const nuevoTicket = { id: Date.now().toString(), ...ticket, estado: 'Pendiente', fecha: new Date().toLocaleDateString('es-AR') };
-      const stored = JSON.parse(localStorage.getItem('oficiosya_tickets') || '[]');
-      stored.unshift(nuevoTicket);
-      localStorage.setItem('oficiosya_tickets', JSON.stringify(stored));
-      return nuevoTicket;
-    }
-    
     const dbTicket = {
       id: Date.now().toString(),
       nombre: ticket.nombre,
@@ -248,20 +320,33 @@ export const dbHelper = {
 
   // --- TRABAJOS ---
   async getJobs(): Promise<any[]> {
-    if (isMock) {
-      const mural = JSON.parse(localStorage.getItem('oficiosya_muro_jobs') || '[]');
-      const empleos = JSON.parse(localStorage.getItem('oficiosya_empleos') || '[]');
-      return [...empleos, ...mural];
-    }
     const { data, error } = await supabase.from('trabajos').select('*').order('created_at', { ascending: false });
     if (error) throw error;
     return data || [];
   },
 
-  async getAllPostulaciones(): Promise<any[]> {
-    if (isMock) {
-      return JSON.parse(localStorage.getItem('oficiosya_postulaciones') || '[]');
+  async deleteJob(id: number | string): Promise<void> {
+    const { error } = await supabase.from('trabajos').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  async createJob(job: any): Promise<any> {
+    const dbJob = {
+      ...job,
+      empleadoravatar: job.empleadorAvatar
+    };
+    delete dbJob.empleadorAvatar;
+    if (!dbJob.id) {
+      dbJob.id = Date.now();
     }
+
+    const { data, error } = await supabase.from('trabajos').insert([dbJob]).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  // --- POSTULACIONES ---
+  async getAllPostulaciones(): Promise<any[]> {
     const { data, error } = await supabase.from('postulaciones').select('*');
     if (error) throw error;
     return (data || []).map(p => ({
@@ -278,101 +363,18 @@ export const dbHelper = {
     }));
   },
 
-  async createJob(job: any): Promise<any> {
-    if (isMock) {
-      const nuevoTrabajo = { id: Date.now(), ...job, tiempo: 'Reciente', reportes: 0, fecha: new Date().toISOString() };
-      
-      // Guardar una versión sin la imagen base64 en localStorage para evitar QuotaExceededError
-      const trabajoParaGuardar = { ...nuevoTrabajo };
-      if (trabajoParaGuardar.imagen && typeof trabajoParaGuardar.imagen === 'string' && trabajoParaGuardar.imagen.startsWith('data:')) {
-        trabajoParaGuardar.imagen = '[imagen adjunta]'; // Placeholder para no saturar localStorage
-      }
-      
-      try {
-        const stored = JSON.parse(localStorage.getItem('oficiosya_empleos') || '[]');
-        stored.unshift(trabajoParaGuardar);
-        localStorage.setItem('oficiosya_empleos', JSON.stringify(stored));
-      } catch (storageError) {
-        console.warn('localStorage lleno, guardando sin historial previo:', storageError);
-        localStorage.setItem('oficiosya_empleos', JSON.stringify([trabajoParaGuardar]));
-      }
-      
-      // Emitir notificación para profesionales
-      emitirNotificacion({
-        tipo: 'trabajo',
-        titulo: `Nuevo trabajo publicado: ${job.titulo || job.title}`,
-        descripcion: `Una nueva solicitud ha sido publicada en tu zona por ${job.empleador}.`
-      });
-      
-      return nuevoTrabajo;
-    }
-    
-    // Convert camelCase properties to lowercase for PostgreSQL compatibility
-    const dbJob = {
-      ...job,
-      empleadoravatar: job.empleadorAvatar
-    };
-    delete dbJob.empleadorAvatar;
-    // ensure id exists
-    if (!dbJob.id) {
-      dbJob.id = Date.now();
-    }
-
-    const { data, error } = await supabase.from('trabajos').insert([dbJob]).select().single();
-    if (error) throw error;
-
-    emitirNotificacion({
-      tipo: 'trabajo',
-      titulo: `Nuevo trabajo publicado: ${job.titulo || job.title}`,
-      descripcion: `Una nueva solicitud ha sido publicada en tu zona por ${job.empleador}.`
-    });
-
-    return data;
-  },
-
-  // --- POSTULACIONES ---
   async getPostulaciones(empleadorName: string): Promise<any[]> {
-    if (isMock) {
-      const todasPostulaciones = JSON.parse(localStorage.getItem('oficiosya_postulaciones') || '[]');
-      return todasPostulaciones.filter((p: any) => p.empleador === empleadorName);
-    }
     const { data, error } = await supabase.from('postulaciones').select('*').eq('empleador', empleadorName);
     if (error) throw error;
     return data || [];
   },
 
-  async updatePostulacion(id: number | string, nuevoEstado: string, empleadorName: string): Promise<void> {
-    if (isMock) {
-      const storedPost = JSON.parse(localStorage.getItem('oficiosya_postulaciones') || '[]');
-      const actualizadas = storedPost.map((p: any) => 
-        (p.idPostulacion === id || p.empleoId === id) && p.empleador === empleadorName
-          ? { ...p, estado: nuevoEstado }
-          : p
-      );
-      localStorage.setItem('oficiosya_postulaciones', JSON.stringify(actualizadas));
-      return;
-    }
+  async updatePostulacion(id: number | string, nuevoEstado: string, _empleadorName: string): Promise<void> {
     const { error } = await supabase.from('postulaciones').update({ estado: nuevoEstado }).eq('id', id);
     if (error) throw error;
   },
 
   async createPostulacion(postulacion: any): Promise<any> {
-    if (isMock) {
-      const stored = JSON.parse(localStorage.getItem('oficiosya_postulaciones') || '[]');
-      stored.push(postulacion);
-      localStorage.setItem('oficiosya_postulaciones', JSON.stringify(stored));
-      
-      // Emitir notificación para el cliente
-      emitirNotificacion({
-        tipo: 'mensaje',
-        titulo: `¡Nueva postulación recibida!`,
-        descripcion: `${postulacion.candidato} se ha postulado para realizar tu trabajo.`
-      });
-      
-      return postulacion;
-    }
-    
-    // Convert camelCase properties to lowercase for PostgreSQL compatibility
     const dbPostulacion = {
       ...postulacion,
       idpostulacion: postulacion.idPostulacion || Date.now(),
@@ -387,43 +389,22 @@ export const dbHelper = {
 
     const { data, error } = await supabase.from('postulaciones').insert([dbPostulacion]).select().single();
     if (error) throw error;
-
-    emitirNotificacion({
-      tipo: 'mensaje',
-      titulo: `¡Nueva postulación recibida!`,
-      descripcion: `${postulacion.candidato} se ha postulado para realizar tu trabajo.`
-    });
-
     return data;
   },
 
   async getMisPostulaciones(candidatoName: string): Promise<any[]> {
-    if (isMock) {
-      const stored = JSON.parse(localStorage.getItem('oficiosya_postulaciones') || '[]');
-      return stored.filter((p: any) => p.candidato === candidatoName);
-    }
     const { data, error } = await supabase.from('postulaciones').select('*').eq('candidato', candidatoName).order('created_at', { ascending: false });
     if (error) throw error;
     return data || [];
   },
 
   async deletePostulacion(empleoId: number | string, candidatoName: string): Promise<void> {
-    if (isMock) {
-      const stored = JSON.parse(localStorage.getItem('oficiosya_postulaciones') || '[]');
-      const filtered = stored.filter((p: any) => !(p.empleoId === empleoId && p.candidato === candidatoName));
-      localStorage.setItem('oficiosya_postulaciones', JSON.stringify(filtered));
-      return;
-    }
-    const { error } = await supabase.from('postulaciones').delete().match({ empleoId: empleoId, candidato: candidatoName });
+    const { error } = await supabase.from('postulaciones').delete().match({ empleoid: empleoId, candidato: candidatoName });
     if (error) throw error;
   },
 
   // --- REVIEWS ---
   async getReviewsForProfessional(professionalId: string): Promise<any[]> {
-    if (isMock) {
-      const allReviews = JSON.parse(localStorage.getItem('oficiosya_resenas') || '[]');
-      return allReviews.filter((r: any) => r.profesionalId === professionalId || r.professional_id === professionalId);
-    }
     const { data, error } = await supabase
       .from('reviews')
       .select('*')
@@ -431,12 +412,11 @@ export const dbHelper = {
       .order('created_at', { ascending: false });
     if (error) throw error;
     
-    // Map to application format
     return (data || []).map(r => ({
       id: r.id,
       profesionalId: r.professional_id,
       clienteNombre: r.client_name,
-      clienteAvatar: 'https://i.pravatar.cc/150?u=' + r.client_name, // default placeholder avatar
+      clienteAvatar: 'https://i.pravatar.cc/150?u=' + r.client_name,
       rating: r.rating,
       texto: r.review_text,
       trabajoTitulo: 'Servicio realizado',
@@ -445,31 +425,12 @@ export const dbHelper = {
   },
 
   async createReview(review: { professional_id: string; job_id: number | string; client_name: string; rating: number; review_text: string }): Promise<void> {
-    if (isMock) {
-      const allReviews = JSON.parse(localStorage.getItem('oficiosya_resenas') || '[]');
-      const newReview = {
-        id: `resena_${Date.now()}`,
-        profesionalId: review.professional_id,
-        clienteNombre: review.client_name,
-        clienteAvatar: 'https://i.pravatar.cc/150?u=' + review.client_name,
-        rating: review.rating,
-        texto: review.review_text,
-        trabajoTitulo: 'Servicio realizado',
-        fecha: new Date().toISOString().split('T')[0]
-      };
-      allReviews.push(newReview);
-      localStorage.setItem('oficiosya_resenas', JSON.stringify(allReviews));
-      return;
-    }
     const { error } = await supabase.from('reviews').insert([review]);
     if (error) throw error;
   },
 
   // --- CLIENTES (CRM) ---
   async getClientes(): Promise<any[]> {
-    if (isMock) {
-      return JSON.parse(localStorage.getItem('oficiosya_clientes_v2') || '[]');
-    }
     try {
       const { data, error } = await supabase.from('clientes').select('*').order('created_at', { ascending: false });
       if (error) throw error;
@@ -483,51 +444,36 @@ export const dbHelper = {
         direccion: c.direccion
       }));
     } catch {
-      return JSON.parse(localStorage.getItem('oficiosya_clientes_v2') || '[]');
+      return [];
     }
   },
 
   async saveCliente(cliente: any): Promise<void> {
-    const stored = JSON.parse(localStorage.getItem('oficiosya_clientes_v2') || '[]');
-    const exists = stored.some((c: any) => c.id === cliente.id);
-    const updated = exists ? stored.map((c: any) => c.id === cliente.id ? cliente : c) : [cliente, ...stored];
-    localStorage.setItem('oficiosya_clientes_v2', JSON.stringify(updated));
-
-    if (!isMock) {
-      try {
-        await supabase.from('clientes').upsert([{
-          id: cliente.id,
-          nombre: cliente.nombre,
-          initials: cliente.initials,
-          color: cliente.color,
-          telefono: cliente.telefono,
-          email: cliente.email,
-          direccion: cliente.direccion
-        }]);
-      } catch (err) {
-        console.warn('Error syncing cliente to Supabase:', err);
-      }
+    try {
+      await supabase.from('clientes').upsert([{
+        id: cliente.id,
+        nombre: cliente.nombre,
+        initials: cliente.initials,
+        color: cliente.color,
+        telefono: cliente.telefono,
+        email: cliente.email,
+        direccion: cliente.direccion
+      }]);
+    } catch (err) {
+      console.warn('Error syncing cliente to Supabase:', err);
     }
   },
 
   async deleteCliente(id: string): Promise<void> {
-    const stored = JSON.parse(localStorage.getItem('oficiosya_clientes_v2') || '[]');
-    localStorage.setItem('oficiosya_clientes_v2', JSON.stringify(stored.filter((c: any) => c.id !== id)));
-
-    if (!isMock) {
-      try {
-        await supabase.from('clientes').delete().eq('id', id);
-      } catch (err) {
-        console.warn('Error deleting cliente from Supabase:', err);
-      }
+    try {
+      await supabase.from('clientes').delete().eq('id', id);
+    } catch (err) {
+      console.warn('Error deleting cliente from Supabase:', err);
     }
   },
 
   // --- OBRAS (CRM) ---
   async getObras(): Promise<any[]> {
-    if (isMock) {
-      return JSON.parse(localStorage.getItem('oficiosya_obras_v2') || '[]');
-    }
     try {
       const { data, error } = await supabase.from('obras').select('*').order('created_at', { ascending: false });
       if (error) throw error;
@@ -543,53 +489,38 @@ export const dbHelper = {
         pagos: o.pagos || []
       }));
     } catch {
-      return JSON.parse(localStorage.getItem('oficiosya_obras_v2') || '[]');
+      return [];
     }
   },
 
   async saveObra(obra: any): Promise<void> {
-    const stored = JSON.parse(localStorage.getItem('oficiosya_obras_v2') || '[]');
-    const exists = stored.some((o: any) => o.id === obra.id);
-    const updated = exists ? stored.map((o: any) => o.id === obra.id ? obra : o) : [obra, ...stored];
-    localStorage.setItem('oficiosya_obras_v2', JSON.stringify(updated));
-
-    if (!isMock) {
-      try {
-        await supabase.from('obras').upsert([{
-          id: obra.id,
-          cliente_id: obra.clienteId,
-          nombre: obra.nombre,
-          direccion: obra.direccion,
-          fecha: obra.fecha,
-          estado: obra.estado,
-          total: obra.total,
-          avance: obra.avance,
-          pagos: obra.pagos || []
-        }]);
-      } catch (err) {
-        console.warn('Error syncing obra to Supabase:', err);
-      }
+    try {
+      await supabase.from('obras').upsert([{
+        id: obra.id,
+        cliente_id: obra.clienteId,
+        nombre: obra.nombre,
+        direccion: obra.direccion,
+        fecha: obra.fecha,
+        estado: obra.estado,
+        total: obra.total,
+        avance: obra.avance,
+        pagos: obra.pagos || []
+      }]);
+    } catch (err) {
+      console.warn('Error syncing obra to Supabase:', err);
     }
   },
 
   async deleteObra(id: string): Promise<void> {
-    const stored = JSON.parse(localStorage.getItem('oficiosya_obras_v2') || '[]');
-    localStorage.setItem('oficiosya_obras_v2', JSON.stringify(stored.filter((o: any) => o.id !== id)));
-
-    if (!isMock) {
-      try {
-        await supabase.from('obras').delete().eq('id', id);
-      } catch (err) {
-        console.warn('Error deleting obra from Supabase:', err);
-      }
+    try {
+      await supabase.from('obras').delete().eq('id', id);
+    } catch (err) {
+      console.warn('Error deleting obra from Supabase:', err);
     }
   },
 
   // --- PRESUPUESTOS ---
   async getPresupuestos(): Promise<any[]> {
-    if (isMock) {
-      return JSON.parse(localStorage.getItem('oficiosya_presupuestos_guardados') || '[]');
-    }
     try {
       const { data, error } = await supabase.from('presupuestos').select('*').order('created_at', { ascending: false });
       if (error) throw error;
@@ -607,47 +538,221 @@ export const dbHelper = {
         fecha: p.fecha
       }));
     } catch {
-      return JSON.parse(localStorage.getItem('oficiosya_presupuestos_guardados') || '[]');
+      return [];
     }
   },
 
   async savePresupuesto(presupuesto: any): Promise<void> {
-    const stored = JSON.parse(localStorage.getItem('oficiosya_presupuestos_guardados') || '[]');
-    const exists = stored.some((p: any) => p.id === presupuesto.id);
-    const updated = exists ? stored.map((p: any) => p.id === presupuesto.id ? presupuesto : p) : [presupuesto, ...stored];
-    localStorage.setItem('oficiosya_presupuestos_guardados', JSON.stringify(updated));
-
-    if (!isMock) {
-      try {
-        await supabase.from('presupuestos').upsert([{
-          id: presupuesto.id,
-          nombre: presupuesto.nombre,
-          cliente: presupuesto.cliente,
-          telefono: presupuesto.telefono,
-          nota: presupuesto.nota,
-          total_mano_obra: presupuesto.totalManoObra,
-          cant_materiales: presupuesto.cantMateriales,
-          total: presupuesto.total,
-          mano_obra: presupuesto.manoObra || [],
-          materiales: presupuesto.materiales || [],
-          fecha: presupuesto.fecha
-        }]);
-      } catch (err) {
-        console.warn('Error syncing presupuesto to Supabase:', err);
-      }
+    try {
+      await supabase.from('presupuestos').upsert([{
+        id: presupuesto.id,
+        nombre: presupuesto.nombre,
+        cliente: presupuesto.cliente,
+        telefono: presupuesto.telefono,
+        nota: presupuesto.nota,
+        total_mano_obra: presupuesto.totalManoObra,
+        cant_materiales: presupuesto.cantMateriales,
+        total: presupuesto.total,
+        mano_obra: presupuesto.manoObra || [],
+        materiales: presupuesto.materiales || [],
+        fecha: presupuesto.fecha
+      }]);
+    } catch (err) {
+      console.warn('Error syncing presupuesto to Supabase:', err);
     }
   },
 
   async deletePresupuesto(id: string): Promise<void> {
-    const stored = JSON.parse(localStorage.getItem('oficiosya_presupuestos_guardados') || '[]');
-    localStorage.setItem('oficiosya_presupuestos_guardados', JSON.stringify(stored.filter((p: any) => p.id !== id)));
+    try {
+      await supabase.from('presupuestos').delete().eq('id', id);
+    } catch (err) {
+      console.warn('Error deleting presupuesto from Supabase:', err);
+    }
+  },
 
-    if (!isMock) {
+  // ============================================================
+  // CHAT — Integración Real con Supabase
+  // ============================================================
+
+  /**
+   * Obtiene o crea una conversación entre dos usuarios.
+   */
+  async getOrCreateConversation(userId1: string, userId2: string): Promise<any> {
+    // Buscar conversación existente entre los dos usuarios
+    const { data: existing, error: searchError } = await supabase
+      .from('conversaciones')
+      .select('*')
+      .or(`and(usuario1_id.eq.${userId1},usuario2_id.eq.${userId2}),and(usuario1_id.eq.${userId2},usuario2_id.eq.${userId1})`)
+      .maybeSingle();
+
+    if (searchError) {
+      console.error('Error buscando conversación:', searchError);
+    }
+
+    if (existing) return existing;
+
+    // Crear nueva conversación
+    const { data: newConv, error: createError } = await supabase
+      .from('conversaciones')
+      .insert([{
+        usuario1_id: userId1,
+        usuario2_id: userId2,
+        ultimo_mensaje: '',
+        ultimo_mensaje_fecha: new Date().toISOString(),
+      }])
+      .select()
+      .single();
+
+    if (createError) throw createError;
+    return newConv;
+  },
+
+  /**
+   * Obtiene todas las conversaciones de un usuario con info del interlocutor.
+   */
+  async getConversaciones(userId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('conversaciones')
+      .select('*')
+      .or(`usuario1_id.eq.${userId},usuario2_id.eq.${userId}`)
+      .order('ultimo_mensaje_fecha', { ascending: false });
+
+    if (error) {
+      console.error('Error al cargar conversaciones:', error);
+      return [];
+    }
+
+    if (!data || data.length === 0) return [];
+
+    // Enrich with partner profile info
+    const enriched = await Promise.all(data.map(async (conv) => {
+      const partnerId = conv.usuario1_id === userId ? conv.usuario2_id : conv.usuario1_id;
+      const partner = await dbHelper.getUserProfile(partnerId);
+      
+      // Count unread messages
+      const { count } = await supabase
+        .from('mensajes')
+        .select('*', { count: 'exact', head: true })
+        .eq('conversacion_id', conv.id)
+        .eq('receptor_id', userId)
+        .eq('leido', false);
+
+      return {
+        id: conv.id,
+        partnerId,
+        partnerNombre: partner?.nombre || partner?.name || 'Usuario',
+        partnerAvatar: partner?.avatar || partner?.fotoPerfil || 'https://i.pravatar.cc/150?u=' + partnerId,
+        partnerTrade: partner?.trade || '',
+        ultimoMensaje: conv.ultimo_mensaje || '',
+        ultimoMensajeFecha: conv.ultimo_mensaje_fecha,
+        noLeidos: count || 0,
+      };
+    }));
+
+    return enriched;
+  },
+
+  /**
+   * Obtiene los mensajes de una conversación.
+   */
+  async getMensajes(conversacionId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('mensajes')
+      .select('*')
+      .eq('conversacion_id', conversacionId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error al cargar mensajes:', error);
+      return [];
+    }
+
+    return data || [];
+  },
+
+  /**
+   * Envía un mensaje en una conversación.
+   */
+  async enviarMensaje(conversacionId: string, emisorId: string, receptorId: string, texto: string): Promise<any> {
+    const { data, error } = await supabase
+      .from('mensajes')
+      .insert([{
+        conversacion_id: conversacionId,
+        emisor_id: emisorId,
+        receptor_id: receptorId,
+        texto,
+        leido: false,
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Update last message on conversation
+    await supabase
+      .from('conversaciones')
+      .update({
+        ultimo_mensaje: texto.substring(0, 100),
+        ultimo_mensaje_fecha: new Date().toISOString(),
+      })
+      .eq('id', conversacionId);
+
+    return data;
+  },
+
+  /**
+   * Marca todos los mensajes de una conversación como leídos para un receptor.
+   */
+  async marcarMensajesLeidos(conversacionId: string, receptorId: string): Promise<void> {
+    await supabase
+      .from('mensajes')
+      .update({ leido: true })
+      .eq('conversacion_id', conversacionId)
+      .eq('receptor_id', receptorId)
+      .eq('leido', false);
+  },
+
+  // ============================================================
+  // DATA CLEANUP — Limpieza total de datos
+  // ============================================================
+
+  /**
+   * Borra TODOS los datos de todas las tablas de Supabase.
+   * ¡Usar con precaución! Solo para resetear la plataforma.
+   */
+  async cleanAllData(): Promise<{ success: boolean; errors: string[] }> {
+    const errors: string[] = [];
+    
+    const tables = [
+      'mensajes',
+      'conversaciones',
+      'reviews',
+      'postulaciones',
+      'trabajos',
+      'tickets_soporte',
+      'clientes',
+      'obras',
+      'presupuestos',
+      // perfiles se borra al final porque tiene foreign keys
+      'perfiles',
+    ];
+
+    for (const table of tables) {
       try {
-        await supabase.from('presupuestos').delete().eq('id', id);
-      } catch (err) {
-        console.warn('Error deleting presupuesto from Supabase:', err);
+        const { error } = await supabase.from(table).delete().neq('id', '___never_match___');
+        if (error) {
+          errors.push(`${table}: ${error.message}`);
+        }
+      } catch (err: any) {
+        errors.push(`${table}: ${err.message}`);
       }
     }
-  }
+
+    // Also clean localStorage
+    clearAllLocalData();
+
+    return { success: errors.length === 0, errors };
+  },
+
+  logout,
 };

@@ -9,6 +9,8 @@ import {
 import { dbHelper } from '@/lib/supabase';
 import Logo from '@/components/Logo';
 import Tooltip from '@/components/Tooltip';
+import AuthGuard from '@/components/AuthGuard';
+import { useAuth } from '@/components/AuthContext';
 import { HomeIcon, PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, ConfiguracionIcon, PublicarIcon } from '@/components/ModernIcons';
 
 interface TrabajoActivo {
@@ -24,10 +26,19 @@ interface TrabajoActivo {
   chatId: string;
 }
 
+export default function FinalizarTrabajoPageWrapper() {
+  return (
+    <AuthGuard requiredRole="cliente">
+      <FinalizarTrabajoPageLayout />
+    </AuthGuard>
+  );
+}
+
 function FinalizarContenido() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const trabajoId = searchParams.get('trabajoId');
+  const { user, profile } = useAuth();
   
   const [trabajo, setTrabajo] = useState<TrabajoActivo | null>(null);
   const [rating, setRating] = useState(0);
@@ -53,7 +64,7 @@ function FinalizarContenido() {
         id: 'demo',
         profesionalId: 2,
         profesionalNombre: 'Lucía Ferreyra',
-        profesionalAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBlVCn8FRzTbVmZxic91A-2Ugh1qFBfezVm0wqIKlK38GDjuh2U6BsS9cS4zgLxeCMeUJsDJTluGVvtCoxYzGLllutVL9VFc2SrplBpzopr-qWY5s5igTFagEH0SSVO1Guaku8KqEvFomdFF2iBq1jSsEvjwMlhS7AtAIIOo00YPiuGl-8phMWi49kjhbMIJlKx53XoXFj35c4I8CDVN5DTgxJLofVISU8aZNRfS6Q1mlob5-BG_hOeTLKJPogDS15WJ20ty764J5OU',
+        profesionalAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBlVCn8FRzTbVmZxic91A-2Ugh1qFBfezVm0wqIKlK38GDjuh2U6BsS9cS4zgLxeCMeUJsDJTluGVvtCoxYzGLllutVL9VL9VFc2SrplBpzopr-qWY5s5igTFagEH0SSVO1Guaku8KqEvFomdFF2iBq1jSsEvjwMlhS7AtAIIOo00YPiuGl-8phMWi49kjhbMIJlKx53XoXFj35c4I8CDVN5DTgxJLofVISU8aZNRfS6Q1mlob5-BG_hOeTLKJPogDS15WJ20ty764J5OU',
         profesionalTrade: 'Electricidad',
         trabajoTitulo: 'Reparación de cortocircuito en tablero principal',
         precio: 15000,
@@ -74,13 +85,15 @@ function FinalizarContenido() {
 
     setIsSubmitting(true);
 
-    // 1. Guardar la reseña en base de datos real (reviews) y localStorage (para compatibilidad)
-    const clientePerfil = JSON.parse(localStorage.getItem('oficiosya_cliente_perfil') || '{}');
+    // 1. Guardar la reseña en base de datos real (reviews)
+    const clienteNombre = profile?.nombre || profile?.name || 'Cliente';
+    const clienteAvatar = profile?.avatar || profile?.fotoPerfil || 'https://i.pravatar.cc/150';
+    
     const nuevaResena = {
       id: `resena_${Date.now()}`,
       profesionalId: trabajo.profesionalId,
-      clienteNombre: clientePerfil.nombre || 'Diego Martínez',
-      clienteAvatar: clientePerfil.avatar || 'https://i.pravatar.cc/150',
+      clienteNombre,
+      clienteAvatar,
       rating: rating,
       texto: review || 'Sin comentario adicional.',
       trabajoTitulo: trabajo.trabajoTitulo,
@@ -95,7 +108,7 @@ function FinalizarContenido() {
       await dbHelper.createReview({
         professional_id: String(trabajo.profesionalId),
         job_id: String(trabajo.id),
-        client_name: clientePerfil.nombre || 'Diego Martínez',
+        client_name: clienteNombre,
         rating: rating,
         review_text: review || 'Sin comentario adicional.'
       });
@@ -258,7 +271,7 @@ function FinalizarContenido() {
   );
 }
 
-export default function FinalizarTrabajoPage() {
+function FinalizarTrabajoPageLayout() {
   const router = useRouter();
 
   return (

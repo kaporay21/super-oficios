@@ -288,47 +288,18 @@ export default function PerfilProfesional() {
                   </div>
                 ))}
 
-                {/* Reseñas Estáticas (mock) */}
-                <div className="bg-white border border-gray-200 p-5 rounded-2xl shadow-sm">
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex items-center gap-3">
-                      <img className="w-10 h-10 rounded-full object-cover" alt="Mariana S." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCGoFDAGFQPJAxM_8frPjeqMvonNJimYNsbXSFS3XL7IHT9M0WjRaY4M5mZqxHtwuth5o1P3v-dlo45EjO2-xDd9N93c_Lh0hT7Ks13R5lKqQaQgsCVpuW1DsAGgaUZ29qCVQteaFJeijV6UJSA3fdOnaV19egZxi3uqb93RH6PL-OTO5jLe7-OJ53ZxyiimF0G0K0yT_hPMRMrLUGaMkz2Jnbf69h-TBiF6VZ-DEdVYQNr2bw4qbyBYqNqoA1F-LHMNDuu9oKIVQwa"/>
-                      <div>
-                        <p className="text-sm font-bold text-gray-900">Mariana S.</p>
-                        <div className="flex gap-0.5 mt-0.5">
-                          {[1,2,3,4,5].map(i => <Star key={i} className="w-3.5 h-3.5 fill-[#fc8127] text-[#fc8127]" />)}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-[11px] text-gray-500 font-medium">Hace 2 días</span>
+                {resenasReales.length === 0 && (
+                  <div className="text-center py-8 bg-white border border-gray-100 rounded-2xl">
+                    <p className="text-gray-500 text-sm">Este profesional aún no tiene opiniones.</p>
                   </div>
-                  <p className="text-sm text-gray-600 leading-relaxed">
-                    Muy profesional y puntual. Resolvió el problema rápidamente y el presupuesto fue exactamente el acordado. Lo recomiendo.
-                  </p>
-                </div>
-                
-                <div className="bg-white border border-gray-200 p-5 rounded-2xl shadow-sm">
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex items-center gap-3">
-                      <img className="w-10 h-10 rounded-full object-cover" alt="Carlos G." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBGlwTkEIFFVjRupVG00DSVQpFre8MOWQ8GGizpx6bjLrlRp6s28-piGrUg1yjJMhaWbyHhM3n2D4khxrG2_lPSka0xD6mX2lrxHG-qZDtb-0tlP7Dq7LHxNjOMnEUEzkHb60t9f_X8ely5s1Gh-dXgwtp0-yHkMRZKMyp_j8ohXp2ZT5GbEh-liZO7TIa8OM9CXH3g0RqvqUbGddpNIMqbQ62bIOjdnSE2BFaSpvIEBCBr6vGLHNyk1YnhUAtp54ZiQNCpRlDWiASr"/>
-                      <div>
-                        <p className="text-sm font-bold text-gray-900">Carlos G.</p>
-                        <div className="flex gap-0.5 mt-0.5">
-                          {[1,2,3,4,5].map(i => <Star key={i} className="w-3.5 h-3.5 fill-[#fc8127] text-[#fc8127]" />)}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-[11px] text-gray-500 font-medium">Hace 1 semana</span>
-                  </div>
-                  <p className="text-sm text-gray-600 leading-relaxed">
-                    Excelente trabajo. Me explicó todo el proceso y dejó todo limpio al terminar. Sin dudas lo vuelvo a contratar.
-                  </p>
-                </div>
+                )}
               </div>
               
-              <button className="w-full py-3 text-[#00355f] font-bold text-sm border border-[#00355f] rounded-xl hover:bg-blue-50 transition-colors mt-2">
-                Leer las {48 + resenasReales.length} opiniones
-              </button>
+              {resenasReales.length > 0 && (
+                <button className="w-full py-3 text-[#00355f] font-bold text-sm border border-[#00355f] rounded-xl hover:bg-blue-50 transition-colors mt-2">
+                  Ver todas las {resenasReales.length} opiniones
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -16,13 +16,24 @@ import Logo from '@/components/Logo';
 import BienvenidaProModal from '@/components/BienvenidaProModal';
 import { dbHelper, supabase } from '@/lib/supabase';
 import confetti from 'canvas-confetti';
+import AuthGuard from '@/components/AuthGuard';
+import { useAuth } from '@/components/AuthContext';
 
 export default function PanelProfesionalPage() {
+  return (
+    <AuthGuard requiredRole="profesional">
+      <PanelProfesionalContent />
+    </AuthGuard>
+  );
+}
+
+function PanelProfesionalContent() {
   const router = useRouter();
+  const { profile: authProfile } = useAuth();
   const [isAvailable, setIsAvailable] = useState(true);
   const [perfil, setPerfil] = useState<any>(null);
 
-  // Cargar perfil desde localStorage
+  // Cargar perfil desde auth context
   useEffect(() => {
     // Check if we should show confetti
     if (localStorage.getItem('show_confetti') === 'true') {
@@ -35,11 +46,10 @@ export default function PanelProfesionalPage() {
       localStorage.removeItem('show_confetti');
     }
 
-    const stored = localStorage.getItem('oficiosya_profesional_perfil');
-    if (stored) {
-      setPerfil(JSON.parse(stored));
+    if (authProfile) {
+      setPerfil(authProfile);
     }
-  }, []);
+  }, [authProfile]);
 
   const [stats, setStats] = useState({
     activeJobs: 0,
@@ -55,23 +65,27 @@ export default function PanelProfesionalPage() {
     if (!perfil) return;
     const loadStats = async () => {
       try {
-        const isRoberto = perfil.email === 'roberto@gmail.com';
-        
-        // 1. Get real data from database
+        // Get real data from database
         const allPostulaciones = await dbHelper.getAllPostulaciones();
         const myApps = allPostulaciones.filter((p: any) => p.candidato === perfil.nombre);
         
         const realPresupuestos = myApps.length;
         const realActiveJobs = myApps.filter((p: any) => p.estado === 'Aceptado').length;
+
+        // Get real reviews count
+        const reviews = await dbHelper.getReviewsForProfessional(perfil.id);
+        const avgRating = reviews.length > 0 
+          ? reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / reviews.length 
+          : 5.0;
         
         setStats({
           activeJobs: realActiveJobs,
           presupuestos: realPresupuestos,
-          ganancias: isRoberto ? '$124.500' : '$0',
-          trabajosFinalizados: isRoberto ? 142 : 0,
-          resenasPositivas: isRoberto ? 128 : 0,
-          tasaRespuesta: isRoberto ? '98%' : '100%',
-          rating: isRoberto ? 4.9 : 5.0
+          ganancias: '$0',
+          trabajosFinalizados: 0,
+          resenasPositivas: reviews.length,
+          tasaRespuesta: '100%',
+          rating: avgRating
         });
       } catch (err) {
         console.error("Error al cargar estadísticas en panel-profesional:", err);

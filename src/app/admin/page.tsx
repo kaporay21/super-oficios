@@ -9,10 +9,37 @@ import {
   Edit2, Eye, Shield, UserX, UserCheck
 } from 'lucide-react';
 import Logo from '@/components/Logo';
+import AuthGuard from '@/components/AuthGuard';
+import { useAuth } from '@/components/AuthContext';
 import { dbHelper } from '@/lib/supabase';
 
 export default function AdminDashboardPage() {
+  return (
+    <AuthGuard requiredRole="admin">
+      <AdminContent />
+    </AuthGuard>
+  );
+}
+
+function AdminContent() {
   const router = useRouter();
+  const { user, profile } = useAuth();
+  
+  const [clearing, setClearing] = useState(false);
+  const handlePurgeAllData = async () => {
+    if (!confirm('⚠️ ¿Estás seguro de BORRAR TODOS LOS DATOS de la plataforma? Esto eliminará usuarios, trabajos, postulaciones, reseñas y chats para dejar la plataforma 100% vacía.')) return;
+    setClearing(true);
+    try {
+      await dbHelper.cleanAllData();
+      alert('✅ Se borraron todos los datos correctamente. La plataforma quedó en cero.');
+      window.location.reload();
+    } catch (err) {
+      console.error('Error al vaciar BD:', err);
+      alert('Ocurrió un error al vaciar los datos.');
+    } finally {
+      setClearing(false);
+    }
+  };
   
   // Navigation tabs
   const [activeTab, setActiveTab] = useState<'resumen' | 'usuarios' | 'verificaciones' | 'trabajos' | 'marketing' | 'soporte'>('resumen');
@@ -274,7 +301,8 @@ export default function AdminDashboardPage() {
   const activeSubsCount = users.filter(u => u.plan === 'Pro' || u.plan === 'Master').length;
   const pendingVerificationsCount = users.filter(u => u.verificacion === 'Pendiente').length;
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await dbHelper.logout();
     router.push('/login');
   };
 
@@ -355,7 +383,14 @@ export default function AdminDashboardPage() {
           </button>
         </nav>
 
-        <div className="p-4 border-t border-white/10">
+        <div className="p-4 border-t border-white/10 space-y-2">
+          <button 
+            onClick={handlePurgeAllData}
+            disabled={clearing}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-600/80 hover:bg-red-600 text-white rounded-xl text-xs font-bold transition-colors"
+          >
+            <Trash2 className="w-4 h-4" /> {clearing ? 'Borrando...' : 'Vaciar DB (Plataforma en 0)'}
+          </button>
           <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-blue-200 hover:bg-white/10 transition-colors text-sm font-bold">
             <LogOut className="w-5 h-5" /> Cerrar Sesión
           </button>
@@ -370,11 +405,21 @@ export default function AdminDashboardPage() {
             {activeTab === 'trabajos' ? 'Moderación de Solicitudes' : activeTab === 'usuarios' ? 'Gestión de Usuarios' : activeTab}
           </h2>
           <div className="flex items-center gap-4">
+            <button 
+              onClick={handlePurgeAllData}
+              disabled={clearing}
+              className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 rounded-xl text-xs font-bold transition-colors"
+            >
+              <Trash2 className="w-4 h-4 text-red-600" />
+              {clearing ? 'Vaciando...' : 'Vaciar Todos los Datos'}
+            </button>
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-bold text-gray-900">Gonzalo Humacata</p>
+              <p className="text-sm font-bold text-gray-900">{profile?.nombre || profile?.name || 'Administrador'}</p>
               <p className="text-xs text-[#fc8127] font-bold">Super Administrador</p>
             </div>
-            <div className="w-10 h-10 bg-[#00355f] rounded-full flex items-center justify-center text-white font-bold">G</div>
+            <div className="w-10 h-10 bg-[#00355f] rounded-full flex items-center justify-center text-white font-bold">
+              {(profile?.nombre || profile?.name || 'A').charAt(0).toUpperCase()}
+            </div>
           </div>
         </header>
 

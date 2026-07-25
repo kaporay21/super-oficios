@@ -3,56 +3,61 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
-  Bell, MessageSquare, LayoutDashboard, Briefcase, 
-  User, ChevronRight, Search, Hammer, Home
+  Bell, MessageSquare, Search, Home
 } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
-import { HomeIcon, PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, ConfiguracionIcon, PublicarIcon, HerramientasIcon } from '@/components/ModernIcons';
+import { PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, ConfiguracionIcon, HerramientasIcon } from '@/components/ModernIcons';
 import Logo from '@/components/Logo';
+import AuthGuard from '@/components/AuthGuard';
+import { useAuth } from '@/components/AuthContext';
+import { dbHelper } from '@/lib/supabase';
 
 export default function ChatIndexPage() {
+  return (
+    <AuthGuard>
+      <ChatIndexContent />
+    </AuthGuard>
+  );
+}
+
+function ChatIndexContent() {
   const router = useRouter();
-  const [userRole, setUserRole] = useState<'cliente' | 'profesional'>('cliente');
+  const { user, profile } = useAuth();
+  const [conversaciones, setConversaciones] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const userRole = profile?.rol || 'cliente';
 
   useEffect(() => {
-    const pro = localStorage.getItem('oficiosya_profesional_perfil');
-    const client = localStorage.getItem('oficiosya_cliente_perfil');
-    if (pro) {
-      setUserRole('profesional');
-    } else {
-      setUserRole('cliente');
-    }
-  }, []);
+    const loadConversaciones = async () => {
+      if (!user) return;
+      try {
+        const convs = await dbHelper.getConversaciones(user.id);
+        setConversaciones(convs);
+      } catch (err) {
+        console.error('Error al cargar conversaciones:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadConversaciones();
+  }, [user]);
 
-  // Lista simulada de chats según el rol detectado
-  const conversaciones = React.useMemo(() => {
-    if (userRole === 'profesional') {
-      return [
-        { id: '1', nombre: 'Ricardo Gómez', ultimoMensaje: 'Nos vemos a las 14:30hs', tiempo: '10:15hs', noLeidos: 0 },
-        { id: '2', nombre: 'Mariana Solís', ultimoMensaje: '¿A qué hora sale para la cañería?', tiempo: 'Ayer', noLeidos: 1 },
-      ];
-    } else {
-      return [
-        { id: '1', nombre: 'Carlos Méndez', ultimoMensaje: 'Hola, vi tu solicitud de reparación. ¿Te parece si paso el jueves?', tiempo: '10:15hs', noLeidos: 0 },
-        { id: '2', nombre: 'Lucía Ferreyra', ultimoMensaje: 'Hola, ¿me podrías dar más detalles del cortocircuito?', tiempo: 'Ayer', noLeidos: 0 },
-        { id: '3', nombre: 'Roberto Gómez', ultimoMensaje: 'Hola, ya envié el presupuesto para la reparación.', tiempo: 'Ayer', noLeidos: 0 },
-      ];
-    }
-  }, [userRole]);
+  const formatTiempo = (fecha: string) => {
+    if (!fecha) return '';
+    const now = new Date();
+    const msgDate = new Date(fecha);
+    const diffMs = now.getTime() - msgDate.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
 
-  // Cargar trabajos activos para mostrar badge
-  const [chatIdsConTrabajo, setChatIdsConTrabajo] = useState<string[]>([]);
-
-  useEffect(() => {
-    const stored = localStorage.getItem('oficiosya_trabajos_activos');
-    if (stored) {
-      const trabajos = JSON.parse(stored);
-      const ids = trabajos
-        .filter((t: any) => t.estado === 'en_curso')
-        .map((t: any) => t.chatId);
-      setChatIdsConTrabajo(ids);
-    }
-  }, []);
+    if (diffMins < 1) return 'Ahora';
+    if (diffMins < 60) return `${diffMins}m`;
+    if (diffHours < 24) return `${diffHours}h`;
+    if (diffDays === 1) return 'Ayer';
+    return msgDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+  };
 
   return (
     <div className="bg-[#f7fafc] text-[#181c1e] min-h-screen flex flex-col font-sans md:pl-24 pb-24 md:pb-0">
@@ -63,247 +68,129 @@ export default function ChatIndexPage() {
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => router.push(userRole === 'profesional' ? '/panel-profesional' : '/cliente')}>
             <Logo size="md" theme="light" />
           </div>
-          <Tooltip title="Notificaciones" text="Revisá avisos importantes, alertas de empleo y actualizaciones sobre tu cuenta al instante." position="bottom">
+          <Tooltip title="Notificaciones" text="Revisá avisos importantes." position="bottom">
             <button onClick={() => router.push('/notificaciones')} className="text-gray-500 hover:bg-gray-100 p-2 rounded-full transition-colors relative">
               <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
             </button>
           </Tooltip>
         </div>
       </header>
 
-      {/* Navegación Lateral Desktop (Dinámica) */}
+      {/* Navegación Lateral Desktop */}
       <div className="hidden md:flex fixed left-0 top-16 bottom-0 w-24 bg-white border-r border-gray-200 z-30 flex-col items-center py-4 gap-3 select-none shadow-sm overflow-y-auto scrollbar-none">
         {userRole === 'profesional' ? (
           <>
-            <Tooltip title="Panel" text="Hacé clic para ver el resumen de tu actividad, trabajos activos y ganancias del mes." position="right">
-              <button 
-                onClick={() => router.push('/panel-profesional')}
-                className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
-              >
-                <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
-                  <PanelIcon className="w-6 h-6" active={false} />
-                </div>
-                <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Panel</span>
+            <Tooltip title="Panel" text="Panel principal." position="right">
+              <button onClick={() => router.push('/panel-profesional')} className="flex flex-col items-center justify-center gap-1 w-16 py-2 rounded-xl text-gray-400 hover:text-[#00355f] hover:bg-gray-50 transition-all">
+                <PanelIcon className="w-5 h-5" />
+                <span className="text-[9px] font-bold">Panel</span>
               </button>
             </Tooltip>
-
-            <Tooltip title="Muro de trabajos" text="Explorá el muro de solicitudes publicadas por clientes y postulá tus presupuestos." position="right">
-              <button 
-                onClick={() => router.push('/muro-trabajos')}
-                className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
-              >
-                <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
-                  <MuroIcon className="w-6 h-6" active={false} />
-                </div>
-                <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Muro</span>
+            <Tooltip title="Muro" text="Ver trabajos disponibles." position="right">
+              <button onClick={() => router.push('/muro-trabajos')} className="flex flex-col items-center justify-center gap-1 w-16 py-2 rounded-xl text-gray-400 hover:text-[#00355f] hover:bg-gray-50 transition-all">
+                <MuroIcon className="w-5 h-5" />
+                <span className="text-[9px] font-bold">Muro</span>
               </button>
             </Tooltip>
-
-            <Tooltip title="Mis trabajos" text="Revisá y gestioná tus trabajos en curso, presupuestados o finalizados." position="right">
-              <button 
-                onClick={() => router.push('/mis-trabajos')}
-                className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
-              >
-                <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
-                  <TrabajosIcon className="w-6 h-6" active={false} />
-                </div>
-                <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Trabajos</span>
-              </button>
-            </Tooltip>
-
-            <Tooltip title="Mensajes" text="Chateá directamente con tus clientes para coordinar visitas y detalles de los trabajos." position="right">
-              <button className="flex flex-col items-center justify-center gap-1 group text-[#00355f] hover:scale-105 transition-all">
-                <div className="w-12 h-12 bg-blue-50 text-[#00355f] rounded-xl flex items-center justify-center border border-blue-100 shadow-sm group-hover:shadow-md transition-all">
-                  <MensajesIcon className="w-6 h-6" active={true} />
-                </div>
-                <span className="text-[10px] font-extrabold text-[#00355f] uppercase tracking-wider">Mensajes</span>
-              </button>
-            </Tooltip>
-
-            <Tooltip title="Buzón de Soporte" text="¿Tenés dudas o sugerencias? Escribinos y nuestro equipo te responderá directamente." position="right">
-              <button 
-                onClick={() => router.push('/panel-profesional?support=true')}
-                className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#00355f] hover:scale-105 transition-all active:scale-95"
-              >
-                <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
-                  <SoporteIcon className="w-6 h-6" active={false} />
-                </div>
-                <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#00355f] uppercase tracking-wider">Soporte</span>
-              </button>
-            </Tooltip>
-
-            <Tooltip title="Herramientas" text="Calculadora de materiales, mano de obra y cómputos para albañilería y cuadrillas." position="right">
-              <button 
-                onClick={() => router.push('/presupuestador-obras')}
-                className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
-              >
-                <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
-                  <HerramientasIcon className="w-6 h-6" active={false} />
-                </div>
-                <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Herramientas</span>
-              </button>
-            </Tooltip>
-
-            <div className="mt-auto mb-6">
-              <Tooltip title="Configuración" text="Editá tus datos, cambia tu contraseña y activa o desactiva estos globitos aclaratorios." position="right">
-                <button 
-                  onClick={() => router.push('/configuracion-profesional')} 
-                  className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#00355f] hover:scale-105 transition-all active:scale-95"
-                >
-                  <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
-                    <ConfiguracionIcon className="w-6 h-6" active={false} />
-                  </div>
-                  <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#00355f] uppercase tracking-wider">Configurar</span>
-                </button>
-              </Tooltip>
-            </div>
           </>
         ) : (
           <>
-            <Tooltip title="Inicio" text="Volvé a la pantalla principal para explorar profesionales y rubros en tu zona." position="right">
-              <button 
-                onClick={() => router.push('/cliente')}
-                className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
-              >
-                <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
-                  <HomeIcon className="w-6 h-6" active={false} />
-                </div>
-                <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Inicio</span>
+            <Tooltip title="Inicio" text="Volver al inicio." position="right">
+              <button onClick={() => router.push('/cliente')} className="flex flex-col items-center justify-center gap-1 w-16 py-2 rounded-xl text-gray-400 hover:text-[#00355f] hover:bg-gray-50 transition-all">
+                <Home className="w-5 h-5" />
+                <span className="text-[9px] font-bold">Inicio</span>
               </button>
             </Tooltip>
-
-            <Tooltip title="Mis solicitudes" text="Hacé seguimiento de tus trabajos solicitados, presupuestos recibidos e historial." position="right">
-              <button 
-                onClick={() => router.push('/perfil-cliente')}
-                className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
-              >
-                <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
-                  <TrabajosIcon className="w-6 h-6" active={false} />
-                </div>
-                <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Solicitudes</span>
-              </button>
-            </Tooltip>
-
-            <Tooltip title="Publicar trabajo" text="Publicá un nuevo trabajo o necesidad para recibir presupuestos de profesionales." position="right">
-              <button 
-                onClick={() => router.push('/publicar-trabajo')}
-                className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#10b981] hover:scale-105 transition-all active:scale-95"
-              >
-                <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
-                  <PublicarIcon className="w-6 h-6" active={false} />
-                </div>
-                <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#10b981] uppercase tracking-wider">Publicar</span>
-              </button>
-            </Tooltip>
-
-            <Tooltip title="Mensajes" text="Chateá con los profesionales seleccionados para coordinar visitas o trabajos." position="right">
-              <button className="flex flex-col items-center justify-center gap-1 group text-[#00355f] hover:scale-105 transition-all">
-                <div className="w-12 h-12 bg-blue-50 text-[#00355f] rounded-xl flex items-center justify-center border border-blue-100 shadow-sm group-hover:shadow-md transition-all">
-                  <MensajesIcon className="w-6 h-6" active={true} />
-                </div>
-                <span className="text-[10px] font-extrabold text-[#00355f] uppercase tracking-wider">Mensajes</span>
-              </button>
-            </Tooltip>
-
-            <div className="mt-auto mb-6">
-              <Tooltip title="Mi Perfil" text="Editá tu información personal, dirección de contacto y preferencias de tu cuenta." position="right">
-                <button 
-                  onClick={() => router.push('/configuracion-cliente')} 
-                  className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#00355f] hover:scale-105 transition-all active:scale-95"
-                >
-                  <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
-                    <ConfiguracionIcon className="w-6 h-6" active={false} />
-                  </div>
-                  <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#00355f] uppercase tracking-wider">Configurar</span>
-                </button>
-              </Tooltip>
-            </div>
           </>
         )}
+        <Tooltip title="Mensajes" text="Tus conversaciones." position="right">
+          <button className="flex flex-col items-center justify-center gap-1 w-16 py-2 rounded-xl bg-[#00355f] text-white transition-all">
+            <MensajesIcon className="w-5 h-5" />
+            <span className="text-[9px] font-bold">Mensajes</span>
+          </button>
+        </Tooltip>
       </div>
 
-      <main className="max-w-3xl mx-auto px-4 py-8 flex-grow w-full space-y-6">
-        
-        {/* Título y Buscador */}
-        <div>
-          <h2 className="text-2xl font-extrabold text-[#00355f] mb-4">Mensajes</h2>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input 
-              type="text" 
-              placeholder="Buscar conversación..." 
-              className="w-full h-12 pl-10 pr-4 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none transition-all text-sm shadow-sm"
-            />
-          </div>
+      {/* Contenido principal */}
+      <main className="flex-1 px-4 py-6 md:py-8 max-w-3xl mx-auto w-full">
+        <div className="flex justify-between items-end mb-6">
+          <h1 className="text-2xl md:text-3xl font-extrabold text-[#00355f]">Mensajes</h1>
         </div>
-        
-        {/* Lista de Conversaciones */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm divide-y divide-gray-100 overflow-hidden">
-          {conversaciones.map((chat) => (
-            <div 
-              key={chat.id}
-              onClick={() => router.push(`/chat/${chat.id}`)}
-              className="p-4 flex items-center justify-between hover:bg-gray-50 cursor-pointer transition-colors active:scale-[0.99]"
-            >
-              <div className="flex items-center gap-4">
+
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="w-8 h-8 border-4 border-[#fc8127] border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : conversaciones.length === 0 ? (
+          <div className="text-center py-20 bg-white border border-gray-100 rounded-2xl">
+            <MessageSquare className="w-16 h-16 text-gray-200 mx-auto mb-4" />
+            <h3 className="text-lg font-bold text-gray-700 mb-2">No tenés conversaciones aún</h3>
+            <p className="text-sm text-gray-500 max-w-sm mx-auto">
+              {userRole === 'profesional' 
+                ? 'Cuando un cliente te contacte, aparecerá acá.' 
+                : 'Contactá a un profesional desde su perfil para iniciar una conversación.'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {conversaciones.map((conv) => (
+              <div
+                key={conv.id}
+                onClick={() => router.push(`/chat/${conv.id}`)}
+                className="flex items-center gap-4 px-4 py-4 bg-white rounded-2xl border border-gray-100 hover:border-[#fc8127]/30 hover:shadow-sm cursor-pointer transition-all group"
+              >
                 <div className="relative">
-                  <div className="w-12 h-12 bg-blue-50 text-[#00355f] rounded-full flex items-center justify-center font-bold text-lg border border-gray-100">
-                    {chat.nombre.substring(0, 2).toUpperCase()}
-                  </div>
-                  {chat.noLeidos > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-[#fc8127] text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-white">
-                      {chat.noLeidos}
+                  <img 
+                    src={conv.partnerAvatar} 
+                    alt={conv.partnerNombre}
+                    className="w-12 h-12 rounded-full object-cover border-2 border-gray-100 group-hover:border-[#fc8127]/40 transition-colors" 
+                  />
+                  {conv.noLeidos > 0 && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-[#fc8127] text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white">
+                      {conv.noLeidos}
                     </span>
                   )}
                 </div>
-                <div>
-                  <h4 className="font-bold text-[#00355f]">{chat.nombre}</h4>
-                  <p className={`text-sm mt-0.5 ${chat.noLeidos > 0 ? 'font-bold text-gray-900' : 'text-gray-500'}`}>
-                    {chat.ultimoMensaje}
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-center">
+                    <h3 className={`font-bold text-sm truncate ${conv.noLeidos > 0 ? 'text-[#00355f]' : 'text-gray-800'}`}>
+                      {conv.partnerNombre}
+                    </h3>
+                    <span className="text-[11px] text-gray-400 font-medium shrink-0 ml-2">
+                      {formatTiempo(conv.ultimoMensajeFecha)}
+                    </span>
+                  </div>
+                  {conv.partnerTrade && (
+                    <p className="text-[10px] text-[#fc8127] font-bold uppercase tracking-wider">{conv.partnerTrade}</p>
+                  )}
+                  <p className={`text-xs truncate mt-0.5 ${conv.noLeidos > 0 ? 'text-gray-700 font-semibold' : 'text-gray-500'}`}>
+                    {conv.ultimoMensaje || 'Conversación iniciada'}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {chatIdsConTrabajo.includes(chat.id) && (
-                  <span className="bg-blue-50 text-[#00355f] text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-md flex items-center gap-1 shrink-0">
-                    <Hammer className="w-3 h-3" /> En curso
-                  </span>
-                )}
-                <span className="text-[10px] font-medium text-gray-400">{chat.tiempo}</span>
-                <ChevronRight className="w-5 h-5 text-gray-300" />
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </main>
 
-      {/* Bottom NavBar (Mobile - Dinámica) */}
-      <nav className="md:hidden fixed bottom-0 left-0 w-full flex justify-around items-center bg-white py-3 border-t border-gray-200 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] z-50">
-        <button onClick={() => router.push(userRole === 'profesional' ? '/panel-profesional' : '/cliente')} className="flex flex-col items-center text-gray-400 hover:text-[#00355f]">
-          {userRole === 'profesional' ? <LayoutDashboard className="w-5 h-5" /> : <Home className="w-5 h-5" />}
-          <span className="text-[10px] font-medium mt-1">{userRole === 'profesional' ? 'Dashboard' : 'Inicio'}</span>
-        </button>
-        {userRole === 'profesional' ? (
-          <button onClick={() => router.push('/mis-trabajos')} className="flex flex-col items-center text-gray-400 hover:text-[#00355f]">
-            <Briefcase className="w-5 h-5" />
-            <span className="text-[10px] font-medium mt-1">Mis Trabajos</span>
-          </button>
-        ) : (
-          <button onClick={() => router.push('/perfil-cliente')} className="flex flex-col items-center text-gray-400 hover:text-[#00355f]">
-            <Briefcase className="w-5 h-5" />
-            <span className="text-[10px] font-medium mt-1">Trabajos</span>
-          </button>
-        )}
-        <button className="flex flex-col items-center text-[#fc8127] relative">
-          <MessageSquare className="w-5 h-5 fill-current" />
-          <span className="text-[10px] font-bold mt-1">Mensajes</span>
-          <span className="absolute top-0 right-1 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
-        </button>
-        <button onClick={() => router.push(userRole === 'profesional' ? '/configuracion-profesional' : '/perfil-cliente')} className="flex flex-col items-center text-gray-400 hover:text-[#00355f]">
-          <User className="w-5 h-5" />
-          <span className="text-[10px] font-medium mt-1">Perfil</span>
-        </button>
+      {/* Navegación Inferior (Mobile) */}
+      <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 px-6 py-3 z-50 pb-safe md:hidden">
+        <div className="flex justify-between items-center">
+          <div className="flex flex-col items-center gap-1 text-gray-400 cursor-pointer" onClick={() => router.push(userRole === 'profesional' ? '/panel-profesional' : '/cliente')}>
+            <div className="p-1.5"><Home className="w-6 h-6" /></div>
+            <span className="text-[11px] font-medium">Inicio</span>
+          </div>
+          <div className="flex flex-col items-center gap-1 cursor-pointer">
+            <div className="bg-[#00355f] text-white p-1.5 rounded-xl shadow-sm">
+              <MessageSquare className="w-6 h-6" />
+            </div>
+            <span className="text-[11px] font-bold text-[#00355f]">Mensajes</span>
+          </div>
+          <div className="flex flex-col items-center gap-1 text-gray-400 cursor-pointer" onClick={() => router.push('/notificaciones')}>
+            <div className="p-1.5"><Bell className="w-6 h-6" /></div>
+            <span className="text-[11px] font-medium">Notificaciones</span>
+          </div>
+        </div>
       </nav>
     </div>
   );

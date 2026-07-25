@@ -8,9 +8,20 @@ import Tooltip from '@/components/Tooltip';
 import Logo from '@/components/Logo';
 import { dbHelper } from '@/lib/supabase';
 import confetti from 'canvas-confetti';
+import AuthGuard from '@/components/AuthGuard';
+import { useAuth } from '@/components/AuthContext';
 
 export default function HomePage() {
+  return (
+    <AuthGuard requiredRole="cliente">
+      <HomePageContent />
+    </AuthGuard>
+  );
+}
+
+function HomePageContent() {
   const router = useRouter();
+  const { profile: authProfile } = useAuth();
 
   const [clientProfile, setClientProfile] = useState<any>(null);
   const [myJobs, setMyJobs] = useState<any[]>([]);
@@ -28,19 +39,18 @@ export default function HomePage() {
       localStorage.removeItem('show_confetti');
     }
 
+    if (authProfile) {
+      setClientProfile(authProfile);
+    }
+  }, [authProfile]);
+
+  React.useEffect(() => {
     const loadClientData = async () => {
-      const stored = localStorage.getItem('oficiosya_cliente_perfil');
-      let currentPerfil = null;
-      if (stored) {
-        currentPerfil = JSON.parse(stored);
-        setClientProfile(currentPerfil);
-      }
-      
-      const clientName = currentPerfil?.nombre || 'Cliente';
+      const clientName = clientProfile?.nombre || '';
       
       try {
         const allJobs = await dbHelper.getJobs();
-        const clientJobs = allJobs.filter((j: any) => j.empleador === clientName);
+        const clientJobs = clientName ? allJobs.filter((j: any) => j.empleador === clientName) : [];
         setMyJobs(clientJobs);
       } catch (error) {
         console.error("Error al cargar trabajos:", error);
@@ -55,7 +65,7 @@ export default function HomePage() {
       }
     };
     loadClientData();
-  }, []);
+  }, [clientProfile]);
 
   // Función actualizada para manejar la navegación
   const handleNavigate = (screen: Screen | 'publish_job') => {

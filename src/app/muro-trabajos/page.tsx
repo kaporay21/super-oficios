@@ -10,9 +10,18 @@ import {
 import Tooltip from '@/components/Tooltip';
 import { PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, ConfiguracionIcon, HerramientasIcon } from '@/components/ModernIcons';
 import Logo from '@/components/Logo';
+import AuthGuard from '@/components/AuthGuard';
 import { dbHelper } from '@/lib/supabase';
 
 export default function MuroTrabajosPage() {
+  return (
+    <AuthGuard requiredRole="profesional">
+      <MuroTrabajosContent />
+    </AuthGuard>
+  );
+}
+
+function MuroTrabajosContent() {
   const router = useRouter();
   const [trabajos, setTrabajos] = useState<any[]>([]);
   const [categoriaActiva, setCategoriaActiva] = useState('Todos');

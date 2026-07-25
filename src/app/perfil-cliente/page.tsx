@@ -8,6 +8,9 @@ import {
   Briefcase, MessageSquare, User, Plus, X, Settings, Star, ArrowRight
 } from 'lucide-react';
 import Logo from '@/components/Logo';
+import AuthGuard from '@/components/AuthGuard';
+import { useAuth } from '@/components/AuthContext';
+import { logout as doLogout } from '@/lib/supabase';
 
 const PROVINCIAS = [
   'Buenos Aires',
@@ -46,7 +49,16 @@ const OFICIOS = [
 ];
 
 export default function PerfilClientePage() {
+  return (
+    <AuthGuard requiredRole="cliente">
+      <PerfilClienteContent />
+    </AuthGuard>
+  );
+}
+
+function PerfilClienteContent() {
   const router = useRouter();
+  const { profile: authProfile } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [searchProvince, setSearchProvince] = useState('');
   const [searchTrade, setSearchTrade] = useState('todos');
@@ -57,31 +69,37 @@ export default function PerfilClientePage() {
     if (searchTrade && searchTrade !== 'todos') params.append('oficio', searchTrade);
     router.push(`/cliente?${params.toString()}`);
   };
-  const [perfil, setPerfil] = useState({
-    nombre: 'Diego Martínez',
-    ubicacion: 'Buenos Aires, Argentina',
-    verificado: true,
-    trabajosSolicitados: 24,
-    presupuestosRecibidos: 12,
-    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBgGxtS7RKDHLyY5y6lNafj3BeDhG6IkxEq9VqlAXNANvWQ0SDvyNg94IhrR7NRCH5ipJoHo-ctwaJAmv5swv96O-FKX13VwDYhVA7svtWDswJpd_GgvEvGZ2kobHqyW59sVXYLQijNtWB1mibdA-N4IwLEP7cqf3Pb_3NUsJU3Yh-tx-hpOfZwKqGR20Dm2ulgvMhMPYTc9gxHnptp4OxVKkIgJoTBpASBRrRy5nVKP5AIfU3iuTa-K100p7Pvb_fXmD1yrqla1Jas',
-    miembroDesde: 'Octubre 2022',
-    descripcion: 'Contratista recurrente con excelente historial de pagos y claridad en los requerimientos.'
+  const [perfil, setPerfil] = useState<any>({
+    nombre: '',
+    ubicacion: '',
+    verificado: false,
+    trabajosSolicitados: 0,
+    presupuestosRecibidos: 0,
+    avatar: '',
+    miembroDesde: '',
+    descripcion: ''
   });
 
-  // Cargar perfil dinámicamente desde localStorage
+  // Cargar perfil desde auth context
   useEffect(() => {
-    const saved = localStorage.getItem('oficiosya_cliente_perfil');
-    if (saved) {
-      try {
-        setPerfil(JSON.parse(saved));
-      } catch (e) {
-        console.error("Error al parsear el perfil del cliente:", e);
-      }
-    } else {
-      // Guardamos la semilla inicial
-      localStorage.setItem('oficiosya_cliente_perfil', JSON.stringify(perfil));
+    if (authProfile) {
+      setPerfil({
+        nombre: authProfile.nombre || '',
+        ubicacion: authProfile.ciudad && authProfile.provincia ? `${authProfile.ciudad}, ${authProfile.provincia}` : (authProfile.provincia || ''),
+        verificado: authProfile.verificado || false,
+        trabajosSolicitados: 0,
+        presupuestosRecibidos: 0,
+        avatar: authProfile.foto_perfil || authProfile.fotoPerfil || 'https://i.pravatar.cc/150?u=' + authProfile.id,
+        miembroDesde: authProfile.created_at ? new Date(authProfile.created_at).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' }) : 'Reciente',
+        descripcion: authProfile.biografia || ''
+      });
     }
-  }, []);
+  }, [authProfile]);
+
+  const handleLogout = async () => {
+    await doLogout();
+    router.replace('/login');
+  };
 
   return (
     <main className="min-h-screen bg-[#f7fafc] pb-24 md:pb-8 font-sans text-gray-900 selection:bg-[#0f4c81] selection:text-white relative animate-fade-in flex flex-col justify-between">
@@ -157,7 +175,7 @@ export default function PerfilClientePage() {
                   Centro de Ayuda / Soporte
                 </button>
                 <button 
-                  onClick={() => { setIsMenuOpen(false); router.push('/login'); }}
+                  onClick={handleLogout}
                   className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-red-600 hover:bg-red-50 rounded-xl transition-all"
                 >
                   <LogOut className="w-5 h-5" />
