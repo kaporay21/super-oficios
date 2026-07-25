@@ -192,11 +192,61 @@ export const dbHelper = {
 
   // --- AUTHENTICATION ---
   async login(email: string, password: string): Promise<any> {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    let { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    
+    // Auto-crear usuario administrador en Supabase Auth la primera vez que inicia sesión
+    if (error && email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+      try {
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { nombre: 'Gonzalo Humacata', rol: 'admin' }
+          }
+        });
+
+        if (!signUpErr && signUpData.user) {
+          // Crear perfil admin en la tabla 'perfiles'
+          await supabase.from('perfiles').upsert({
+            id: signUpData.user.id,
+            email: signUpData.user.email,
+            nombre: 'Gonzalo Humacata',
+            rol: 'admin',
+            verificado: true
+          });
+
+          // Reintentar inicio de sesión
+          const retrySignIn = await supabase.auth.signInWithPassword({ email, password });
+          if (retrySignIn.data && retrySignIn.data.user) {
+            data = retrySignIn.data;
+            error = null;
+          } else if (signUpData.session) {
+            data = { user: signUpData.user, session: signUpData.session };
+            error = null;
+          }
+        }
+      } catch (provisionErr) {
+        console.error("Error al auto-provisionar admin:", provisionErr);
+      }
+    }
+
     if (error) throw error;
     
     // Fetch profile from perfiles table
-    const { data: profile } = await supabase.from('perfiles').select('*').eq('id', data.user.id).single();
+    let { data: profile } = await supabase.from('perfiles').select('*').eq('id', data.user.id).single();
+    
+    // Si no existe perfil en la tabla 'perfiles' (por ejemplo para el admin), crearlo automáticamente
+    if (!profile && email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+      const adminProfile = {
+        id: data.user.id,
+        email: data.user.email,
+        nombre: 'Gonzalo Humacata',
+        rol: 'admin',
+        verificado: true
+      };
+      await supabase.from('perfiles').upsert(adminProfile);
+      profile = adminProfile;
+    }
     
     // Store profile in localStorage for backward compatibility
     if (profile) {

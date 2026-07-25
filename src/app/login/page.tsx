@@ -31,13 +31,14 @@ export default function LoginPage() {
       setSuccessMessage(true);
       
       setTimeout(() => {
-        // En mock mode user.rol existe, en supabase mode profile.rol existe
         const rol = profile?.rol || (user as any)?.rol;
 
         // Set confetti flag for login
         localStorage.setItem('show_confetti', 'true');
         
-        if (rol === 'profesional') {
+        if (rol === 'admin' || email.trim().toLowerCase() === 'gonzalohumacata1992@gmail.com') {
+          router.push('/admin');
+        } else if (rol === 'profesional') {
           router.push('/panel-profesional');
         } else {
           router.push('/cliente');
