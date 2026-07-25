@@ -230,16 +230,19 @@ export const dbHelper = {
       }
     }
 
-    if (error) throw error;
+    if (error || !data?.user) throw error || new Error('Error al iniciar sesión.');
     
+    const userId = data.user.id;
+    const userEmail = data.user.email || email;
+
     // Fetch profile from perfiles table
-    let { data: profile } = await supabase.from('perfiles').select('*').eq('id', data.user.id).single();
+    let { data: profile } = await supabase.from('perfiles').select('*').eq('id', userId).single();
     
     // Si no existe perfil en la tabla 'perfiles' (por ejemplo para el admin), crearlo automáticamente
     if (!profile && email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
       const adminProfile = {
-        id: data.user.id,
-        email: data.user.email,
+        id: userId,
+        email: userEmail,
         nombre: 'Gonzalo Humacata',
         rol: 'admin',
         verificado: true
