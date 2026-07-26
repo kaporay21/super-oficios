@@ -3,12 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
-  Bell, FileText, Star, Award, Zap, MessageSquare, 
+  Bell, FileText, Star, MessageSquare, 
   User, Home, Briefcase, PlusCircle, ArrowLeft, Loader2, ClipboardCheck
 } from 'lucide-react';
 import Logo from '@/components/Logo';
 import Tooltip from '@/components/Tooltip';
-import { HomeIcon, PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, ConfiguracionIcon, PublicarIcon } from '@/components/ModernIcons';
+import { HomeIcon, TrabajosIcon, MensajesIcon, ConfiguracionIcon, PublicarIcon } from '@/components/ModernIcons';
 
 import { useAuth } from '@/components/AuthContext';
 import { dbHelper } from '@/lib/supabase';
@@ -192,8 +192,7 @@ export default function CompararPresupuestosPage() {
                 Publicar Nuevo Trabajo
               </button>
             </div>
-          ) : (
-            presupuestos.map((presu) => (
+          ) : presupuestos.map((presu) => (
             <div key={presu.id} className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm relative overflow-hidden group hover:shadow-md transition-all duration-300">
               
               {/* Etiqueta Destacada */}

@@ -10,7 +10,7 @@ import {
 import Logo from '@/components/Logo';
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
-import { logout as doLogout } from '@/lib/supabase';
+import { dbHelper, logout as doLogout } from '@/lib/supabase';
 
 const PROVINCIAS = [
   'Buenos Aires',
@@ -70,6 +70,16 @@ function PerfilClienteContent() {
     router.push(`/cliente?${params.toString()}`);
   };
   const [misTrabajos, setMisTrabajos] = useState<any[]>([]);
+  const [perfil, setPerfil] = useState<any>({
+    nombre: '',
+    ubicacion: '',
+    verificado: false,
+    trabajosSolicitados: 0,
+    presupuestosRecibidos: 0,
+    avatar: '',
+    miembroDesde: '',
+    descripcion: ''
+  });
 
   // Cargar perfil y datos reales desde Supabase DB
   useEffect(() => {
