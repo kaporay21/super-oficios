@@ -27,8 +27,21 @@ const OFICIOS_PRECARGADOS = [
   'Plomería'
 ];
 
+import AuthGuard from '@/components/AuthGuard';
+import { useAuth } from '@/components/AuthContext';
+import { dbHelper } from '@/lib/supabase';
+
 export default function PerfilProfesionalPage() {
+  return (
+    <AuthGuard requiredRole="profesional">
+      <PerfilProfesionalContent />
+    </AuthGuard>
+  );
+}
+
+function PerfilProfesionalContent() {
   const router = useRouter();
+  const { user, profile: authProfile, refreshProfile } = useAuth();
   
   // Referencias para inputs de archivos ocultos
   const fotoPerfilRef = useRef<HTMLInputElement>(null);
@@ -54,72 +67,46 @@ export default function PerfilProfesionalPage() {
   const [dniFrenteFile, setDniFrenteFile] = useState<File | null>(null);
   const [dniDorsoFile, setDniDorsoFile] = useState<File | null>(null);
 
-  // Estado con los datos del usuario (Roberto Gómez, profesional logueado en la simulación)
+  // Estado con los datos del usuario real
   const [perfil, setPerfil] = useState({
-    nombre: 'Roberto Gómez',
-    correo: 'roberto@gmail.com',
-    telefono: '+54 9 381 123 4567',
-    cobertura: 'Radio de 15km - San Miguel de Tucumán',
-    especialidades: ['Plomería', 'Electricidad'],
-    estadoDNI: 'Pendiente', // 'Pendiente', 'En Revisión', 'Validado'
-    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD85pw1lweYxj9ZY758PmA-0PGM0q1wtL0dMOXlgKBD-eceH1UryKCy1mEoZ5jUVDHFU8WoXTd4EqiDhNzyh7eo-lvfyk9fk2EFupZ6Zvt_3y1dK2Hx72DsYSXEULFtCIOGfXFOQOyufsmHsfNTu3VL6NYRVMZ1WZzXYsCXr60o_ZHYewQ7-aozdL2YFUpmfxCHyFH4p7HMIjdTONG31bA0JhNzewarvNNZ_clLNY6vsyuFnGQL_lm3EW5Oz-SKQYNPYBh4oU178oXy',
-    certificados: [
-      { id: '1', nombre: 'Matrícula Gasista Profesional.pdf', archivoBase64: '' },
-      { id: '2', nombre: 'Curso Especialización Electricidad.png', archivoBase64: '' }
-    ],
+    nombre: '',
+    correo: '',
+    telefono: '',
+    cobertura: '',
+    especialidades: [] as string[],
+    estadoDNI: 'Pendiente',
+    avatar: '',
+    certificados: [] as any[],
     plan: 'Gratis',
     postulacionesUsadas: 0,
-    bio: 'Soy un profesional con más de 10 años de experiencia en plomería y gas. Me especializo en instalaciones de termotanques y reparaciones de urgencia. Trabajo limpio, rápido y con garantía en todos mis arreglos.',
+    bio: '',
     bannerUrl: 'https://images.unsplash.com/photo-1581092921461-eab62e97a780?q=80&w=2070&auto=format&fit=crop',
-    portafolio: [
-      { id: 1, url: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000&auto=format&fit=crop' },
-      { id: 2, url: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=1000&auto=format&fit=crop' },
-      { id: 3, url: 'https://images.unsplash.com/photo-1505798577917-a65157d3320a?q=80&w=1000&auto=format&fit=crop' }
-    ]
+    portafolio: [] as any[]
   });
 
-  // Cargar perfil desde localStorage al iniciar
+  // Cargar perfil real desde AuthContext
   useEffect(() => {
-    const stored = localStorage.getItem('oficiosya_profesional_perfil');
-    const defaultProfile = {
-      nombre: 'Roberto Gómez',
-      correo: 'roberto@gmail.com',
-      telefono: '+54 9 381 123 4567',
-      cobertura: 'Radio de 15km - San Miguel de Tucumán',
-      especialidades: ['Plomería', 'Electricidad'],
-      estadoDNI: 'Pendiente',
-      avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD85pw1lweYxj9ZY758PmA-0PGM0q1wtL0dMOXlgKBD-eceH1UryKCy1mEoZ5jUVDHFU8WoXTd4EqiDhNzyh7eo-lvfyk9fk2EFupZ6Zvt_3y1dK2Hx72DsYSXEULFtCIOGfXFOQOyufsmHsfNTu3VL6NYRVMZ1WZzXYsCXr60o_ZHYewQ7-aozdL2YFUpmfxCHyFH4p7HMIjdTONG31bA0JhNzewarvNNZ_clLNY6vsyuFnGQL_lm3EW5Oz-SKQYNPYBh4oU178oXy',
-      certificados: [
-        { id: '1', nombre: 'Matrícula Gasista Profesional.pdf', archivoBase64: '' },
-        { id: '2', nombre: 'Curso Especialización Electricidad.png', archivoBase64: '' }
-      ],
-      plan: 'Gratis',
-      postulacionesUsadas: 0,
-      bio: 'Soy un profesional con más de 10 años de experiencia en plomería y gas. Me especializo en instalaciones de termotanques y reparaciones de urgencia. Trabajo limpio, rápido y con garantía en todos mis arreglos.',
-      bannerUrl: 'https://images.unsplash.com/photo-1581092921461-eab62e97a780?q=80&w=2070&auto=format&fit=crop',
-      portafolio: [
-        { id: 1, url: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000&auto=format&fit=crop' },
-        { id: 2, url: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=1000&auto=format&fit=crop' },
-        { id: 3, url: 'https://images.unsplash.com/photo-1505798577917-a65157d3320a?q=80&w=1000&auto=format&fit=crop' }
-      ]
-    };
-
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      const merged = { ...defaultProfile, ...parsed };
-      setPerfil(merged);
-      localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(merged));
-    } else {
-      setPerfil(defaultProfile);
-      localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(defaultProfile));
+    if (authProfile) {
+      setPerfil({
+        nombre: authProfile.nombre || 'Profesional',
+        correo: authProfile.email || user?.email || '',
+        telefono: authProfile.telefono || '',
+        cobertura: authProfile.ciudad && authProfile.provincia ? `${authProfile.ciudad}, ${authProfile.provincia}` : (authProfile.provincia || 'Argentina'),
+        especialidades: authProfile.oficios || [],
+        estadoDNI: authProfile.estado_dni || (authProfile.verificado ? 'Validado' : 'Pendiente'),
+        avatar: authProfile.foto_perfil || authProfile.fotoPerfil || 'https://i.pravatar.cc/150?u=' + authProfile.id,
+        certificados: [],
+        plan: authProfile.plan || 'Gratis',
+        postulacionesUsadas: 0,
+        bio: authProfile.biografia || '',
+        bannerUrl: 'https://images.unsplash.com/photo-1581092921461-eab62e97a780?q=80&w=2070&auto=format&fit=crop',
+        portafolio: []
+      });
     }
-
-    const storedAlertas = localStorage.getItem('oficiosya_alertas_empleo_pro');
-    if (storedAlertas !== null) setAlertasEmpleo(JSON.parse(storedAlertas));
 
     const disabledVal = localStorage.getItem('oficiosya_disable_tooltips') === 'true';
     setTooltipsDisabled(disabledVal);
-  }, []);
+  }, [authProfile, user]);
 
   const handleToggleTooltips = () => {
     const newVal = !tooltipsDisabled;
@@ -132,16 +119,25 @@ export default function PerfilProfesionalPage() {
     setPerfil({ ...perfil, [e.target.name]: e.target.value });
   };
 
-  const handleGuardar = () => {
+  const handleGuardar = async () => {
+    if (!user) return;
     setIsSaving(true);
-    setTimeout(() => {
-      // Guardamos la configuración de forma persistente
-      localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(perfil));
-      localStorage.setItem('oficiosya_alertas_empleo_pro', JSON.stringify(alertasEmpleo));
+    try {
+      await dbHelper.updateProfile(user.id, {
+        nombre: perfil.nombre,
+        telefono: perfil.telefono,
+        biografia: perfil.bio,
+        foto_perfil: perfil.avatar,
+        oficios: perfil.especialidades
+      });
+      await refreshProfile();
       setIsSaving(false);
       setIsEditing(false);
-      alert('Perfil guardado exitosamente.');
-    }, 1000);
+    } catch (err: any) {
+      console.error("Error guardando perfil profesional:", err);
+      alert("Error al guardar perfil: " + (err.message || err));
+      setIsSaving(false);
+    }
   };
 
   // Manejo de Especialidades (Ahora desde lista precargada y persistido)

@@ -34,8 +34,8 @@ function ChatIndexContent() {
       try {
         const convs = await dbHelper.getConversaciones(user.id);
         setConversaciones(convs);
-      } catch (err) {
-        console.error('Error al cargar conversaciones:', err);
+      } catch (err: any) {
+        console.warn('Error al cargar conversaciones:', err?.message || err);
       } finally {
         setLoading(false);
       }

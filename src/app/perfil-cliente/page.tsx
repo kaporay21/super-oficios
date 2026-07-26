@@ -69,31 +69,35 @@ function PerfilClienteContent() {
     if (searchTrade && searchTrade !== 'todos') params.append('oficio', searchTrade);
     router.push(`/cliente?${params.toString()}`);
   };
-  const [perfil, setPerfil] = useState<any>({
-    nombre: '',
-    ubicacion: '',
-    verificado: false,
-    trabajosSolicitados: 0,
-    presupuestosRecibidos: 0,
-    avatar: '',
-    miembroDesde: '',
-    descripcion: ''
-  });
+  const [misTrabajos, setMisTrabajos] = useState<any[]>([]);
 
-  // Cargar perfil desde auth context
+  // Cargar perfil y datos reales desde Supabase DB
   useEffect(() => {
-    if (authProfile) {
-      setPerfil({
-        nombre: authProfile.nombre || '',
-        ubicacion: authProfile.ciudad && authProfile.provincia ? `${authProfile.ciudad}, ${authProfile.provincia}` : (authProfile.provincia || ''),
-        verificado: authProfile.verificado || false,
-        trabajosSolicitados: 0,
-        presupuestosRecibidos: 0,
-        avatar: authProfile.foto_perfil || authProfile.fotoPerfil || 'https://i.pravatar.cc/150?u=' + authProfile.id,
-        miembroDesde: authProfile.created_at ? new Date(authProfile.created_at).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' }) : 'Reciente',
-        descripcion: authProfile.biografia || ''
-      });
-    }
+    if (!authProfile) return;
+    const loadRealData = async () => {
+      try {
+        const allJobs = await dbHelper.getJobs();
+        const myJobs = allJobs.filter((j: any) => j.empleador === authProfile.nombre || j.empleador_id === authProfile.id);
+        setMisTrabajos(myJobs);
+
+        const allApps = await dbHelper.getAllPostulaciones();
+        const myApps = allApps.filter((p: any) => myJobs.some((j: any) => String(j.id) === String(p.empleoId)));
+
+        setPerfil({
+          nombre: authProfile.nombre || 'Cliente',
+          ubicacion: authProfile.ciudad && authProfile.provincia ? `${authProfile.ciudad}, ${authProfile.provincia}` : (authProfile.provincia || 'Argentina'),
+          verificado: authProfile.verificado || false,
+          trabajosSolicitados: myJobs.length,
+          presupuestosRecibidos: myApps.length,
+          avatar: authProfile.foto_perfil || authProfile.fotoPerfil || 'https://i.pravatar.cc/150?u=' + authProfile.id,
+          miembroDesde: authProfile.created_at ? new Date(authProfile.created_at).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' }) : 'Reciente',
+          descripcion: authProfile.biografia || ''
+        });
+      } catch (e) {
+        console.error("Error al cargar datos reales del cliente:", e);
+      }
+    };
+    loadRealData();
   }, [authProfile]);
 
   const handleLogout = async () => {
@@ -231,10 +235,10 @@ function PerfilClienteContent() {
                   </div>
                 )}
               </div>
-              <h2 className="text-xl font-bold text-[#00355f]">{perfil.nombre}</h2>
+              <h2 className="text-xl font-bold text-[#00355f]">{perfil.nombre || 'Cliente'}</h2>
               <div className="flex items-center justify-center gap-1 text-gray-500 text-xs font-semibold mt-1">
                 <MapPin className="w-3.5 h-3.5 text-[#fc8127]" />
-                <span>{perfil.ubicacion}</span>
+                <span>{perfil.ubicacion || 'Argentina'}</span>
               </div>
               <div className="mt-3 inline-flex items-center bg-green-50 text-green-700 px-3 py-1 rounded-full text-[10px] font-bold border border-green-200">
                 Cliente Verificado
@@ -266,30 +270,47 @@ function PerfilClienteContent() {
             <section>
               <div className="flex justify-between items-center mb-3">
                 <h3 className="font-bold text-gray-900">Trabajos en curso</h3>
-                <button onClick={() => router.push('/comparar-presupuestos')} className="text-xs font-bold text-[#00355f] hover:underline cursor-pointer">Ver presupuestos</button>
+                <button onClick={() => router.push('/muro-trabajos')} className="text-xs font-bold text-[#00355f] hover:underline cursor-pointer">Ver muro</button>
               </div>
               
-              <div 
-                onClick={() => router.push('/comparar-presupuestos')} 
-                className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm relative cursor-pointer hover:shadow-md hover:border-[#00355f]/30 transition-all duration-200 group"
-              >
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <h4 className="font-bold text-gray-900 group-hover:text-[#00355f] transition-colors">Reparación de Grifería</h4>
-                    <p className="text-xs text-gray-500 mt-0.5">Cocina principal - Goteo persistente</p>
-                  </div>
-                  <span className="bg-orange-100 text-[#fc8127] font-bold text-[9px] uppercase tracking-wider px-2 py-1 rounded-md">
-                    Pendiente
-                  </span>
+              {misTrabajos.length === 0 ? (
+                <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm text-center">
+                  <Wrench className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-gray-600">No tenés trabajos publicados aún</p>
+                  <p className="text-xs text-gray-400 mt-1 mb-3">Publicá tu primer requerimiento para recibir presupuestos de profesionales.</p>
+                  <button 
+                    onClick={() => router.push('/publicar-trabajo')}
+                    className="text-xs font-bold text-[#fc8127] hover:underline"
+                  >
+                    + Publicar Trabajo
+                  </button>
                 </div>
-                <div className="flex items-center justify-between mt-4 border-t border-gray-100 pt-4 text-gray-600">
-                  <div className="flex items-center gap-2">
-                    <Wrench className="w-4 h-4 text-[#00355f]" />
-                    <span className="text-xs font-semibold text-gray-700">Esperando confirmación de Pro</span>
+              ) : (
+                misTrabajos.slice(0, 3).map((job) => (
+                  <div 
+                    key={job.id}
+                    onClick={() => router.push('/muro-trabajos')} 
+                    className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm relative cursor-pointer hover:shadow-md hover:border-[#00355f]/30 transition-all duration-200 group mb-3"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <h4 className="font-bold text-gray-900 group-hover:text-[#00355f] transition-colors">{job.titulo}</h4>
+                        <p className="text-xs text-gray-500 mt-0.5">{job.ciudad ? `${job.ciudad}, ${job.provincia}` : job.categoria}</p>
+                      </div>
+                      <span className="bg-orange-100 text-[#fc8127] font-bold text-[9px] uppercase tracking-wider px-2 py-1 rounded-md">
+                        {job.urgencia || 'Activo'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between mt-4 border-t border-gray-100 pt-4 text-gray-600">
+                      <div className="flex items-center gap-2">
+                        <Wrench className="w-4 h-4 text-[#00355f]" />
+                        <span className="text-xs font-semibold text-gray-700">Publicado</span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-1 transition-transform" />
+                    </div>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-1 transition-transform" />
-                </div>
-              </div>
+                ))
+              )}
             </section>
 
             {/* --- BANNER BOLSA DE EMPLEO Y BUSCADOR --- */}

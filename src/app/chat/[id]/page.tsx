@@ -49,7 +49,7 @@ function ChatIDContent() {
           .single();
 
         if (convError || !conv) {
-          console.error('Conversación no encontrada');
+          console.warn('Conversación no encontrada:', convError?.message || convError);
           setLoading(false);
           return;
         }
@@ -66,8 +66,8 @@ function ChatIDContent() {
         // Mark messages as read
         await dbHelper.marcarMensajesLeidos(conversacionId, user.id);
 
-      } catch (err) {
-        console.error('Error al cargar chat:', err);
+      } catch (err: any) {
+        console.warn('Error al cargar chat:', err?.message || err);
       } finally {
         setLoading(false);
       }

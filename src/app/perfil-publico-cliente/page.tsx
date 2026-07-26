@@ -9,31 +9,50 @@ import {
 } from 'lucide-react';
 import Logo from '@/components/Logo';
 
+import { useAuth } from '@/components/AuthContext';
+import { dbHelper } from '@/lib/supabase';
+
 export default function PerfilPublicoClientePage() {
   const router = useRouter();
+  const { user, profile: authProfile } = useAuth();
   
   // Perfil del cliente dinámico
-  const [perfil, setPerfil] = useState({
-    nombre: 'Diego Martínez',
-    ubicacion: 'Buenos Aires, Argentina',
-    verificado: true,
-    trabajosSolicitados: 24,
-    presupuestosRecibidos: 12,
-    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBgGxtS7RKDHLyY5y6lNafj3BeDhG6IkxEq9VqlAXNANvWQ0SDvyNg94IhrR7NRCH5ipJoHo-ctwaJAmv5swv96O-FKX13VwDYhVA7svtWDswJpd_GgvEvGZ2kobHqyW59sVXYLQijNtWB1mibdA-N4IwLEP7cqf3Pb_3NUsJU3Yh-tx-hpOfZwKqGR20Dm2ulgvMhMPYTc9gxHnptp4OxVKkIgJoTBpASBRrRy5nVKP5AIfU3iuTa-K100p7Pvb_fXmD1yrqla1Jas',
-    miembroDesde: 'Octubre 2022',
-    descripcion: 'Contratista recurrente con excelente historial de pagos y claridad en los requerimientos. Especializado en remodelaciones residenciales.'
+  const [perfil, setPerfil] = useState<any>({
+    nombre: 'Cliente',
+    ubicacion: 'Argentina',
+    verificado: false,
+    trabajosSolicitados: 0,
+    presupuestosRecibidos: 0,
+    avatar: 'https://i.pravatar.cc/150?u=user',
+    miembroDesde: 'Reciente',
+    descripcion: ''
   });
 
   useEffect(() => {
-    const saved = localStorage.getItem('oficiosya_cliente_perfil');
-    if (saved) {
+    if (!authProfile) return;
+    const loadRealClientProfile = async () => {
       try {
-        setPerfil(JSON.parse(saved));
+        const allJobs = await dbHelper.getJobs();
+        const myJobs = allJobs.filter((j: any) => j.empleador === authProfile.nombre || j.empleador_id === authProfile.id);
+        const allApps = await dbHelper.getAllPostulaciones();
+        const myApps = allApps.filter((p: any) => myJobs.some((j: any) => String(j.id) === String(p.empleoId)));
+
+        setPerfil({
+          nombre: authProfile.nombre || 'Cliente',
+          ubicacion: authProfile.ciudad && authProfile.provincia ? `${authProfile.ciudad}, ${authProfile.provincia}` : (authProfile.provincia || 'Argentina'),
+          verificado: authProfile.verificado || false,
+          trabajosSolicitados: myJobs.length,
+          presupuestosRecibidos: myApps.length,
+          avatar: authProfile.foto_perfil || authProfile.fotoPerfil || 'https://i.pravatar.cc/150?u=' + authProfile.id,
+          miembroDesde: authProfile.created_at ? new Date(authProfile.created_at).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' }) : 'Reciente',
+          descripcion: authProfile.biografia || 'Cliente registrado en la plataforma OficiosYa.'
+        });
       } catch (e) {
-        console.error("Error al parsear el perfil dinámico en el público:", e);
+        console.error("Error al cargar perfil público de cliente:", e);
       }
-    }
-  }, []);
+    };
+    loadRealClientProfile();
+  }, [authProfile]);
 
   return (
     <div className="bg-[#f7fafc] text-[#181c1e] min-h-screen flex flex-col font-sans md:pl-20 pb-24 md:pb-0 selection:bg-[#0f4c81] selection:text-white">

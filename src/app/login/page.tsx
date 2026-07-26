@@ -4,10 +4,13 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Logo from '@/components/Logo';
 import { Mail, Lock, Eye, EyeOff, Shield, Loader2 } from 'lucide-react';
-import { dbHelper } from '@/lib/supabase';
+import { dbHelper, isEmailAdmin } from '@/lib/supabase';
+
+import { useAuth } from '@/components/AuthContext';
 
 export default function LoginPage() {
   const router = useRouter();
+  const { refreshProfile } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,6 +31,7 @@ export default function LoginPage() {
 
     try {
       const { user, profile } = await dbHelper.login(email, password);
+      await refreshProfile();
       setSuccessMessage(true);
       
       setTimeout(() => {
@@ -36,14 +40,15 @@ export default function LoginPage() {
         // Set confetti flag for login
         localStorage.setItem('show_confetti', 'true');
         
-        if (rol === 'admin' || email.trim().toLowerCase() === 'gonzalohumacata1992@gmail.com') {
-          router.push('/admin');
+        let targetPath = '/cliente';
+        if (rol === 'admin' || isEmailAdmin(email)) {
+          targetPath = '/admin';
         } else if (rol === 'profesional') {
-          router.push('/panel-profesional');
-        } else {
-          router.push('/cliente');
+          targetPath = '/panel-profesional';
         }
-      }, 1000);
+
+        window.location.href = targetPath;
+      }, 600);
     } catch (err: any) {
       setError(err.message || 'Error al iniciar sesión.');
       setIsLoading(false);

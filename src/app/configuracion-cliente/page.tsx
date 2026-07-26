@@ -32,8 +32,12 @@ const PROVINCIAS_Y_CIUDADES: Record<string, string[]> = {
   'Tucumán': ['San Miguel de Tucumán', 'Yerba Buena', 'Tafí Viejo', 'Concepción', 'Aguilares', 'Banda del Río Salí']
 };
 
+import { useAuth } from '@/components/AuthContext';
+import { dbHelper } from '@/lib/supabase';
+
 export default function ConfiguracionClientePage() {
   const router = useRouter();
+  const { user, profile: authProfile, refreshProfile } = useAuth();
   const [nombre, setNombre] = useState('');
   const [provincia, setProvincia] = useState('');
   const [ciudad, setCiudad] = useState('');
@@ -44,40 +48,14 @@ export default function ConfiguracionClientePage() {
   const [alertasEmpleo, setAlertasEmpleo] = useState(true);
 
   useEffect(() => {
-    const saved = localStorage.getItem('oficiosya_cliente_perfil');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setNombre(parsed.nombre || 'Diego Martínez');
-        setDescripcion(parsed.descripcion || '');
-        setAvatar(parsed.avatar || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBgGxtS7RKDHLyY5y6lNafj3BeDhG6IkxEq9VqlAXNANvWQ0SDvyNg94IhrR7NRCH5ipJoHo-ctwaJAmv5swv96O-FKX13VwDYhVA7svtWDswJpd_GgvEvGZ2kobHqyW59sVXYLQijNtWB1mibdA-N4IwLEP7cqf3Pb_3NUsJU3Yh-tx-hpOfZwKqGR20Dm2ulgvMhMPYTc9gxHnptp4OxVKkIgJoTBpASBRrRy5nVKP5AIfU3iuTa-K100p7Pvb_fXmD1yrqla1Jas');
-        
-        // Tratar de parsear ubicación (ej: "Palermo, CABA (Ciudad Autónoma de Buenos Aires)")
-        if (parsed.ubicacion) {
-          const parts = parsed.ubicacion.split(', ');
-          if (parts.length === 2) {
-            setCiudad(parts[0]);
-            setProvincia(parts[1]);
-          } else {
-            setProvincia('CABA (Ciudad Autónoma de Buenos Aires)');
-            setCiudad('Palermo');
-          }
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    } else {
-      // Valores por defecto
-      setNombre('Diego Martínez');
-      setProvincia('CABA (Ciudad Autónoma de Buenos Aires)');
-      setCiudad('Palermo');
-      setDescripcion('Contratista recurrente con excelente historial de pagos y claridad en los requerimientos.');
-      setAvatar('https://lh3.googleusercontent.com/aida-public/AB6AXuBgGxtS7RKDHLyY5y6lNafj3BeDhG6IkxEq9VqlAXNANvWQ0SDvyNg94IhrR7NRCH5ipJoHo-ctwaJAmv5swv96O-FKX13VwDYhVA7svtWDswJpd_GgvEvGZ2kobHqyW59sVXYLQijNtWB1mibdA-N4IwLEP7cqf3Pb_3NUsJU3Yh-tx-hpOfZwKqGR20Dm2ulgvMhMPYTc9gxHnptp4OxVKkIgJoTBpASBRrRy5nVKP5AIfU3iuTa-K100p7Pvb_fXmD1yrqla1Jas');
+    if (authProfile) {
+      setNombre(authProfile.nombre || '');
+      setProvincia(authProfile.provincia || '');
+      setCiudad(authProfile.ciudad || '');
+      setDescripcion(authProfile.biografia || '');
+      setAvatar(authProfile.foto_perfil || authProfile.fotoPerfil || 'https://i.pravatar.cc/150?u=' + authProfile.id);
     }
-
-    const storedAlertas = localStorage.getItem('oficiosya_alertas_empleo_cliente');
-    if (storedAlertas !== null) setAlertasEmpleo(JSON.parse(storedAlertas));
-  }, []);
+  }, [authProfile]);
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -97,32 +75,29 @@ export default function ConfiguracionClientePage() {
     }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
     setSaving(true);
 
-    const updated = {
-      nombre,
-      ubicacion: `${ciudad}, ${provincia}`,
-      verificado: true,
-      trabajosSolicitados: 24,
-      presupuestosRecibidos: 12,
-      avatar,
-      miembroDesde: 'Octubre 2022',
-      descripcion
-    };
+    try {
+      await dbHelper.updateProfile(user.id, {
+        nombre,
+        provincia,
+        ciudad,
+        biografia: descripcion,
+        foto_perfil: avatar,
+      });
 
-    localStorage.setItem('oficiosya_cliente_perfil', JSON.stringify(updated));
-    localStorage.setItem('oficiosya_alertas_empleo_cliente', JSON.stringify(alertasEmpleo));
-
-    setTimeout(() => {
+      await refreshProfile();
       setSaving(false);
       setSuccess(true);
-      setTimeout(() => {
-        setSuccess(false);
-        router.push('/perfil-cliente');
-      }, 1500);
-    }, 800);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      console.error("Error guardando perfil cliente en Supabase:", err);
+      alert("Error al guardar cambios: " + (err.message || err));
+      setSaving(false);
+    }
   };
 
   return (

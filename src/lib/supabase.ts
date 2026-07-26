@@ -12,8 +12,16 @@ if (!supabaseUrl || !supabaseAnonKey) {
 // Inicialización del cliente de Supabase
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Email del administrador
-const ADMIN_EMAIL = 'gonzalohumacata1992@gmail.com';
+// Emails de administradores
+export const ADMIN_EMAILS = [
+  'gonzalohumacata1992@gmail.com',
+  'gonzalo@gmail.com'
+];
+
+export function isEmailAdmin(email?: string | null): boolean {
+  if (!email) return false;
+  return ADMIN_EMAILS.includes(email.trim().toLowerCase());
+}
 
 // ============================================================
 // AUTH HELPERS
@@ -36,12 +44,26 @@ export async function getCurrentProfile() {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const { data, error } = await supabase.from('perfiles').select('*').eq('id', user.id).single();
-  if (error) {
-    console.error('Error al obtener perfil:', error);
-    return null;
+  const { data: profile } = await supabase.from('perfiles').select('*').eq('id', user.id).maybeSingle();
+  
+  if (!profile && isEmailAdmin(user.email)) {
+    const adminProfile = {
+      id: user.id,
+      email: user.email,
+      nombre: 'Gonzalo Humacata',
+      rol: 'cliente',
+      verificado: true,
+      plan: 'Pro'
+    };
+    await supabase.from('perfiles').upsert(adminProfile);
+    return { ...adminProfile, rol: 'admin' };
   }
-  return data;
+
+  if (profile && isEmailAdmin(user.email)) {
+    return { ...profile, rol: 'admin' };
+  }
+
+  return profile;
 }
 
 /**
@@ -50,11 +72,13 @@ export async function getCurrentProfile() {
 export async function isAdmin(): Promise<boolean> {
   const user = await getCurrentUser();
   if (!user) return false;
-  return user.email === ADMIN_EMAIL;
+  if (isEmailAdmin(user.email)) return true;
+  const profile = await getCurrentProfile();
+  return profile?.rol === 'admin';
 }
 
 /**
- * Cierra sesión completa: Supabase Auth + limpieza de localStorage.
+ * Cierra sesión completa en Supabase Auth.
  */
 export async function logout() {
   await supabase.auth.signOut();
@@ -62,7 +86,7 @@ export async function logout() {
 }
 
 /**
- * Limpia todos los datos de oficiosya en localStorage.
+ * Limpia la caché local de la app en localStorage.
  */
 export function clearAllLocalData() {
   if (typeof window === 'undefined') return;
@@ -70,26 +94,13 @@ export function clearAllLocalData() {
     'oficiosya_session',
     'oficiosya_cliente_perfil',
     'oficiosya_profesional_perfil',
-    'oficiosya_profiles',
-    'oficiosya_admin_users',
-    'oficiosya_resenas',
-    'oficiosya_muro_jobs',
-    'oficiosya_empleos',
-    'oficiosya_postulaciones',
-    'oficiosya_tickets',
-    'oficiosya_clientes_v2',
-    'oficiosya_obras_v2',
-    'oficiosya_presupuestos_guardados',
-    'oficiosya_user_notifications',
-    'oficiosya_trabajos_activos',
-    'oficiosya_calendar_notes',
     'show_confetti',
   ];
   keysToRemove.forEach(key => localStorage.removeItem(key));
 }
 
 // ============================================================
-// DB HELPER — Solo Supabase (sin modo mock)
+// DB HELPER — Solo Supabase (100% Real)
 // ============================================================
 
 export const dbHelper = {
@@ -102,7 +113,7 @@ export const dbHelper = {
       id: p.id,
       name: p.nombre,
       email: p.email,
-      role: p.rol === 'profesional' ? 'Profesional' : 'Cliente',
+      role: isEmailAdmin(p.email) || p.rol === 'admin' ? 'Admin' : (p.rol === 'profesional' ? 'Profesional' : 'Cliente'),
       plan: p.plan || 'Gratis',
       status: 'Activo',
       date: p.created_at ? new Date(p.created_at).toLocaleDateString() : 'Reciente',
@@ -119,21 +130,20 @@ export const dbHelper = {
       oficios: p.oficios || [],
       fotoPerfil: p.foto_perfil || '',
       nombre: p.nombre,
-      rol: p.rol,
+      rol: isEmailAdmin(p.email) ? 'admin' : p.rol,
     }));
   },
 
   async getUserProfile(id: string): Promise<any> {
-    const { data, error } = await supabase.from('perfiles').select('*').eq('id', id).single();
-    if (error) return null;
-    if (!data) return null;
+    const { data, error } = await supabase.from('perfiles').select('*').eq('id', id).maybeSingle();
+    if (error || !data) return null;
     return {
       id: data.id,
       name: data.nombre,
       nombre: data.nombre,
       email: data.email,
-      role: data.rol === 'profesional' ? 'Profesional' : 'Cliente',
-      rol: data.rol,
+      role: isEmailAdmin(data.email) || data.rol === 'admin' ? 'Admin' : (data.rol === 'profesional' ? 'Profesional' : 'Cliente'),
+      rol: isEmailAdmin(data.email) ? 'admin' : data.rol,
       plan: data.plan || 'Gratis',
       status: 'Activo',
       date: data.created_at ? new Date(data.created_at).toLocaleDateString() : 'Reciente',
@@ -170,7 +180,6 @@ export const dbHelper = {
   },
 
   async updateUserStatus(id: string, status: string): Promise<void> {
-    // Status tracking - could be added to perfiles table if needed
     console.log(`Status update for ${id}: ${status}`);
   },
 
@@ -190,93 +199,35 @@ export const dbHelper = {
     if (error) throw error;
   },
 
-  // --- AUTHENTICATION ---
+  // --- AUTHENTICATION REAL ---
   async login(email: string, password: string): Promise<any> {
-    let { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const normalizedEmail = email.trim().toLowerCase();
     
-    // Auto-crear usuario administrador en Supabase Auth la primera vez que inicia sesión
-    if (error && email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
-      try {
-        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { nombre: 'Gonzalo Humacata', rol: 'admin' }
-          }
-        });
-
-        if (!signUpErr && signUpData.user) {
-          // Crear perfil admin en la tabla 'perfiles'
-          await supabase.from('perfiles').upsert({
-            id: signUpData.user.id,
-            email: signUpData.user.email,
-            nombre: 'Gonzalo Humacata',
-            rol: 'admin',
-            verificado: true
-          });
-
-          // Reintentar inicio de sesión
-          const retrySignIn = await supabase.auth.signInWithPassword({ email, password });
-          if (retrySignIn.data && retrySignIn.data.user) {
-            data = retrySignIn.data;
-            error = null;
-          } else if (signUpData.session) {
-            data = { user: signUpData.user, session: signUpData.session };
-            error = null;
-          }
-        }
-      } catch (provisionErr) {
-        console.error("Error al auto-provisionar admin:", provisionErr);
-      }
+    // Autenticar con Supabase Auth REAL
+    const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+    if (error || !data?.user) {
+      throw error || new Error('Credenciales inválidas.');
     }
 
-    if (error || !data?.user) throw error || new Error('Error al iniciar sesión.');
-    
     const userId = data.user.id;
-    const userEmail = data.user.email || email;
+    const userEmail = data.user.email || normalizedEmail;
 
-    // Fetch profile from perfiles table
-    let { data: profile } = await supabase.from('perfiles').select('*').eq('id', userId).single();
+    // Obtener perfil real de la tabla 'perfiles' de Supabase
+    let { data: profile } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
     
-    // Si no existe perfil en la tabla 'perfiles' (por ejemplo para el admin), crearlo automáticamente
-    if (!profile && email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+    // Si es un admin y no existe perfil aún, crearlo en la tabla real de Supabase
+    if (!profile && isEmailAdmin(userEmail)) {
       const adminProfile = {
         id: userId,
         email: userEmail,
         nombre: 'Gonzalo Humacata',
-        rol: 'admin',
+        rol: 'cliente',
         verificado: true
       };
       await supabase.from('perfiles').upsert(adminProfile);
-      profile = adminProfile;
-    }
-    
-    // Store profile in localStorage for backward compatibility
-    if (profile) {
-      const profileData = {
-        id: profile.id,
-        nombre: profile.nombre,
-        email: profile.email,
-        telefono: profile.telefono,
-        rol: profile.rol,
-        oficios: profile.oficios || [],
-        fotoPerfil: profile.foto_perfil || '',
-        provincia: profile.provincia || '',
-        ciudad: profile.ciudad || '',
-        biografia: profile.biografia || '',
-        experiencia: profile.experiencia || '',
-        plan: profile.plan || 'Gratis',
-        verificado: profile.verificado || false,
-      };
-      
-      if (profile.rol === 'profesional') {
-        localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(profileData));
-        localStorage.removeItem('oficiosya_cliente_perfil');
-      } else {
-        localStorage.setItem('oficiosya_cliente_perfil', JSON.stringify(profileData));
-        localStorage.removeItem('oficiosya_profesional_perfil');
-      }
-      localStorage.setItem('oficiosya_session', JSON.stringify(profileData));
+      profile = { ...adminProfile, rol: 'admin' };
+    } else if (profile && isEmailAdmin(userEmail)) {
+      profile = { ...profile, rol: 'admin' };
     }
     
     return { user: data.user, profile };
@@ -639,7 +590,7 @@ export const dbHelper = {
       .maybeSingle();
 
     if (searchError) {
-      console.error('Error buscando conversación:', searchError);
+      console.warn('Error buscando conversación:', searchError.message || JSON.stringify(searchError) || searchError);
     }
 
     if (existing) return existing;
@@ -664,18 +615,20 @@ export const dbHelper = {
    * Obtiene todas las conversaciones de un usuario con info del interlocutor.
    */
   async getConversaciones(userId: string): Promise<any[]> {
-    const { data, error } = await supabase
-      .from('conversaciones')
-      .select('*')
-      .or(`usuario1_id.eq.${userId},usuario2_id.eq.${userId}`)
-      .order('ultimo_mensaje_fecha', { ascending: false });
+    if (!userId) return [];
+    try {
+      const { data, error } = await supabase
+        .from('conversaciones')
+        .select('*')
+        .or(`usuario1_id.eq.${userId},usuario2_id.eq.${userId}`)
+        .order('ultimo_mensaje_fecha', { ascending: false });
 
-    if (error) {
-      console.error('Error al cargar conversaciones:', error);
-      return [];
-    }
+      if (error) {
+        console.warn('Error al cargar conversaciones:', error.message || JSON.stringify(error) || error);
+        return [];
+      }
 
-    if (!data || data.length === 0) return [];
+      if (!data || data.length === 0) return [];
 
     // Enrich with partner profile info
     const enriched = await Promise.all(data.map(async (conv) => {
@@ -702,13 +655,18 @@ export const dbHelper = {
       };
     }));
 
-    return enriched;
+      return enriched;
+    } catch (err: any) {
+      console.warn('Error general al cargar conversaciones:', err?.message || JSON.stringify(err) || err);
+      return [];
+    }
   },
 
   /**
    * Obtiene los mensajes de una conversación.
    */
   async getMensajes(conversacionId: string): Promise<any[]> {
+    if (!conversacionId) return [];
     const { data, error } = await supabase
       .from('mensajes')
       .select('*')
@@ -716,7 +674,7 @@ export const dbHelper = {
       .order('created_at', { ascending: true });
 
     if (error) {
-      console.error('Error al cargar mensajes:', error);
+      console.warn('Error al cargar mensajes:', error.message || JSON.stringify(error) || error);
       return [];
     }
 
@@ -775,29 +733,57 @@ export const dbHelper = {
    */
   async cleanAllData(): Promise<{ success: boolean; errors: string[] }> {
     const errors: string[] = [];
+    const currentUser = await getCurrentUser();
     
     const tables = [
       'mensajes',
+      'messages',
       'conversaciones',
       'reviews',
       'postulaciones',
+      'job_postings',
       'trabajos',
+      'jobs',
       'tickets_soporte',
       'clientes',
       'obras',
       'presupuestos',
-      // perfiles se borra al final porque tiene foreign keys
+      'quotes',
+      'quote_items',
+      'profesionales',
+      'portfolio_photos',
+      'profiles',
       'perfiles',
     ];
 
     for (const table of tables) {
       try {
-        const { error } = await supabase.from(table).delete().neq('id', '___never_match___');
+        // Usar uuid válido o .not('id', 'is', null) para evitar error de sintaxis 'invalid input syntax for type uuid'
+        const { error } = await supabase.from(table).delete().neq('id', '00000000-0000-0000-0000-000000000000');
         if (error) {
-          errors.push(`${table}: ${error.message}`);
+          // Reintentar con sintaxis IS NOT NULL si la columna o la tabla requiere otra consulta
+          const { error: err2 } = await supabase.from(table).delete().not('id', 'is', null);
+          if (err2) {
+            errors.push(`${table}: ${err2.message}`);
+          }
         }
       } catch (err: any) {
         errors.push(`${table}: ${err.message}`);
+      }
+    }
+
+    // Re-crear / asegurar perfil admin para que no quede bloqueado
+    if (currentUser) {
+      try {
+        await supabase.from('perfiles').upsert({
+          id: currentUser.id,
+          email: currentUser.email,
+          nombre: currentUser.user_metadata?.nombre || 'Gonzalo Humacata',
+          rol: 'admin',
+          verificado: true
+        });
+      } catch (e) {
+        console.warn('Error re-creando perfil admin tras vaciar:', e);
       }
     }
 

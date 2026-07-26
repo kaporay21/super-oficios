@@ -33,9 +33,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshProfile = async () => {
-    const currentUser = await getCurrentUser();
-    if (currentUser) {
-      await loadProfile(currentUser);
+    setLoading(true);
+    try {
+      const currentUser = await getCurrentUser();
+      setUser(currentUser);
+      if (currentUser) {
+        const profileData = await getCurrentProfile();
+        setProfile(profileData);
+      } else {
+        setProfile(null);
+      }
+    } catch (err) {
+      console.error('Error refreshing profile:', err);
+    } finally {
+      setLoading(false);
     }
   };
 

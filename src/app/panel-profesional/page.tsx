@@ -535,75 +535,33 @@ function PanelProfesionalContent() {
               <button onClick={() => router.push('/mis-trabajos')} className="text-[#00355f] font-bold text-sm hover:underline">Ver todos</button>
             </div>
             
-            <div className="space-y-4" onClick={() => router.push('/mis-trabajos')}>
-              {/* Job Card 1 */}
-              <div className="bg-white rounded-2xl border border-gray-200 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:shadow-md transition-shadow cursor-pointer">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center shrink-0">
-                    <Zap className="w-6 h-6 text-[#00355f]" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900 text-base md:text-lg">Instalación Eléctrica Residencial</h4>
-                    <p className="text-sm text-gray-500">Calle Falsa 123, CABA</p>
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <Clock className="w-4 h-4 text-gray-400" />
-                      <span className="text-xs font-bold text-gray-600">Hoy, 14:00hs</span>
+            <div className="space-y-4">
+              {stats.activeJobs === 0 ? (
+                <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center shadow-sm">
+                  <Wrench className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <h4 className="font-bold text-gray-700 text-base mb-1">No tenés trabajos activos en curso</h4>
+                  <p className="text-xs text-gray-400 max-w-sm mx-auto mb-4">Postulate a búsquedas laborales en el Muro para conseguir tus primeros clientes.</p>
+                  <button 
+                    onClick={() => router.push('/muro-trabajos')} 
+                    className="bg-[#00355f] text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-[#0f4c81]"
+                  >
+                    Explorar Muro de Trabajos
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center justify-between cursor-pointer" onClick={() => router.push('/mis-trabajos')}>
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-green-50 text-green-700 rounded-xl flex items-center justify-center">
+                      <Wrench className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-gray-900">Tenés {stats.activeJobs} trabajo(s) activo(s)</h4>
+                      <p className="text-xs text-gray-500">Hacé clic para ver el detalle en tus trabajos.</p>
                     </div>
                   </div>
-                </div>
-                <div className="flex items-center justify-between md:justify-end w-full md:w-auto gap-4">
-                  <span className="px-3 py-1 bg-green-100 text-green-700 font-bold text-[11px] rounded-full flex items-center gap-1.5">
-                    <span className="w-2 h-2 bg-green-500 rounded-full"></span> Confirmado
-                  </span>
                   <ChevronRight className="w-5 h-5 text-gray-400" />
                 </div>
-              </div>
-
-              {/* Job Card 2 */}
-              <div className="bg-white rounded-2xl border border-gray-200 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:shadow-md transition-shadow cursor-pointer">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center shrink-0">
-                    <Wrench className="w-6 h-6 text-[#00355f]" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900 text-base md:text-lg">Reparación de Cañería Cocina</h4>
-                    <p className="text-sm text-gray-500">Av. Corrientes 4500, Almagro</p>
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <Clock className="w-4 h-4 text-gray-400" />
-                      <span className="text-xs font-bold text-gray-600">Mañana, 09:30hs</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between md:justify-end w-full md:w-auto gap-4">
-                  <span className="px-3 py-1 bg-orange-100 text-[#fc8127] font-bold text-[11px] rounded-full flex items-center gap-1.5">
-                    <span className="w-2 h-2 bg-[#fc8127] rounded-full animate-pulse"></span> Pendiente Inicio
-                  </span>
-                  <ChevronRight className="w-5 h-5 text-gray-400" />
-                </div>
-              </div>
-
-              {/* Job Card 3 */}
-              <div className="bg-white rounded-2xl border border-gray-200 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:shadow-md transition-shadow cursor-pointer">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center shrink-0">
-                    <Paintbrush className="w-6 h-6 text-[#00355f]" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900 text-base md:text-lg">Pintura Fachada Edificio</h4>
-                    <p className="text-sm text-gray-500">Rivadavia 12000, Liniers</p>
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <Clock className="w-4 h-4 text-gray-400" />
-                      <span className="text-xs font-bold text-gray-600">Lunes 22, 08:00hs</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between md:justify-end w-full md:w-auto gap-4">
-                  <span className="px-3 py-1 bg-gray-100 text-gray-600 font-bold text-[11px] rounded-full">
-                    Presupuestado
-                  </span>
-                  <ChevronRight className="w-5 h-5 text-gray-400" />
-                </div>
-              </div>
+              )}
             </div>
           </section>
 

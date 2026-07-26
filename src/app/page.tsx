@@ -367,99 +367,7 @@ export default function LandingPage() {
 
           </div>
         </div>
-      </section>      {/* === NUEVA SECCIÓN: BOLSA DE EMPLEO CTA === */}
-      <section className="py-12 px-4 md:px-12 max-w-7xl mx-auto">
-        <div className="bg-gradient-to-r from-[#00355f] to-[#1a5fa8] rounded-3xl overflow-hidden relative p-8 md:p-12 shadow-2xl flex flex-col md:flex-row items-center gap-10">
-          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-          
-          <div className="relative z-10 flex-1 text-center md:text-left">
-            <div className="inline-flex items-center gap-2 bg-[#fc8127] text-white px-4 py-1.5 rounded-full text-[10px] uppercase font-extrabold tracking-widest mb-4 shadow-md">
-              <Briefcase className="w-4 h-4" /> Nuevo Ecosistema Laboral
-            </div>
-            <h3 className="text-3xl md:text-4xl font-extrabold text-white mb-4 leading-tight">
-              Bolsa de Empleo <span className="text-[#fc8127]">OficiosYa</span>
-            </h3>
-            <p className="text-blue-100 mb-8 max-w-lg text-base leading-relaxed">
-              ¿Buscás trabajo en el rubro? ¿Necesitás ayudantes para una obra grande? 
-              Conectamos profesionales y ayudantes en todo el país.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
-              <button
-                onClick={() => router.push('/bolsa-empleo')}
-                className="bg-white hover:bg-gray-50 text-[#00355f] font-bold px-8 py-3.5 rounded-xl transition-all shadow-lg active:scale-95 text-sm flex items-center justify-center gap-2 group"
-              >
-                Explorar Ofertas Laborales
-                <TrendingUp className="w-4 h-4 text-[#fc8127] group-hover:scale-110 transition-transform" />
-              </button>
-            </div>
-          </div>
-          
-          <div className="relative z-10 shrink-0 w-full md:w-auto flex justify-center hidden md:flex">
-            <div className="bg-white/10 backdrop-blur-md p-5 rounded-2xl border border-white/20 shadow-xl w-64 transform rotate-2 hover:rotate-0 transition-transform">
-              <div className="flex gap-3 mb-3">
-                <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm">
-                  <span className="text-xl">👷🏻‍♂️</span>
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-white">Ayudante Plomero</p>
-                  <p className="text-xs text-blue-200">Constructora Gómez</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-blue-100 mb-4 bg-black/20 p-2 rounded-lg">
-                <MapPin className="w-3.5 h-3.5 text-[#fc8127]" /> Córdoba, Centro
-              </div>
-              <button className="w-full py-2 bg-[#fc8127] text-white rounded-lg text-xs font-bold hover:bg-[#e67320] transition-colors">
-                Ver Empleo
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-
-
-      {/* ¿Cómo funciona? */}
-      <section className="py-24 bg-gray-50 overflow-hidden relative">
-        <div className="max-w-5xl mx-auto px-4 relative z-10">
-          <div className="text-center mb-16">
-            <h3 className="text-3xl md:text-4xl font-extrabold text-[#00355f] mb-3">¿Cómo funciona Oficios<span className="text-[#fc8127]">Ya</span>?</h3>
-            <p className="text-gray-500 text-lg">Tu solución en 3 simples pasos</p>
-          </div>
-
-          <div className="flex flex-col md:flex-row items-center justify-between gap-12 relative">
-            <div className="flex flex-col items-center text-center max-w-[280px] z-10 bg-gray-50">
-              <div className="w-24 h-24 rounded-3xl bg-white shadow-xl flex items-center justify-center mb-6 rotate-3 hover:rotate-0 transition-transform border border-gray-100 relative">
-                <Search className="w-10 h-10 text-[#00355f]" />
-                <div className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-[#fc8127] text-white flex items-center justify-center font-bold text-sm shadow-md">1</div>
-              </div>
-              <h5 className="font-extrabold text-xl mb-3 text-gray-900">Buscá el servicio</h5>
-              <p className="text-gray-500 text-sm leading-relaxed">Explorá profesionales calificados y verificados cerca de tu ubicación.</p>
-            </div>
-
-            <div className="flex flex-col items-center text-center max-w-[280px] z-10 bg-gray-50">
-              <div className="w-24 h-24 rounded-3xl bg-white shadow-xl flex items-center justify-center mb-6 -rotate-3 hover:rotate-0 transition-transform border border-gray-100 relative">
-                <MessageSquare className="w-10 h-10 text-[#fc8127]" />
-                <div className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-[#fc8127] text-white flex items-center justify-center font-bold text-sm shadow-md">2</div>
-              </div>
-              <h5 className="font-extrabold text-xl mb-3 text-gray-900">Chateá y Coordiná</h5>
-              <p className="text-gray-500 text-sm leading-relaxed">Hablá directamente, pedí presupuestos y coordiná el horario ideal.</p>
-            </div>
-
-            <div className="flex flex-col items-center text-center max-w-[280px] z-10 bg-gray-50">
-              <div className="w-24 h-24 rounded-3xl bg-white shadow-xl flex items-center justify-center mb-6 rotate-3 hover:rotate-0 transition-transform border border-gray-100 relative">
-                <CheckCircle className="w-10 h-10 text-green-500" />
-                <div className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-[#fc8127] text-white flex items-center justify-center font-bold text-sm shadow-md">3</div>
-              </div>
-              <h5 className="font-extrabold text-xl mb-3 text-gray-900">Calificá la solución</h5>
-              <p className="text-gray-500 text-sm leading-relaxed">Pagá de forma segura y ayudá a la comunidad con tu calificación.</p>
-            </div>
-
-            <div className="hidden md:block absolute top-12 left-[10%] right-[10%] h-[2px] bg-gray-200 z-0"></div>
-          </div>
-        </div>
-      </section>
-
-      {/* === NUEVA SECCIÓN: CTA CLIENTE (Pedir Presupuesto) === */}
+      </section>      {/* === NUEVA SECCIÓN: CTA CLIENTE (Pedir Presupuesto) === */}
       <section className="py-12 px-4 md:px-12 max-w-7xl mx-auto">
         <div className="bg-gradient-to-br from-blue-50 to-white border border-blue-100 rounded-3xl overflow-hidden relative p-8 md:p-16 flex flex-col md:flex-row items-center justify-between gap-12 shadow-lg">
           <div className="relative z-10 flex-1 text-center md:text-left">
@@ -508,6 +416,98 @@ export default function LandingPage() {
                 </div>
                 <button onClick={() => router.push('/registro-cliente')} className="w-full py-2 bg-[#00355f] text-white rounded-lg text-xs font-bold mt-1 hover:bg-[#0f4c81] transition-colors">Elegir Profesional</button>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+
+      {/* ¿Cómo funciona? */}
+      <section className="py-24 bg-gray-50 overflow-hidden relative">
+        <div className="max-w-5xl mx-auto px-4 relative z-10">
+          <div className="text-center mb-16">
+            <h3 className="text-3xl md:text-4xl font-extrabold text-[#00355f] mb-3">¿Cómo funciona Oficios<span className="text-[#fc8127]">Ya</span>?</h3>
+            <p className="text-gray-500 text-lg">Tu solución en 3 simples pasos</p>
+          </div>
+
+          <div className="flex flex-col md:flex-row items-center justify-between gap-12 relative">
+            <div className="flex flex-col items-center text-center max-w-[280px] z-10 bg-gray-50">
+              <div className="w-24 h-24 rounded-3xl bg-white shadow-xl flex items-center justify-center mb-6 rotate-3 hover:rotate-0 transition-transform border border-gray-100 relative">
+                <Search className="w-10 h-10 text-[#00355f]" />
+                <div className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-[#fc8127] text-white flex items-center justify-center font-bold text-sm shadow-md">1</div>
+              </div>
+              <h5 className="font-extrabold text-xl mb-3 text-gray-900">Buscá el servicio</h5>
+              <p className="text-gray-500 text-sm leading-relaxed">Explorá profesionales calificados y verificados cerca de tu ubicación.</p>
+            </div>
+
+            <div className="flex flex-col items-center text-center max-w-[280px] z-10 bg-gray-50">
+              <div className="w-24 h-24 rounded-3xl bg-white shadow-xl flex items-center justify-center mb-6 -rotate-3 hover:rotate-0 transition-transform border border-gray-100 relative">
+                <MessageSquare className="w-10 h-10 text-[#fc8127]" />
+                <div className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-[#fc8127] text-white flex items-center justify-center font-bold text-sm shadow-md">2</div>
+              </div>
+              <h5 className="font-extrabold text-xl mb-3 text-gray-900">Chateá y Coordiná</h5>
+              <p className="text-gray-500 text-sm leading-relaxed">Hablá directamente, pedí presupuestos y coordiná el horario ideal.</p>
+            </div>
+
+            <div className="flex flex-col items-center text-center max-w-[280px] z-10 bg-gray-50">
+              <div className="w-24 h-24 rounded-3xl bg-white shadow-xl flex items-center justify-center mb-6 rotate-3 hover:rotate-0 transition-transform border border-gray-100 relative">
+                <CheckCircle className="w-10 h-10 text-green-500" />
+                <div className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-[#fc8127] text-white flex items-center justify-center font-bold text-sm shadow-md">3</div>
+              </div>
+              <h5 className="font-extrabold text-xl mb-3 text-gray-900">Calificá la solución</h5>
+              <p className="text-gray-500 text-sm leading-relaxed">Pagá de forma segura y ayudá a la comunidad con tu calificación.</p>
+            </div>
+
+            <div className="hidden md:block absolute top-12 left-[10%] right-[10%] h-[2px] bg-gray-200 z-0"></div>
+          </div>
+        </div>
+      </section>
+
+      {/* === NUEVA SECCIÓN: BOLSA DE EMPLEO CTA === */}
+      <section className="py-12 px-4 md:px-12 max-w-7xl mx-auto">
+        <div className="bg-gradient-to-r from-[#00355f] to-[#1a5fa8] rounded-3xl overflow-hidden relative p-8 md:p-12 shadow-2xl flex flex-col md:flex-row items-center gap-10">
+          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+          
+          <div className="relative z-10 flex-1 text-center md:text-left">
+            <div className="inline-flex items-center gap-2 bg-[#fc8127] text-white px-4 py-1.5 rounded-full text-[10px] uppercase font-extrabold tracking-widest mb-4 shadow-md">
+              <Briefcase className="w-4 h-4" /> Nuevo Ecosistema Laboral
+            </div>
+            <h3 className="text-3xl md:text-4xl font-extrabold text-white mb-4 leading-tight">
+              Bolsa de Empleo <span className="text-[#fc8127]">OficiosYa</span>
+            </h3>
+            <p className="text-blue-100 mb-8 max-w-lg text-base leading-relaxed">
+              ¿Buscás trabajo en el rubro? ¿Necesitás ayudantes para una obra grande? 
+              Conectamos profesionales y ayudantes en todo el país.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
+              <button
+                onClick={() => router.push('/bolsa-empleo')}
+                className="bg-white hover:bg-gray-50 text-[#00355f] font-bold px-8 py-3.5 rounded-xl transition-all shadow-lg active:scale-95 text-sm flex items-center justify-center gap-2 group"
+              >
+                Explorar Ofertas Laborales
+                <TrendingUp className="w-4 h-4 text-[#fc8127] group-hover:scale-110 transition-transform" />
+              </button>
+            </div>
+          </div>
+          
+          <div className="relative z-10 shrink-0 w-full md:w-auto flex justify-center hidden md:flex">
+            <div className="bg-white/10 backdrop-blur-md p-5 rounded-2xl border border-white/20 shadow-xl w-64 transform rotate-2 hover:rotate-0 transition-transform">
+              <div className="flex gap-3 mb-3">
+                <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm">
+                  <span className="text-xl">👷🏻‍♂️</span>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-white">Ayudante Plomero</p>
+                  <p className="text-xs text-blue-200">Constructora Gómez</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-blue-100 mb-4 bg-black/20 p-2 rounded-lg">
+                <MapPin className="w-3.5 h-3.5 text-[#fc8127]" /> Córdoba, Centro
+              </div>
+              <button className="w-full py-2 bg-[#fc8127] text-white rounded-lg text-xs font-bold hover:bg-[#e67320] transition-colors">
+                Ver Empleo
+              </button>
             </div>
           </div>
         </div>

@@ -10,80 +10,71 @@ import Logo from '@/components/Logo';
 import Tooltip from '@/components/Tooltip';
 import { HomeIcon, PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, ConfiguracionIcon, PublicarIcon } from '@/components/ModernIcons';
 
+import { useAuth } from '@/components/AuthContext';
+import { dbHelper } from '@/lib/supabase';
+
 export default function CompararPresupuestosPage() {
   const router = useRouter();
-  const [aceptandoId, setAceptandoId] = useState<number | null>(null);
+  const { user } = useAuth();
+  const [aceptandoId, setAceptandoId] = useState<string | number | null>(null);
+  const [presupuestos, setPresupuestos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Lista de presupuestos recibidos (Simulados)
-  const presupuestos = [
-    {
-      id: 1,
-      nombre: 'Carlos Méndez',
-      rating: 4.8,
-      resenas: 124,
-      precio: 12500,
-      tiempo: '2 - 3 horas',
-      etiqueta: 'Mejor Precio',
-      etiquetaIcon: <Star className="w-4 h-4" />,
-      etiquetaColor: 'bg-green-100 text-green-800',
-      avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBJFksOrbm_vwGQaTq5Vuqr1acUBEH2jxptCR5CusLDf2Sb5qZ8fqxqznYXUigT9dEfKpCENJlHaLhC_WoPDhEQJYKRkRbxGiFrH2Jf4hrRkaq4pffxxwX2ietvZfajbBEyvOb665wnkChMjc88JXD3dUq70dprcIy22fOVZalBnuC390ApdZb18RNQjeSD56KQnd4KnVj3W9Vf6W_rfyL2JkZDhnRQLKr0smIh2slCZIjrr0crl5Ri-6h1zRMK70Hxc9PXqDijgpuj'
-    },
-    {
-      id: 2,
-      nombre: 'Lucía Ferreyra',
-      rating: 5.0,
-      resenas: 89,
-      precio: 15000,
-      tiempo: 'Hoy mismo',
-      etiqueta: 'Más Recomendado',
-      etiquetaIcon: <Award className="w-4 h-4" />,
-      etiquetaColor: 'bg-orange-100 text-orange-800',
-      avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBlVCn8FRzTbVmZxic91A-2Ugh1qFBfezVm0wqIKlK38GDjuh2U6BsS9cS4zgLxeCMeUJsDJTluGVvtCoxYzGLllutVL9VFc2SrplBpzopr-qWY5s5igTFagEH0SSVO1Guaku8KqEvFomdFF2iBq1jSsEvjwMlhS7AtAIIOo00YPiuGl-8phMWi49kjhbMIJlKx53XoXFj35c4I8CDVN5DTgxJLofVISU8aZNRfS6Q1mlob5-BG_hOeTLKJPogDS15WJ20ty764J5OU'
-    },
-    {
-      id: 3,
-      nombre: 'Roberto Gómez',
-      rating: 4.6,
-      resenas: 45,
-      precio: 13800,
-      tiempo: '1.5 horas',
-      etiqueta: 'Más Rápido',
-      etiquetaIcon: <Zap className="w-4 h-4" />,
-      etiquetaColor: 'bg-blue-100 text-blue-800',
-      avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDXiZUE8_fhvf-GjicTx03yLdFbwlLwUKVnmaCssfIfzN0czjPxP-_AvZc5N_Bp_ZMbeX3Redepy16tKrGYCxHSRu9VZPiYs73CHLhaWJAG9626Et5WY6Ehzzq9h-VPJ53uddMujQuXLO5bU9Sm-CYy9KqqH4InAr0ZjMbGLyImFjGmvjHTXRZvkDdMdOMa8Xx4rIgi0ltimCU_zlWg33HFoS5EnmtBiRepV3H67TzuHs9XqcsDmYvyJrgsWH0-EeCDxV1gySLESmM8'
-    }
-  ];
+  useEffect(() => {
+    const loadRealPresupuestos = async () => {
+      try {
+        const postulaciones = await dbHelper.getAllPostulaciones();
+        
+        // Enrich with real professional details from Supabase
+        const list = await Promise.all(postulaciones.map(async (post, idx) => {
+          return {
+            id: post.id || idx,
+            nombre: post.candidato || 'Profesional',
+            rating: 5.0,
+            resenas: 1,
+            precio: 15000,
+            tiempo: 'A convenir',
+            etiqueta: post.estado === 'Aceptado' ? 'Aceptado' : 'Propuesta Recibida',
+            etiquetaIcon: <Star className="w-4 h-4" />,
+            etiquetaColor: post.estado === 'Aceptado' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800',
+            avatar: post.candidatoAvatar || 'https://i.pravatar.cc/150?u=' + (post.candidato || idx),
+            mensaje: post.mensaje
+          };
+        }));
 
-  const handleAceptar = (id: number) => {
+        setPresupuestos(list);
+      } catch (err) {
+        console.error("Error al cargar presupuestos reales:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadRealPresupuestos();
+  }, []);
+
+  const handleAceptar = async (id: any) => {
+    if (!user) return;
     setAceptandoId(id);
 
-    // Encontrar el presupuesto aceptado
     const elegido = presupuestos.find(p => p.id === id);
-
     if (elegido) {
-      // Registrar el trabajo activo en localStorage
-      const trabajoActivo = {
-        id: `trabajo_${Date.now()}`,
-        profesionalId: elegido.id,
-        profesionalNombre: elegido.nombre,
-        profesionalAvatar: elegido.avatar,
-        profesionalTrade: 'Plomería', // Oficio del contexto actual
-        trabajoTitulo: 'Reparación de Cañería en Cocina',
-        precio: elegido.precio,
-        fechaInicio: new Date().toISOString().split('T')[0],
-        estado: 'en_curso' as const,
-        chatId: String(elegido.id), // ID del chat asociado
-      };
-
-      const existentes = JSON.parse(localStorage.getItem('oficiosya_trabajos_activos') || '[]');
-      existentes.push(trabajoActivo);
-      localStorage.setItem('oficiosya_trabajos_activos', JSON.stringify(existentes));
+      try {
+        // Create or get real Supabase conversation
+        const conv = await dbHelper.getOrCreateConversation(user.id, elegido.nombre);
+        if (conv?.id) {
+          router.push(`/chat/${conv.id}`);
+          return;
+        }
+      } catch (err) {
+        console.warn("Error iniciando chat real:", err);
+      }
     }
 
     setTimeout(() => {
       setAceptandoId(null);
-      router.push(`/chat/${id}`); // Redirige al chat para coordinar
-    }, 1500);
+      router.push('/chat');
+    }, 1000);
   };
 
   return (
@@ -188,7 +179,21 @@ export default function CompararPresupuestosPage() {
 
         {/* Budget List */}
         <div className="space-y-6">
-          {presupuestos.map((presu) => (
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="w-8 h-8 text-[#fc8127] animate-spin" />
+            </div>
+          ) : presupuestos.length === 0 ? (
+            <div className="bg-white p-8 rounded-2xl border border-gray-200 text-center shadow-sm">
+              <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <h3 className="font-bold text-gray-700 text-base mb-1">Aún no hay presupuestos para mostrar</h3>
+              <p className="text-xs text-gray-400 max-w-sm mx-auto mb-4">Cuando los profesionales se postulen a tus búsquedas, aparecerán comparados en esta pantalla.</p>
+              <button onClick={() => router.push('/publicar-trabajo')} className="bg-[#00355f] text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-[#0f4c81]">
+                Publicar Nuevo Trabajo
+              </button>
+            </div>
+          ) : (
+            presupuestos.map((presu) => (
             <div key={presu.id} className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm relative overflow-hidden group hover:shadow-md transition-all duration-300">
               
               {/* Etiqueta Destacada */}
