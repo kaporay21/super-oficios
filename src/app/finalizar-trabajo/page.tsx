@@ -75,6 +75,11 @@ function FinalizarContenido() {
     }
   }, [trabajoId]);
 
+  const [ratingPuntualidad, setRatingPuntualidad] = useState(5);
+  const [ratingCalidad, setRatingCalidad] = useState(5);
+  const [ratingTrato, setRatingTrato] = useState(5);
+  const [ratingPrecio, setRatingPrecio] = useState(5);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (rating === 0) {
@@ -95,6 +100,10 @@ function FinalizarContenido() {
       clienteNombre,
       clienteAvatar,
       rating: rating,
+      ratingPuntualidad,
+      ratingCalidad,
+      ratingTrato,
+      ratingPrecio,
       texto: review || 'Sin comentario adicional.',
       trabajoTitulo: trabajo.trabajoTitulo,
       fecha: new Date().toISOString().split('T')[0],
@@ -127,7 +136,6 @@ function FinalizarContenido() {
       setIsSubmitting(false);
       setShowSuccess(true);
 
-      // Redirigir al perfil del cliente
       setTimeout(() => {
         router.push('/perfil-cliente');
       }, 2500);
@@ -180,10 +188,10 @@ function FinalizarContenido() {
 
           {/* Calificación Interactiva */}
           <div className="bg-white rounded-2xl p-6 md:p-8 border border-gray-200 shadow-sm text-center">
-            <h3 className="text-lg font-bold text-gray-900 mb-2">¿Cómo evaluarías el servicio?</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">¿Cómo evaluarías el servicio general?</h3>
             <p className="text-xs text-gray-500 mb-6">Tu calificación ayuda a otros clientes a elegir mejor.</p>
             
-            <div className="flex justify-center gap-2 mb-6">
+            <div className="flex justify-center gap-2 mb-4">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
                   key={star}
@@ -194,7 +202,7 @@ function FinalizarContenido() {
                   className="focus:outline-none transition-transform active:scale-90"
                 >
                   <Star 
-                    className={`w-12 h-12 transition-colors ${
+                    className={`w-10 h-10 transition-colors ${
                       star <= (hoverRating || rating) 
                         ? 'fill-[#fc8127] text-[#fc8127]' 
                         : 'text-gray-200'
@@ -205,7 +213,7 @@ function FinalizarContenido() {
             </div>
 
             {rating > 0 && (
-              <p className="text-sm font-bold text-[#fc8127] mb-4">
+              <p className="text-sm font-bold text-[#fc8127] mb-6">
                 {rating === 1 && '😞 Malo'}
                 {rating === 2 && '😐 Regular'}
                 {rating === 3 && '🙂 Bueno'}
@@ -213,6 +221,53 @@ function FinalizarContenido() {
                 {rating === 5 && '🌟 Excelente'}
               </p>
             )}
+
+            {/* Desglose de Criterios Adicionales (Estilo Marketplace Avanzado) */}
+            <div className="pt-6 border-t border-gray-100 text-left space-y-3 mb-6">
+              <span className="text-xs font-bold text-[#00355f] uppercase tracking-wider block">Calificación por Criterios</span>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                {/* Puntualidad */}
+                <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-200">
+                  <span className="font-semibold text-gray-700">⏰ Puntualidad</span>
+                  <div className="flex gap-1">
+                    {[1,2,3,4,5].map(s => (
+                      <Star key={s} onClick={() => setRatingPuntualidad(s)} className={`w-4 h-4 cursor-pointer ${s <= ratingPuntualidad ? 'fill-[#fc8127] text-[#fc8127]' : 'text-gray-300'}`} />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Calidad del Trabajo */}
+                <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-200">
+                  <span className="font-semibold text-gray-700">🛠️ Calidad del Trabajo</span>
+                  <div className="flex gap-1">
+                    {[1,2,3,4,5].map(s => (
+                      <Star key={s} onClick={() => setRatingCalidad(s)} className={`w-4 h-4 cursor-pointer ${s <= ratingCalidad ? 'fill-[#fc8127] text-[#fc8127]' : 'text-gray-300'}`} />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Trato / Atención */}
+                <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-200">
+                  <span className="font-semibold text-gray-700">💬 Trato & Comunicación</span>
+                  <div className="flex gap-1">
+                    {[1,2,3,4,5].map(s => (
+                      <Star key={s} onClick={() => setRatingTrato(s)} className={`w-4 h-4 cursor-pointer ${s <= ratingTrato ? 'fill-[#fc8127] text-[#fc8127]' : 'text-gray-300'}`} />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Relación Precio/Calidad */}
+                <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-200">
+                  <span className="font-semibold text-gray-700">🏷️ Precio / Calidad</span>
+                  <div className="flex gap-1">
+                    {[1,2,3,4,5].map(s => (
+                      <Star key={s} onClick={() => setRatingPrecio(s)} className={`w-4 h-4 cursor-pointer ${s <= ratingPrecio ? 'fill-[#fc8127] text-[#fc8127]' : 'text-gray-300'}`} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <div className="text-left space-y-2">
               <label className="text-xs font-bold text-gray-700 ml-1">Escribe una reseña (Opcional)</label>

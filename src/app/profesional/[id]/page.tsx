@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { 
   ArrowLeft, Share2, MoreVertical, Star, FileText, 
   MessageSquare, CheckCircle, ShieldCheck, Home, 
-  ClipboardList, User, Bell 
+  ClipboardList, User, Bell, Award 
 } from 'lucide-react';
 import { PROFESSIONALS } from '@/data';
 import { dbHelper } from '@/lib/supabase';
@@ -148,8 +148,21 @@ export default function PerfilProfesional() {
               </div>
               
               <div className="flex-1 w-full">
-                <div className="flex flex-wrap items-center gap-3 mb-1">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
                   <h1 className="text-2xl font-bold text-[#00355f]">{perfilCompleto.name}</h1>
+                  
+                  {(perfilCompleto.verificado || perfilCompleto.estadoDNI === 'Validado') && (
+                    <span className="bg-green-100 text-green-800 border border-green-200 px-2.5 py-1 rounded-full text-xs font-extrabold flex items-center gap-1 shadow-sm" title="DNI Verificado por Administración">
+                      <CheckCircle className="w-3.5 h-3.5 text-green-600 fill-green-100" /> Identidad Verificada
+                    </span>
+                  )}
+
+                  {(perfilCompleto.matriculadoVerificado || perfilCompleto.estadoCertificados === 'Validado') && (
+                    <span className="bg-orange-100 text-orange-900 border border-orange-200 px-2.5 py-1 rounded-full text-xs font-extrabold flex items-center gap-1 shadow-sm" title="Matrícula y Títulos Validados por Administración">
+                      <Award className="w-3.5 h-3.5 text-[#fc8127]" /> Matriculado / Certificado
+                    </span>
+                  )}
+
                   <span className="bg-green-50 text-green-700 border border-green-100 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
                     <Star className="w-3.5 h-3.5 fill-green-700" /> {perfilCompleto.rating.toFixed(1)}
                   </span>

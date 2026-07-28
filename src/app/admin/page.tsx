@@ -6,7 +6,7 @@ import {
   Users, BarChart3, Send, MessageSquare, Check, Trash2,
   Settings, LogOut, Search, Filter, ShieldCheck, CheckCircle2,
   TrendingUp, AlertCircle, Crown, Info, RefreshCw, X, ShieldAlert,
-  Edit2, Eye, Shield, UserX, UserCheck
+  Edit2, Eye, Shield, UserX, UserCheck, Award, FileText, CheckCircle
 } from 'lucide-react';
 import Logo from '@/components/Logo';
 import AuthGuard from '@/components/AuthGuard';
@@ -42,7 +42,7 @@ function AdminContent() {
   };
   
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<'resumen' | 'usuarios' | 'verificaciones' | 'trabajos' | 'marketing' | 'soporte'>('resumen');
+  const [activeTab, setActiveTab] = useState<'resumen' | 'analiticas' | 'usuarios' | 'verificaciones' | 'trabajos' | 'marketing' | 'soporte'>('resumen');
 
   // Search & Filter state
   const [userSearch, setUserSearch] = useState('');
@@ -181,46 +181,45 @@ function AdminContent() {
     }
   };
 
-  // Verification actions
-  const handleApproveVerification = async (id: string) => {
-    const updated = users.map(u => u.id === id ? { ...u, verificacion: 'Verificado' } : u);
+  // Verification actions for DNI & Certificates
+  const handleApproveDNI = async (id: string) => {
+    const updated = users.map(u => u.id === id ? { ...u, verificacion: 'Verificado', estadoDNI: 'Validado' } : u);
     saveUsers(updated);
-    setSelectedVerification(null);
-
-    const targetUser = updated.find(u => u.id === id);
-    if (targetUser && targetUser.email === 'roberto@gmail.com') {
-      const storedProfile = localStorage.getItem('oficiosya_profesional_perfil');
-      if (storedProfile) {
-        const parsed = JSON.parse(storedProfile);
-        parsed.estadoDNI = 'Validado';
-        localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(parsed));
-      }
+    if (selectedVerification?.id === id) {
+      setSelectedVerification({ ...selectedVerification, verificacion: 'Verificado', estadoDNI: 'Validado' });
     }
 
     try {
       await dbHelper.updateUserVerification(id, true, 'Validado');
+      alert('✅ Insignia de Identidad Verificada (DNI) otorgada con éxito.');
     } catch (e) {
-      console.error("Error al validar verificación en BD:", e);
+      console.error("Error al validar DNI en BD:", e);
+    }
+  };
+
+  const handleApproveCertificates = async (id: string) => {
+    const updated = users.map(u => u.id === id ? { ...u, matriculadoVerificado: true, estadoCertificados: 'Validado' } : u);
+    saveUsers(updated);
+    if (selectedVerification?.id === id) {
+      setSelectedVerification({ ...selectedVerification, matriculadoVerificado: true, estadoCertificados: 'Validado' });
+    }
+
+    try {
+      await dbHelper.updateUserVerification(id, true, undefined, true, 'Validado');
+      alert('🏆 Insignia de Profesional Matriculado / Certificado otorgada con éxito.');
+    } catch (e) {
+      console.error("Error al validar certificados en BD:", e);
     }
   };
 
   const handleRejectVerification = async (id: string) => {
-    const updated = users.map(u => u.id === id ? { ...u, verificacion: 'Rechazado' } : u);
+    const updated = users.map(u => u.id === id ? { ...u, verificacion: 'Rechazado', estadoDNI: 'Pendiente', matriculadoVerificado: false, estadoCertificados: 'Pendiente' } : u);
     saveUsers(updated);
     setSelectedVerification(null);
 
-    const targetUser = updated.find(u => u.id === id);
-    if (targetUser && targetUser.email === 'roberto@gmail.com') {
-      const storedProfile = localStorage.getItem('oficiosya_profesional_perfil');
-      if (storedProfile) {
-        const parsed = JSON.parse(storedProfile);
-        parsed.estadoDNI = 'Pendiente';
-        localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(parsed));
-      }
-    }
-
     try {
-      await dbHelper.updateUserVerification(id, false, 'Pendiente');
+      await dbHelper.updateUserVerification(id, false, 'Pendiente', false, 'Pendiente');
+      alert('Solicitud rechazada.');
     } catch (e) {
       console.error("Error al rechazar verificación en BD:", e);
     }
@@ -325,6 +324,13 @@ function AdminContent() {
           >
             <BarChart3 className="w-5 h-5" /> Resumen General
           </button>
+
+          <button 
+            onClick={() => setActiveTab('analiticas')} 
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'analiticas' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}
+          >
+            <TrendingUp className="w-5 h-5" /> Métricas Analíticas
+          </button>
           
           <button 
             onClick={() => setActiveTab('usuarios')} 
@@ -402,7 +408,7 @@ function AdminContent() {
         {/* Header Admin */}
         <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 shadow-sm shrink-0">
           <h2 className="text-xl font-extrabold text-[#00355f] capitalize">
-            {activeTab === 'trabajos' ? 'Moderación de Solicitudes' : activeTab === 'usuarios' ? 'Gestión de Usuarios' : activeTab}
+            {activeTab === 'analiticas' ? 'Métricas Analíticas y Tráfico' : activeTab === 'trabajos' ? 'Moderación de Solicitudes' : activeTab === 'usuarios' ? 'Gestión de Usuarios' : activeTab}
           </h2>
           <div className="flex items-center gap-4">
             <button 
@@ -526,6 +532,206 @@ function AdminContent() {
               </div>
             </div>
           )}
+
+          {/* TAB: MÉTRICAS ANALÍTICAS */}
+          {activeTab === 'analiticas' && (() => {
+            const diasSemanaMap = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+            const diasOrdenados = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+            // Conteo real por día de la semana desde registros de Supabase
+            const actividadRealSemana = diasOrdenados.map(diaNombre => {
+              const accesos = users.filter(u => {
+                const fecha = u.created_at || u.fechaRegistro;
+                if (!fecha) return false;
+                return diasSemanaMap[new Date(fecha).getDay()] === diaNombre;
+              }).length;
+
+              const presupuestos = postulaciones.filter(p => {
+                const fecha = p.created_at || p.fecha;
+                if (!fecha) return false;
+                return diasSemanaMap[new Date(fecha).getDay()] === diaNombre;
+              }).length;
+
+              return { dia: diaNombre, accesos, solicitudes: presupuestos };
+            });
+
+            const maxAccesosSemana = Math.max(...actividadRealSemana.map(a => a.accesos), 1);
+            const maxSolicitudesSemana = Math.max(...actividadRealSemana.map(a => a.solicitudes), 1);
+
+            return (
+              <div className="space-y-8 animate-in fade-in duration-200">
+                
+                {/* Tarjetas Principales de Métricas */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  
+                  <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Profesionales Registrados</p>
+                      <p className="text-3xl font-black text-[#00355f]">{users.filter(u => u.role === 'Profesional').length}</p>
+                      <p className="text-[11px] text-green-600 font-bold">100% Real (Base de Datos Supabase)</p>
+                    </div>
+                    <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
+                      <Users className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Bajas / Inactivos</p>
+                      <p className="text-3xl font-black text-red-600">{users.filter(u => u.role === 'Profesional' && u.status !== 'Activo').length}</p>
+                      <p className="text-[11px] text-gray-500 font-bold">Estado suspendido / inactivo en BD</p>
+                    </div>
+                    <div className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
+                      <UserX className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Accesos Registrados</p>
+                      <p className="text-3xl font-black text-[#00355f]">{users.length}</p>
+                      <p className="text-[11px] text-orange-600 font-bold">Cuentas activas en la BD</p>
+                    </div>
+                    <div className="w-12 h-12 bg-orange-50 text-[#fc8127] rounded-2xl flex items-center justify-center">
+                      <TrendingUp className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Registros Totales Plataforma</p>
+                      <p className="text-3xl font-black text-[#00355f]">{users.length + jobs.length}</p>
+                      <p className="text-[11px] text-green-600 font-bold">Usuarios + Trabajos en BD</p>
+                    </div>
+                    <div className="w-12 h-12 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center">
+                      <Eye className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Gráfico y Estadísticas de Interacción */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  
+                  {/* Gráfico de Actividad Semanal */}
+                  <div className="lg:col-span-8 bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-6">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h3 className="text-lg font-bold text-[#00355f]">Actividad Semanal Real</h3>
+                        <p className="text-xs text-gray-500">Nuevos usuarios y presupuestos enviados por día según la BD</p>
+                      </div>
+                      <span className="text-xs font-bold bg-green-50 text-green-700 px-3 py-1 rounded-full border border-green-200">Datos Reales Supabase</span>
+                    </div>
+
+                    {/* Visual Bar Chart Real */}
+                    <div className="h-56 flex items-end justify-between gap-3 pt-6 pb-2 px-4 border-b border-gray-100">
+                      {actividadRealSemana.map((item, i) => {
+                        const heightAccesos = item.accesos === 0 ? 4 : Math.round((item.accesos / maxAccesosSemana) * 100);
+                        const heightSolicitudes = item.solicitudes === 0 ? 4 : Math.round((item.solicitudes / maxSolicitudesSemana) * 100);
+
+                        return (
+                          <div key={i} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
+                            <div className="w-full flex items-end justify-center gap-1.5 h-full">
+                              <div 
+                                style={{ height: `${heightAccesos}%` }} 
+                                className={`w-full max-w-[18px] rounded-t-md transition-all relative ${item.accesos > 0 ? 'bg-[#00355f] group-hover:bg-[#0f4c81]' : 'bg-gray-200'}`}
+                              >
+                                <span className="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] px-1.5 py-0.5 rounded shadow whitespace-nowrap z-10">
+                                  {item.accesos} registros
+                                </span>
+                              </div>
+                              <div 
+                                style={{ height: `${heightSolicitudes}%` }} 
+                                className={`w-full max-w-[18px] rounded-t-md transition-all relative ${item.solicitudes > 0 ? 'bg-[#fc8127] group-hover:bg-[#e67320]' : 'bg-gray-200'}`}
+                              >
+                                <span className="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] px-1.5 py-0.5 rounded shadow whitespace-nowrap z-10">
+                                  {item.solicitudes} presupuestos
+                                </span>
+                              </div>
+                            </div>
+                            <span className="text-xs font-bold text-gray-500 mt-1">{item.dia}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex items-center justify-center gap-6 text-xs font-bold">
+                      <div className="flex items-center gap-2"><span className="w-3 h-3 bg-[#00355f] rounded"></span> Registros de Usuarios</div>
+                      <div className="flex items-center gap-2"><span className="w-3 h-3 bg-[#fc8127] rounded"></span> Presupuestos Enviados</div>
+                    </div>
+                  </div>
+
+                {/* Resumen de Conversión */}
+                <div className="lg:col-span-4 bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-6">
+                  <h3 className="text-lg font-bold text-[#00355f]">Conversión de la Plataforma</h3>
+                  
+                  <div className="space-y-4 divide-y divide-gray-100">
+                    <div className="pt-2 flex justify-between items-center">
+                      <span className="text-xs font-bold text-gray-500">Solicitudes Totales</span>
+                      <span className="text-sm font-black text-[#00355f]">{jobs.length}</span>
+                    </div>
+                    <div className="pt-3 flex justify-between items-center">
+                      <span className="text-xs font-bold text-gray-500">Presupuestos Enviados</span>
+                      <span className="text-sm font-black text-[#fc8127]">{postulaciones.length}</span>
+                    </div>
+                    <div className="pt-3 flex justify-between items-center">
+                      <span className="text-xs font-bold text-gray-500">Promedio Presupuestos / Trabajo</span>
+                      <span className="text-sm font-black text-[#00355f]">
+                        {jobs.length > 0 ? (postulaciones.length / jobs.length).toFixed(1) : '0'}
+                      </span>
+                    </div>
+                    <div className="pt-3 flex justify-between items-center">
+                      <span className="text-xs font-bold text-gray-500">Obras Adjudicadas</span>
+                      <span className="text-sm font-black text-green-600">
+                        {postulaciones.filter(p => p.estado === 'Aceptado').length}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 text-center">
+                    <p className="text-xs font-bold text-gray-500 uppercase">Tasa de Conversión Solicitud / Obra</p>
+                    <p className="text-3xl font-black text-[#00355f] mt-1">
+                      {jobs.length > 0 ? Math.round((postulaciones.filter(p => p.estado === 'Aceptado').length / jobs.length) * 100) : 0}%
+                    </p>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Distribución por Rubros / Oficios */}
+              <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-4">
+                <h3 className="text-lg font-bold text-[#00355f]">Distribución de Profesionales por Oficio</h3>
+                {users.filter(u => u.role === 'Profesional').length === 0 ? (
+                  <p className="text-xs text-gray-400 py-4">No hay profesionales registrados en la base de datos aún.</p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 pt-2">
+                    {(() => {
+                      const counts: Record<string, number> = {};
+                      users.filter(u => u.role === 'Profesional').forEach(u => {
+                        const tradeList = u.oficios || (u.trade ? u.trade.split(',') : []);
+                        if (tradeList.length === 0) {
+                          counts['Sin clasificar'] = (counts['Sin clasificar'] || 0) + 1;
+                        } else {
+                          tradeList.forEach((t: string) => {
+                            const key = t.trim() || 'General';
+                            counts[key] = (counts[key] || 0) + 1;
+                          });
+                        }
+                      });
+                      return Object.entries(counts).map(([rubro, cantidad]) => (
+                        <div key={rubro} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex flex-col justify-between">
+                          <span className="text-xs font-bold text-gray-500 truncate">{rubro}</span>
+                          <span className="text-xl font-black text-[#00355f] mt-2">{cantidad}</span>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                )}
+              </div>
+
+            </div>
+          );
+        })()}
 
           {/* TAB 2: GESTIÓN DE USUARIOS */}
           {activeTab === 'usuarios' && (
@@ -673,10 +879,10 @@ function AdminContent() {
                       </div>
                       <div className="flex gap-3 shrink-0">
                         <button 
-                          onClick={() => handleApproveVerification(user.id)}
-                          className="bg-green-600 hover:bg-green-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+                          onClick={() => setSelectedVerification(user)}
+                          className="bg-[#00355f] hover:bg-[#0f4c81] text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5"
                         >
-                          <Check className="w-4 h-4" /> Aprobar profesional
+                          <Eye className="w-4 h-4" /> Cotejar y Revisar Insignias
                         </button>
                         <button 
                           onClick={() => handleRejectVerification(user.id)}
@@ -1155,6 +1361,189 @@ function AdminContent() {
             >
               Listo
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: VERIFICACIÓN Y COTEJO DE IDENTIDAD / CERTIFICADOS ── */}
+      {selectedVerification && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white p-6 md:p-8 rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-6 relative animate-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => setSelectedVerification(null)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-1.5 rounded-full"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-6 h-6 text-[#00355f]" />
+                <h3 className="text-xl font-bold text-[#00355f]">Cotejo y Asignación de Insignias</h3>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Verifica que los datos del registro coincidan con la documentación subida antes de autorizar las insignias públicas.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* Columna Izquierda: Datos Registrados por el Profesional */}
+              <div className="bg-gray-50 p-5 rounded-2xl border border-gray-200 space-y-3">
+                <span className="block text-xs font-bold text-[#00355f] uppercase tracking-wider border-b border-gray-200 pb-2 flex items-center gap-1.5">
+                  <UserCheck className="w-4 h-4 text-[#fc8127]" /> Datos Registrados en Perfil
+                </span>
+
+                <div className="space-y-2 text-xs">
+                  <div>
+                    <span className="text-gray-400 font-semibold block text-[10px] uppercase">Nombre Completo:</span>
+                    <span className="font-bold text-gray-900 text-sm">{selectedVerification.name || selectedVerification.nombre} {selectedVerification.apellido}</span>
+                  </div>
+
+                  <div>
+                    <span className="text-gray-400 font-semibold block text-[10px] uppercase">Correo Electrónico:</span>
+                    <span className="font-bold text-gray-800">{selectedVerification.email}</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <span className="text-gray-400 font-semibold block text-[10px] uppercase">Teléfono / Celular:</span>
+                      <span className="font-bold text-gray-800">{selectedVerification.telefono || 'No indicado'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400 font-semibold block text-[10px] uppercase">Fecha Nacimiento:</span>
+                      <span className="font-bold text-gray-800">{selectedVerification.fechaNacimiento || 'No indicada'}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <span className="text-gray-400 font-semibold block text-[10px] uppercase">Provincia / Cobertura:</span>
+                      <span className="font-bold text-gray-800">{selectedVerification.provincia || selectedVerification.location || 'Argentina'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400 font-semibold block text-[10px] uppercase">Ciudad:</span>
+                      <span className="font-bold text-gray-800">{selectedVerification.ciudad || '-'}</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-1">
+                    <span className="text-gray-400 font-semibold block text-[10px] uppercase">Oficios Inscriptos:</span>
+                    <span className="font-extrabold text-[#00355f]">{selectedVerification.trade || selectedVerification.oficios?.join(', ') || 'General'}</span>
+                  </div>
+
+                  <div className="pt-1">
+                    <span className="text-gray-400 font-semibold block text-[10px] uppercase">N° Matrícula Declarado:</span>
+                    <span className="font-extrabold text-[#fc8127]">{selectedVerification.nroMatricula || selectedVerification.docMatricula || 'Sin Matrícula'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Columna Derecha: Documentos Subidos */}
+              <div className="bg-gray-50 p-5 rounded-2xl border border-gray-200 space-y-4">
+                <span className="block text-xs font-bold text-[#00355f] uppercase tracking-wider border-b border-gray-200 pb-2 flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-[#00355f]" /> Documentación Adjunta Subida
+                </span>
+
+                {/* DNI Document */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-700">1. Documento DNI (Identidad)</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      selectedVerification.estadoDNI === 'Validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {selectedVerification.estadoDNI || 'Pendiente'}
+                    </span>
+                  </div>
+
+                  {selectedVerification.dniFrontal || selectedVerification.dniDorso ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      {selectedVerification.dniFrontal && (
+                        <a href={selectedVerification.dniFrontal} target="_blank" rel="noreferrer" className="block border border-gray-300 rounded-xl overflow-hidden h-24 bg-white hover:opacity-90">
+                          <img src={selectedVerification.dniFrontal} alt="DNI Frente" className="w-full h-full object-cover" />
+                        </a>
+                      )}
+                      {selectedVerification.dniDorso && (
+                        <a href={selectedVerification.dniDorso} target="_blank" rel="noreferrer" className="block border border-gray-300 rounded-xl overflow-hidden h-24 bg-white hover:opacity-90">
+                          <img src={selectedVerification.dniDorso} alt="DNI Dorso" className="w-full h-full object-cover" />
+                        </a>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-white border border-dashed border-gray-300 rounded-xl text-center">
+                      <p className="text-xs text-gray-400">DNI subido / pendiente de verificación visual.</p>
+                    </div>
+                  )}
+
+                  <button 
+                    onClick={() => handleApproveDNI(selectedVerification.id)}
+                    disabled={selectedVerification.estadoDNI === 'Validado'}
+                    className="w-full py-2 px-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-colors"
+                  >
+                    <CheckCircle className="w-4 h-4" /> 
+                    {selectedVerification.estadoDNI === 'Validado' ? 'Identidad DNI Ya Validada' : 'Otorgar Insignia "Identidad Verificada"'}
+                  </button>
+                </div>
+
+                {/* Certificados / Matrícula */}
+                <div className="space-y-2 pt-2 border-t border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-700">2. Certificados & Matrícula</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      selectedVerification.matriculadoVerificado ? 'bg-orange-100 text-[#fc8127]' : 'bg-gray-200 text-gray-600'
+                    }`}>
+                      {selectedVerification.matriculadoVerificado ? 'Matriculado Aprobado' : 'Pendiente'}
+                    </span>
+                  </div>
+
+                  {selectedVerification.certificados && selectedVerification.certificados.length > 0 ? (
+                    <div className="space-y-1.5 max-h-28 overflow-y-auto">
+                      {selectedVerification.certificados.map((cert: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between p-2 bg-white border border-gray-200 rounded-lg text-xs">
+                          <span className="truncate font-bold text-gray-700 pr-2">{cert.nombre || `Certificado ${idx + 1}`}</span>
+                          {cert.archivoBase64 && (
+                            <a href={cert.archivoBase64} target="_blank" rel="noreferrer" className="text-[#00355f] font-bold hover:underline shrink-0">
+                              Ver Documento
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-400 italic">No hay certificados adjuntos en la cuenta.</p>
+                  )}
+
+                  <button 
+                    onClick={() => handleApproveCertificates(selectedVerification.id)}
+                    disabled={selectedVerification.matriculadoVerificado}
+                    className="w-full py-2 px-3 bg-[#fc8127] hover:bg-[#e67320] disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-colors"
+                  >
+                    <Award className="w-4 h-4" /> 
+                    {selectedVerification.matriculadoVerificado ? 'Matrícula Ya Aprobada' : 'Otorgar Insignia "Matriculado / Certificado"'}
+                  </button>
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* Pie del modal de verificaciones */}
+            <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+              <button 
+                onClick={() => handleRejectVerification(selectedVerification.id)}
+                className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl text-xs font-bold transition-colors"
+              >
+                Rechazar Solicitud
+              </button>
+
+              <button 
+                onClick={() => setSelectedVerification(null)}
+                className="px-6 py-2.5 bg-[#00355f] text-white rounded-xl text-xs font-bold hover:bg-[#0f4c81] transition-colors"
+              >
+                Cerrar Panel
+              </button>
+            </div>
+
           </div>
         </div>
       )}

@@ -532,12 +532,12 @@ export default function MisTrabajosPage() {
             <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#00355f] uppercase">Mensajes</span>
           </button>
         </Tooltip>
-        <Tooltip title="Herramientas" text="Calculadoras de materiales." position="right">
+        <Tooltip title="Presupuestador" text="Calculadora de materiales y mano de obra." position="right">
           <button onClick={() => router.push('/presupuestador-obras')} className="flex flex-col items-center gap-1 group hover:scale-105 transition-all">
             <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center border border-gray-100 shadow-inner">
               <HerramientasIcon className="w-6 h-6" active={false} />
             </div>
-            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase">Herramientas</span>
+            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase">Presupuestador</span>
           </button>
         </Tooltip>
         <div className="mt-auto mb-6">

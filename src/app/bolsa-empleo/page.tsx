@@ -29,73 +29,6 @@ const OFICIOS = [
 
 const TIPOS = ['Todos', 'Permanente', 'Por obra', 'Temporal', 'Part-time'];
 
-const EMPLEOS_DEFAULT = [
-  {
-    id: 1,
-    titulo: 'Ayudante de Plomero con experiencia',
-    descripcion: 'Busco ayudante para trabajos de plomería en obras en construcción. Necesito persona con conocimientos básicos en instalaciones sanitarias y disposición para trabajar en equipo.',
-    oficio: 'Plomería',
-    tipo: 'Por obra',
-    provincia: 'Tucumán',
-    ciudad: 'San Miguel de Tucumán',
-    salario: '$120.000 - $180.000 / mes',
-    empleador: 'Carlos M.',
-    empleadorAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBJFksOrbm_vwGQaTq5Vuqr1acUBEH2jxptCR5CusLDf2Sb5qZ8fqxqznYXUigT9dEfKpCENJlHaLhC_WoPDhEQJYKRkRbxGiFrH2Jf4hrRkaq4pffxxwX2ietvZfajbBEyvOb665wnkChMjc88JXD3dUq70dprcIy22fOVZalBnuC390ApdZb18RNQjeSD56KQnd4KnVj3W9Vf6W_rfyL2JkZDhnRQLKr0smIh2slCZIjrr0crl5Ri-6h1zRMK70Hxc9PXqDijgpuj',
-    postulantes: 8,
-    fecha: '2026-07-16',
-    urgente: true,
-    nuevo: true,
-  },
-  {
-    id: 2,
-    titulo: 'Oficial Electricista para obra en marcha',
-    descripcion: 'Requerimos electricista oficial con matrícula habilitante para terminar instalación en edificio de 4 pisos. Trabajo de al menos 2 meses. Viáticos incluidos.',
-    oficio: 'Electricidad',
-    tipo: 'Temporal',
-    provincia: 'Buenos Aires',
-    ciudad: 'La Plata',
-    salario: '$200.000 - $280.000 / mes',
-    empleador: 'Lucía F.',
-    empleadorAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuC1hPvZfC3oMSOl7eJivQqSf6E_QEBXoJCMw-dkrFEv6TXIFWm2XzPZIBpHvMqFqMX8Ng1Wl8UlHnIExBr8zCiJALz_cIi4dBPCfI37YBTG3O4EE4WqVXBgjWZrWCRExfKVN60X1xIHkE4YFmA0jzb4y4VhXYpOx0OcgaaMFDfCN8tgtWCnVqivK18Ww1fSJBRFHGiHJD_5kp_N_LMG6t4Ee-8UE7kxzUrmQEaICwFlNRBT1HA75Jl6FbT_6XAsmQ8t5PZ9p-5w',
-    postulantes: 14,
-    fecha: '2026-07-15',
-    urgente: false,
-    nuevo: false,
-  },
-  {
-    id: 3,
-    titulo: 'Pintor de interiores — trabajo permanente',
-    descripcion: 'Empresa de reformas busca pintor con experiencia en interiores para incorporar a nuestro equipo estable. Requiere saber aplicar papel tapiz y texturas decorativas. Muy buen clima laboral.',
-    oficio: 'Pintura',
-    tipo: 'Permanente',
-    provincia: 'Córdoba',
-    ciudad: 'Córdoba Capital',
-    salario: '$150.000 - $200.000 / mes',
-    empleador: 'Roberto G.',
-    empleadorAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuA47PcmaCEVR8MUxuUiBAnF_Tl7yrI0gYvL0DkH4WgSXRUXfO3FmSHnfPbFkMv3t5Ics_ZCGvWZV70gBY7iQepiNpaqkMNz-1R5u2x6DP5K04cPBpjzN-yG9ReyFHO3nLGgFsUMKnqrYSjMdoFJT3EB_8GXbmLi6xZBEpMKhZ06FRH2Y7L8bMxrGKYxqP1zWnQCe1LgAJ0_dlOp5zk6E8cRFy6RerNcAU7-VJtLuEaSTbgO32TkJUzh8ufHRH8Wa-6aEhY-oC54m',
-    postulantes: 23,
-    fecha: '2026-07-12',
-    urgente: false,
-    nuevo: false,
-  },
-  {
-    id: 4,
-    titulo: 'Ayudante General en construcción — Part-time',
-    descripcion: 'Busco persona con ganas de aprender en el rubro de la construcción. No requiere experiencia previa. Trabajo 4 horas diarias de lunes a viernes. Ideal para quien quiera iniciarse en el oficio.',
-    oficio: 'Albañilería',
-    tipo: 'Part-time',
-    provincia: 'Santa Fe',
-    ciudad: 'Rosario',
-    salario: '$70.000 / mes',
-    empleador: 'Ana R.',
-    empleadorAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCGoFDAGFQPJAxM_8frPjeqMvonNJimYNsbXSFS3XL7IHT9M0WjRaY4M5mZqxHtwuth5o1P3v-dlo45EjO2-xDd9N93c_Lh0hT7Ks13R5lKqQaQgsCVpuW1DsAGgaUZ29qCVQteaFJeijV6UJSA3fdOnaV19egZxi3uqb93RH6PL-OTO5jLe7-OJ53ZxyiimF0G0K0yT_hPMRMrLUGaMkz2Jnbf69h-TBiF6VZ-DEdVYQNr2bw4qbyBYqNqoA1F-LHMNDuu9oKIVQwa',
-    postulantes: 5,
-    fecha: '2026-07-17',
-    urgente: false,
-    nuevo: true,
-  },
-];
-
 export default function BolsaEmpleoPage() {
   const router = useRouter();
   const [empleos, setEmpleos] = useState<any[]>([]);
@@ -121,19 +54,14 @@ export default function BolsaEmpleoPage() {
       }
       const nombrePro = currentPerfil?.nombre || 'Usuario Profesional';
 
-      // 2. Cargar empleos desde dbHelper
+      // 2. Cargar empleos exclusivamente desde Supabase
       try {
         const jobs = await dbHelper.getJobs();
-        const jobOffers = jobs.filter((j: any) => j.tipo || j.salario);
-        if (jobOffers.length === 0 && (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('tu-proyecto'))) {
-          // Fallback initial insert if entirely empty and in mock
-          setEmpleos(EMPLEOS_DEFAULT);
-          localStorage.setItem('oficiosya_empleos', JSON.stringify(EMPLEOS_DEFAULT));
-        } else {
-          setEmpleos(jobOffers);
-        }
+        const jobOffers = (jobs || []).filter((j: any) => j.tipo || j.salario || j.esEmpleo);
+        setEmpleos(jobOffers);
       } catch (e) {
-        console.error(e);
+        console.error("Error al cargar empleos desde BD:", e);
+        setEmpleos([]);
       }
 
       // 3. Cargar postulaciones desde dbHelper
@@ -155,11 +83,12 @@ export default function BolsaEmpleoPage() {
   }, []);
 
   const empleosFiltrados = empleos.filter(e => {
-    const matchBusqueda = e.titulo.toLowerCase().includes(busqueda.toLowerCase()) ||
-      e.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
-      e.oficio.toLowerCase().includes(busqueda.toLowerCase());
+    const oficioNombre = e.oficio || e.categoria || e.rubro || 'General';
+    const matchBusqueda = (e.titulo || '').toLowerCase().includes(busqueda.toLowerCase()) ||
+      (e.descripcion || '').toLowerCase().includes(busqueda.toLowerCase()) ||
+      oficioNombre.toLowerCase().includes(busqueda.toLowerCase());
     const matchProvincia = provinciaFiltro === 'Todas' || e.provincia === provinciaFiltro;
-    const matchOficio = oficioFiltro === 'Todos' || e.oficio === oficioFiltro;
+    const matchOficio = oficioFiltro === 'Todos' || oficioNombre === oficioFiltro;
     const matchTipo = tipoFiltro === 'Todos' || e.tipo === tipoFiltro;
     return matchBusqueda && matchProvincia && matchOficio && matchTipo;
   });

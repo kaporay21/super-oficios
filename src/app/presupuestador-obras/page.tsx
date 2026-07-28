@@ -166,6 +166,19 @@ export default function PresupuestadorObrasPage() {
   const [printIncluirMateriales, setPrintIncluirMateriales] = useState(true);
   const [printIncluirMatCalculados, setPrintIncluirMatCalculados] = useState(true);
 
+  // --- PLAN & MODO DE PRESUPUESTADOR (PLAN GRATIS vs PRO) ---
+  const [userPlan, setUserPlan] = useState<'Gratis' | 'Pro' | 'Master'>('Gratis');
+  const [modoPresupuestador, setModoPresupuestador] = useState<'basico' | 'pro'>('basico');
+  const [modoTabsBasico, setModoTabsBasico] = useState<'presupuesto' | 'materiales'>('presupuesto');
+
+  // --- ESTADOS PRESUPUESTADOR BÁSICO ---
+  const [tituloBasico, setTituloBasico] = useState('Presupuesto de Obra');
+  const [clienteBasico, setClienteBasico] = useState('');
+  const [itemsBasico, setItemsBasico] = useState<any[]>([
+    { id: '1', concepto: 'Mano de Obra / Servicio principal', cantidad: 1, unidad: 'Global', precioUnitario: 35000 },
+    { id: '2', concepto: 'Materiales e insumos para trabajo', cantidad: 1, unidad: 'Global', precioUnitario: 18000 }
+  ]);
+
   // --- HYDRATION STATES ---
   const [refNo, setRefNo] = useState(1000);
   const [fechaStr, setFechaStr] = useState('');
@@ -173,6 +186,27 @@ export default function PresupuestadorObrasPage() {
   useEffect(() => {
     setRefNo(Math.floor(Math.random() * 9000) + 1000);
     setFechaStr(new Date().toLocaleDateString());
+    
+    // Cargar perfil y plan del profesional
+    const storedPerfil = localStorage.getItem('oficiosya_profesional_perfil');
+    if (storedPerfil) {
+      try {
+        const parsed = JSON.parse(storedPerfil);
+        if (parsed.plan === 'Pro' || parsed.plan === 'Master') {
+          setUserPlan(parsed.plan);
+          setModoPresupuestador('pro');
+        } else {
+          setUserPlan('Gratis');
+          setModoPresupuestador('basico');
+        }
+        if (parsed.nombre) {
+          setPrintNombrePro(`${parsed.nombre} ${parsed.apellido || ''}`.trim());
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
     const savedCalcs = localStorage.getItem('oficiosya_custom_calculadoras');
     if (savedCalcs) {
       setCalculadoras(JSON.parse(savedCalcs));
@@ -183,6 +217,68 @@ export default function PresupuestadorObrasPage() {
     const guardados = JSON.parse(localStorage.getItem('oficiosya_presupuestos_guardados') || '[]');
     setHistorialPresupuestos(guardados);
   }, []);
+
+  const addItemBasico = () => {
+    setItemsBasico(prev => [
+      ...prev,
+      { id: Date.now().toString(), concepto: '', cantidad: 1, unidad: 'Unidad', precioUnitario: 0 }
+    ]);
+  };
+
+  const updateItemBasico = (id: string, field: string, value: any) => {
+    setItemsBasico(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+
+  const deleteItemBasico = (id: string) => {
+    setItemsBasico(prev => prev.filter(item => item.id !== id));
+  };
+
+  const totalBasico = useMemo(() => {
+    return itemsBasico.reduce((acc, item) => acc + (Number(item.cantidad || 0) * Number(item.precioUnitario || 0)), 0);
+  }, [itemsBasico]);
+
+  const handleShareWhatsAppBasico = () => {
+    let text = `📋 *${tituloBasico.toUpperCase()}* — OficiosYa\n`;
+    text += `👤 *Emisor:* ${printNombrePro || 'Profesional'}\n`;
+    if (clienteBasico) text += `👤 *Cliente:* ${clienteBasico}\n`;
+    text += `-----------------------------------\n`;
+    text += `*${modoTabsBasico === 'presupuesto' ? 'DETALLE DEL PRESUPUESTO' : 'LISTA DE MATERIALES'}*\n`;
+
+    itemsBasico.forEach((item, i) => {
+      if (modoTabsBasico === 'presupuesto') {
+        const sub = (Number(item.cantidad) || 0) * (Number(item.precioUnitario) || 0);
+        text += `${i + 1}. ${item.concepto || 'Item'} (${item.cantidad} ${item.unidad}) — $${sub.toLocaleString('es-AR')}\n`;
+      } else {
+        text += `${i + 1}. ${item.concepto || 'Material'} (${item.cantidad} ${item.unidad})\n`;
+      }
+    });
+
+    text += `-----------------------------------\n`;
+    if (modoTabsBasico === 'presupuesto') {
+      text += `💰 *TOTAL ESTIMADO:* $${totalBasico.toLocaleString('es-AR')}\n`;
+    }
+    text += `\n_Presupuesto generado con OficiosYa_`;
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  const handleShareChatBasico = () => {
+    let text = `📋 *${tituloBasico.toUpperCase()}* — OficiosYa\n`;
+    text += `👤 *Emisor:* ${printNombrePro || 'Profesional'}\n`;
+    if (clienteBasico) text += `👤 *Cliente:* ${clienteBasico}\n`;
+    text += `\n*Detalle:*\n`;
+    itemsBasico.forEach((item, i) => {
+      const sub = (Number(item.cantidad) || 0) * (Number(item.precioUnitario) || 0);
+      text += `• ${item.concepto || 'Item'} (${item.cantidad} ${item.unidad}) - $${sub.toLocaleString('es-AR')}\n`;
+    });
+    if (modoTabsBasico === 'presupuesto') {
+      text += `\n💰 *Total:* $${totalBasico.toLocaleString('es-AR')}`;
+    }
+
+    navigator.clipboard.writeText(text);
+    alert('¡Presupuesto copiado al portapapeles! Abrí tu chat con el cliente para pegarlo y enviarlo.');
+    router.push('/chat');
+  };
 
   const updateAndSaveCalculadoras = (newList: any[]) => {
     setCalculadoras(newList);
@@ -750,14 +846,16 @@ export default function PresupuestadorObrasPage() {
             <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Muro</span>
           </button>
         </Tooltip>
-        <Tooltip title="Mis trabajos" text="Revisá y gestioná tus trabajos en curso, presupuestados o finalizados." position="right">
-          <button onClick={() => router.push('/mis-trabajos')} className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all">
-            <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center border border-gray-100 shadow-inner">
-              <TrabajosIcon className="w-6 h-6" active={false} />
-            </div>
-            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Trabajos</span>
-          </button>
-        </Tooltip>
+        {(userPlan === 'Pro' || userPlan === 'Master') && (
+          <Tooltip title="Mis trabajos" text="Revisá y gestioná tus trabajos en curso, presupuestados o finalizados." position="right">
+            <button onClick={() => router.push('/mis-trabajos')} className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all">
+              <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center border border-gray-100 shadow-inner">
+                <TrabajosIcon className="w-6 h-6" active={false} />
+              </div>
+              <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Trabajos</span>
+            </button>
+          </Tooltip>
+        )}
         <Tooltip title="Mensajes" text="Chateá directamente con tus clientes para coordinar visitas y detalles de los trabajos." position="right">
           <button onClick={() => router.push('/chat')} className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#00355f] hover:scale-105 transition-all">
             <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center border border-gray-100 shadow-inner">
@@ -766,12 +864,12 @@ export default function PresupuestadorObrasPage() {
             <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#00355f] uppercase tracking-wider">Mensajes</span>
           </button>
         </Tooltip>
-        <Tooltip title="Calculadora" text="Herramientas y calculadora de materiales y mano de obra para construcción." position="right">
+        <Tooltip title="Presupuestador" text="Calculadora de materiales y mano de obra para construcción." position="right">
           <button className="flex flex-col items-center justify-center gap-1 group text-[#fc8127] hover:scale-105 transition-all">
             <div className="w-12 h-12 bg-orange-50 text-[#fc8127] rounded-xl flex items-center justify-center border border-orange-100 shadow-sm">
               <HerramientasIcon className="w-6 h-6" active={true} />
             </div>
-            <span className="text-[10px] font-extrabold text-[#fc8127] uppercase tracking-wider">Herramientas</span>
+            <span className="text-[10px] font-extrabold text-[#fc8127] uppercase tracking-wider">Presupuestador</span>
           </button>
         </Tooltip>
         <div className="mt-auto mb-6">
@@ -788,175 +886,552 @@ export default function PresupuestadorObrasPage() {
 
       {/* PRINT-ONLY DOCUMENT */}
       <div className="hidden print:block w-full text-black">
-        <div className="flex justify-between items-start border-b-4 border-[#00355f] pb-4 mb-6">
+        {modoPresupuestador === 'basico' ? (
+          /* PLANTILLA DE IMPRESIÓN BÁSICA (PLAN GRATIS) */
           <div>
-            <div className="flex items-center gap-2">
-              <img src="/mascot.png" alt="Mascota" className="w-12 h-12 object-contain" />
-              <span className="text-2xl font-black text-[#00355f] tracking-tight">Oficios<span className="text-[#fc8127]">Ya</span></span>
+            <div className="flex justify-between items-start border-b-4 border-[#00355f] pb-4 mb-6">
+              <div>
+                <div className="flex items-center gap-2">
+                  <img src="/mascot.png" alt="Mascota" className="w-12 h-12 object-contain" />
+                  <span className="text-2xl font-black text-[#00355f] tracking-tight">Oficios<span className="text-[#fc8127]">Ya</span></span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Presupuestos y Listas de Materiales</p>
+              </div>
+              <div className="text-right text-xs">
+                <p className="font-extrabold">Fecha: {fechaStr}</p>
+                <p className="text-gray-500 mt-0.5">Nº Ref: #{refNo}</p>
+              </div>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Presupuestos de Obras Profesionales</p>
-          </div>
-          <div className="text-right text-xs">
-            <p className="font-extrabold">Fecha: {fechaStr}</p>
-            <p className="text-gray-500 mt-0.5">Nº Ref: #{refNo}</p>
-          </div>
-        </div>
 
-        <div className="text-center my-6">
-          <h1 className="text-3xl font-black uppercase tracking-wider text-[#00355f] border-y border-gray-200 py-2">PRESUPUESTO</h1>
-        </div>
+            <div className="text-center my-6">
+              <h1 className="text-2xl font-black uppercase tracking-wider text-[#00355f] border-y border-gray-200 py-2">
+                {modoTabsBasico === 'presupuesto' ? (tituloBasico || 'PRESUPUESTO DE OBRA').toUpperCase() : 'LISTA DE MATERIALES E INSUMOS'}
+              </h1>
+            </div>
 
-        <div className="grid grid-cols-2 gap-8 my-6 bg-slate-50 p-4 rounded-2xl border border-gray-150">
-          <div>
-            <p className="text-xs font-bold text-gray-400 uppercase">Profesional Emisor</p>
-            <p className="text-base font-black text-[#00355f] mt-1">{printNombrePro}</p>
-          </div>
-          <div>
-            <p className="text-xs font-bold text-gray-400 uppercase">Presupuestado Para</p>
-            <p className="text-base font-black text-gray-900 mt-1">{clienteNombre || 'Consumidor Final'}</p>
-            {clienteTelefono && <p className="text-xs text-gray-500">WhatsApp: {clienteTelefono}</p>}
-          </div>
-        </div>
+            <div className="grid grid-cols-2 gap-8 my-6 bg-slate-50 p-4 rounded-2xl border border-gray-150">
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase">Profesional Emisor</p>
+                <p className="text-base font-black text-[#00355f] mt-1">{printNombrePro}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase">Presupuestado Para</p>
+                <p className="text-base font-black text-gray-900 mt-1">{clienteBasico || 'Consumidor Final'}</p>
+              </div>
+            </div>
 
-        {printIncluirManoObra && (
-          <div className="my-8">
-            <h3 className="text-lg font-black text-[#00355f] mb-3">Detalle de Mano de Obra</h3>
-            <table className="w-full text-left text-sm border-collapse">
-              <thead>
-                <tr className="bg-slate-100 border-b border-gray-300">
-                  <th className="py-2.5 px-3 font-bold text-gray-600">Concepto / Servicio</th>
-                  <th className="py-2.5 px-3 font-bold text-gray-600 text-right">Cantidad</th>
-                  <th className="py-2.5 px-3 font-bold text-gray-600 text-right">Precio Unitario</th>
-                  <th className="py-2.5 px-3 font-bold text-gray-600 text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {presupuestoManoObra.map((item, idx) => (
-                  <tr key={idx} className="border-b border-gray-150">
-                    <td className="py-2.5 px-3 font-bold text-gray-800">{item.nombre}</td>
-                    <td className="py-2.5 px-3 text-right text-gray-600">{item.cantidad} {item.unidad}</td>
-                    <td className="py-2.5 px-3 text-right text-gray-600">${item.precioUnitario.toLocaleString()}</td>
-                    <td className="py-2.5 px-3 text-right font-bold text-gray-900">${Math.round(item.cantidad * item.precioUnitario).toLocaleString()}</td>
+            <div className="my-8">
+              <table className="w-full text-left text-sm border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 border-b border-gray-300">
+                    <th className="py-2.5 px-3 font-bold text-gray-600">Concepto / Material</th>
+                    <th className="py-2.5 px-3 font-bold text-gray-600 text-right">Cantidad / Unidad</th>
+                    {modoTabsBasico === 'presupuesto' && (
+                      <>
+                        <th className="py-2.5 px-3 font-bold text-gray-600 text-right">Precio Unitario</th>
+                        <th className="py-2.5 px-3 font-bold text-gray-600 text-right">Subtotal</th>
+                      </>
+                    )}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="flex justify-end mt-4">
-              <div className="w-64 space-y-1 text-right">
-                <div className="flex justify-between border-b border-gray-100 pb-1">
-                  <span className="text-xs text-gray-500 font-bold">Total Mano de Obra:</span>
-                  <span className="text-sm font-black text-[#00355f]">${Math.round(subtotalManoObra).toLocaleString()}</span>
+                </thead>
+                <tbody>
+                  {itemsBasico.map((item, idx) => {
+                    const sub = (Number(item.cantidad) || 0) * (Number(item.precioUnitario) || 0);
+                    return (
+                      <tr key={idx} className="border-b border-gray-150">
+                        <td className="py-2.5 px-3 font-bold text-gray-800">{item.concepto || 'Item sin nombre'}</td>
+                        <td className="py-2.5 px-3 text-right text-gray-600">{item.cantidad} {item.unidad}</td>
+                        {modoTabsBasico === 'presupuesto' && (
+                          <>
+                            <td className="py-2.5 px-3 text-right text-gray-600">${Number(item.precioUnitario || 0).toLocaleString('es-AR')}</td>
+                            <td className="py-2.5 px-3 text-right font-bold text-gray-900">${sub.toLocaleString('es-AR')}</td>
+                          </>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {modoTabsBasico === 'presupuesto' && (
+              <div className="flex justify-end mt-6">
+                <div className="w-72 space-y-2 text-right bg-slate-50 p-4 rounded-xl border border-gray-200">
+                  <div className="flex justify-between pt-1">
+                    <span className="text-base text-gray-900 font-extrabold">Total General:</span>
+                    <span className="text-xl font-black text-green-600">${totalBasico.toLocaleString('es-AR')}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-16 grid grid-cols-2 gap-8 text-center pt-8 border-t border-gray-150">
+              <div>
+                <div className="w-44 border-b border-gray-300 mx-auto mb-2"></div>
+                <p className="text-xs text-gray-400">Firma del Profesional</p>
+                <p className="text-xs font-bold text-gray-700 mt-0.5">{printNombrePro}</p>
+              </div>
+              <div>
+                <div className="w-44 border-b border-gray-300 mx-auto mb-2"></div>
+                <p className="text-xs text-gray-400">Conformidad del Cliente</p>
+                <p className="text-xs font-bold text-gray-700 mt-0.5">{clienteBasico || 'Consumidor Final'}</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* PLANTILLA DE IMPRESIÓN PRO FLEX */
+          <div>
+            <div className="flex justify-between items-start border-b-4 border-[#00355f] pb-4 mb-6">
+              <div>
+                <div className="flex items-center gap-2">
+                  <img src="/mascot.png" alt="Mascota" className="w-12 h-12 object-contain" />
+                  <span className="text-2xl font-black text-[#00355f] tracking-tight">Oficios<span className="text-[#fc8127]">Ya</span></span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Presupuestos de Obras Profesionales</p>
+              </div>
+              <div className="text-right text-xs">
+                <p className="font-extrabold">Fecha: {fechaStr}</p>
+                <p className="text-gray-500 mt-0.5">Nº Ref: #{refNo}</p>
+              </div>
+            </div>
+
+            <div className="text-center my-6">
+              <h1 className="text-3xl font-black uppercase tracking-wider text-[#00355f] border-y border-gray-200 py-2">PRESUPUESTO DE OBRA</h1>
+            </div>
+
+            <div className="grid grid-cols-2 gap-8 my-6 bg-slate-50 p-4 rounded-2xl border border-gray-150">
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase">Profesional Emisor</p>
+                <p className="text-base font-black text-[#00355f] mt-1">{printNombrePro}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase">Presupuestado Para</p>
+                <p className="text-base font-black text-gray-900 mt-1">{clienteNombre || 'Consumidor Final'}</p>
+                {clienteTelefono && <p className="text-xs text-gray-500">WhatsApp: {clienteTelefono}</p>}
+              </div>
+            </div>
+
+            {printIncluirManoObra && (
+              <div className="my-8">
+                <h3 className="text-lg font-black text-[#00355f] mb-3">Detalle de Mano de Obra</h3>
+                <table className="w-full text-left text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-gray-300">
+                      <th className="py-2.5 px-3 font-bold text-gray-600">Concepto / Servicio</th>
+                      <th className="py-2.5 px-3 font-bold text-gray-600 text-right">Cantidad</th>
+                      <th className="py-2.5 px-3 font-bold text-gray-600 text-right">Precio Unitario</th>
+                      <th className="py-2.5 px-3 font-bold text-gray-600 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {presupuestoManoObra.map((item, idx) => (
+                      <tr key={idx} className="border-b border-gray-150">
+                        <td className="py-2.5 px-3 font-bold text-gray-800">{item.nombre}</td>
+                        <td className="py-2.5 px-3 text-right text-gray-600">{item.cantidad} {item.unidad}</td>
+                        <td className="py-2.5 px-3 text-right text-gray-600">${item.precioUnitario.toLocaleString()}</td>
+                        <td className="py-2.5 px-3 text-right font-bold text-gray-900">${Math.round(item.cantidad * item.precioUnitario).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="flex justify-end mt-4">
+                  <div className="w-64 space-y-1 text-right">
+                    <div className="flex justify-between border-b border-gray-100 pb-1">
+                      <span className="text-xs text-gray-500 font-bold">Total Mano de Obra:</span>
+                      <span className="text-sm font-black text-[#00355f]">${Math.round(subtotalManoObra).toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {printIncluirMateriales && listaMaterialesUnificada.filter(i => i.cantidad > 0).length > 0 && (
+              <div className="my-8">
+                <h3 className="text-lg font-black text-[#00355f] mb-3">Lista de Materiales</h3>
+                <table className="w-full text-left text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-gray-300">
+                      <th className="py-2.5 px-3 font-bold text-gray-600">Material / Insumo</th>
+                      <th className="py-2.5 px-3 font-bold text-gray-600 text-right">Cantidad</th>
+                      <th className="py-2.5 px-3 font-bold text-gray-600 text-right">Unidad</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listaMaterialesUnificada.filter(i => i.cantidad > 0).map((item, idx) => (
+                      <tr key={idx} className="border-b border-gray-150">
+                        <td className="py-2.5 px-3 font-bold text-gray-800">{item.nombre}</td>
+                        <td className="py-2.5 px-3 text-right text-gray-600">{item.cantidad}</td>
+                        <td className="py-2.5 px-3 text-right text-gray-500">{item.unidad}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Totales finales print */}
+            <div className="flex justify-end mt-6">
+              <div className="w-72 space-y-2 text-right bg-slate-50 p-4 rounded-xl border border-gray-200">
+                {printIncluirManoObra && (
+                  <div className="flex justify-between border-b border-gray-200 pb-1">
+                    <span className="text-sm text-gray-500 font-bold">Mano de Obra:</span>
+                    <span className="text-sm font-black text-[#00355f]">${Math.round(subtotalManoObra).toLocaleString()}</span>
+                  </div>
+                )}
+                <div className="flex justify-between pt-1">
+                  <span className="text-base text-gray-900 font-extrabold">Total General:</span>
+                  <span className="text-xl font-black text-green-600">${Math.round(totalGeneral).toLocaleString()}</span>
                 </div>
               </div>
             </div>
-          </div>
-        )}
 
-        {printIncluirMateriales && listaMaterialesUnificada.filter(i => i.cantidad > 0).length > 0 && (
-          <div className="my-8">
-            <h3 className="text-lg font-black text-[#00355f] mb-3">Lista de Materiales</h3>
-            <table className="w-full text-left text-sm border-collapse">
-              <thead>
-                <tr className="bg-slate-100 border-b border-gray-300">
-                  <th className="py-2.5 px-3 font-bold text-gray-600">Material / Insumo</th>
-                  <th className="py-2.5 px-3 font-bold text-gray-600 text-right">Cantidad</th>
-                  <th className="py-2.5 px-3 font-bold text-gray-600 text-right">Unidad</th>
-                </tr>
-              </thead>
-              <tbody>
-                {listaMaterialesUnificada.filter(i => i.cantidad > 0).map((item, idx) => (
-                  <tr key={idx} className="border-b border-gray-150">
-                    <td className="py-2.5 px-3 font-bold text-gray-800">{item.nombre}</td>
-                    <td className="py-2.5 px-3 text-right text-gray-600">{item.cantidad}</td>
-                    <td className="py-2.5 px-3 text-right text-gray-500">{item.unidad}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Totales finales print */}
-        <div className="flex justify-end mt-6">
-          <div className="w-72 space-y-2 text-right bg-slate-50 p-4 rounded-xl border border-gray-200">
-            {printIncluirManoObra && (
-              <div className="flex justify-between border-b border-gray-200 pb-1">
-                <span className="text-sm text-gray-500 font-bold">Mano de Obra:</span>
-                <span className="text-sm font-black text-[#00355f]">${Math.round(subtotalManoObra).toLocaleString()}</span>
+            {presupuestoNota && (
+              <div className="mt-8 border-t border-gray-200 pt-4">
+                <p className="text-xs font-bold text-gray-400 uppercase">Observaciones</p>
+                <p className="text-xs text-gray-600 mt-1 whitespace-pre-line leading-relaxed">{presupuestoNota}</p>
               </div>
             )}
-            <div className="flex justify-between pt-1">
-              <span className="text-base text-gray-900 font-extrabold">Total General:</span>
-              <span className="text-xl font-black text-green-600">${Math.round(totalGeneral).toLocaleString()}</span>
+
+            <div className="mt-16 grid grid-cols-2 gap-8 text-center pt-8 border-t border-gray-150">
+              <div>
+                <div className="w-44 border-b border-gray-300 mx-auto mb-2"></div>
+                <p className="text-xs text-gray-400">Firma del Profesional</p>
+                <p className="text-xs font-bold text-gray-700 mt-0.5">{printNombrePro}</p>
+              </div>
+              <div>
+                <div className="w-44 border-b border-gray-300 mx-auto mb-2"></div>
+                <p className="text-xs text-gray-400">Conformidad del Cliente</p>
+                <p className="text-xs font-bold text-gray-700 mt-0.5">{clienteNombre || 'Consumidor Final'}</p>
+              </div>
             </div>
           </div>
-        </div>
-
-        {presupuestoNota && (
-          <div className="mt-8 border-t border-gray-200 pt-4">
-            <p className="text-xs font-bold text-gray-400 uppercase">Observaciones</p>
-            <p className="text-xs text-gray-600 mt-1 whitespace-pre-line leading-relaxed">{presupuestoNota}</p>
-          </div>
         )}
-
-        <div className="mt-16 grid grid-cols-2 gap-8 text-center pt-8 border-t border-gray-150">
-          <div>
-            <div className="w-44 border-b border-gray-300 mx-auto mb-2"></div>
-            <p className="text-xs text-gray-400">Firma del Profesional</p>
-            <p className="text-xs font-bold text-gray-700 mt-0.5">{printNombrePro}</p>
-          </div>
-          <div>
-            <div className="w-44 border-b border-gray-300 mx-auto mb-2"></div>
-            <p className="text-xs text-gray-400">Conformidad del Cliente</p>
-            <p className="text-xs font-bold text-gray-700 mt-0.5">{clienteNombre || 'Consumidor Final'}</p>
-          </div>
-        </div>
       </div>
 
       {/* SCREEN VIEWPORT */}
       <main className="mt-16 flex-grow px-4 md:px-8 py-8 max-w-6xl mx-auto w-full print:hidden">
         
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-          <div>
-            <h2 className="text-3xl font-black text-[#00355f] tracking-tight flex items-center gap-2">
-              Presupuestador de Obras
-              <span className="text-xs font-black bg-orange-100 text-[#fc8127] px-2 py-0.5 rounded-full uppercase">Flex</span>
-            </h2>
-            <p className="text-gray-500 text-sm mt-1">Calculador de materiales con módulos personalizables y agregables.</p>
+        {/* Selector de Modo: Básico (Plan Gratis) vs Pro Flex */}
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-white p-4 md:p-6 rounded-3xl border border-gray-200 shadow-sm mb-8">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-[#fc8127]">
+              <FileText className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-extrabold text-[#00355f] flex items-center gap-2">
+                {modoPresupuestador === 'basico' ? 'Presupuestador Básico' : 'Presupuestador de Obras Pro Flex'}
+                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase ${
+                  modoPresupuestador === 'basico' ? 'bg-blue-100 text-[#00355f]' : 'bg-orange-100 text-[#fc8127]'
+                }`}>
+                  {modoPresupuestador === 'basico' ? 'Plan Gratis' : 'Plan Pro'}
+                </span>
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {modoPresupuestador === 'basico' 
+                  ? 'Generá presupuestos o listas de materiales para enviar por WhatsApp, chat o PDF.' 
+                  : 'Cómputos automáticos por m² y módulos avanzados de mano de obra e insumos.'}
+              </p>
+            </div>
           </div>
-          <button 
-            onClick={() => setActiveTab('presupuestador')}
-            className="flex items-center gap-2 bg-[#00355f] hover:bg-[#0f4c81] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all"
-          >
-            <ClipboardCheck className="w-4 h-4 text-[#fc8127]" />
-            Ver Presupuesto ({presupuestoManoObra.length + presupuestoMateriales.length})
-          </button>
+
+          <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-2xl text-xs font-bold w-full md:w-auto">
+            <button 
+              onClick={() => setModoPresupuestador('basico')}
+              className={`flex-1 md:flex-initial px-4 py-2.5 rounded-xl transition-all ${
+                modoPresupuestador === 'basico' ? 'bg-[#00355f] text-white shadow-md' : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Presupuestador Básico
+            </button>
+            <button 
+              onClick={() => {
+                if (userPlan === 'Pro' || userPlan === 'Master') {
+                  setModoPresupuestador('pro');
+                } else {
+                  alert('El Presupuestador de Obras por m² y módulos avanzados pertenece a los Planes Pro / Master. Podés actualizar tu plan en la sección Planes.');
+                  router.push('/planes');
+                }
+              }}
+              className={`flex-1 md:flex-initial px-4 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                modoPresupuestador === 'pro' ? 'bg-[#fc8127] text-white shadow-md' : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Presupuestador Pro
+            </button>
+          </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 mb-8 overflow-x-auto scrollbar-none">
-          <button 
-            onClick={() => setActiveTab('calculadoras')}
-            className={`py-3.5 px-5 font-bold text-xs tracking-wider border-b-[3px] transition-all uppercase flex items-center gap-2 shrink-0 ${activeTab === 'calculadoras' ? 'text-[#00355f] border-[#fc8127]' : 'text-gray-400 border-transparent hover:text-gray-600'}`}
-          >
-            <Calculator className="w-4 h-4" />
-            Calculadoras de Insumos
-          </button>
-          <button 
-            onClick={() => setActiveTab('presupuestador')}
-            className={`py-3.5 px-5 font-bold text-xs tracking-wider border-b-[3px] transition-all uppercase flex items-center gap-2 shrink-0 ${activeTab === 'presupuestador' ? 'text-[#00355f] border-[#fc8127]' : 'text-gray-400 border-transparent hover:text-gray-600'}`}
-          >
-            <Folder className="w-4 h-4" />
-            Presupuesto & Ítems ({presupuestoManoObra.length + presupuestoMateriales.length})
-          </button>
-          <button 
-            onClick={() => setActiveTab('historial')}
-            className={`py-3.5 px-5 font-bold text-xs tracking-wider border-b-[3px] transition-all uppercase flex items-center gap-2 shrink-0 ${activeTab === 'historial' ? 'text-[#00355f] border-[#fc8127]' : 'text-gray-400 border-transparent hover:text-gray-600'}`}
-          >
-            <FileText className="w-4 h-4" />
-            Historial de Obras ({historialPresupuestos.length})
-          </button>
-        </div>
+        {modoPresupuestador === 'basico' ? (
+          /* VISTA PRESUPUESTADOR BÁSICO (PLAN GRATIS) */
+          <div className="space-y-8">
+            
+            {/* Pestañas Arriba: Presupuesto vs Lista de Materiales */}
+            <div className="flex border-b border-gray-200">
+              <button 
+                onClick={() => setModoTabsBasico('presupuesto')}
+                className={`py-3.5 px-6 font-extrabold text-xs uppercase tracking-wider border-b-[3px] transition-all flex items-center gap-2 ${
+                  modoTabsBasico === 'presupuesto' ? 'border-[#fc8127] text-[#00355f]' : 'border-transparent text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                <FileText className="w-4 h-4 text-[#fc8127]" />
+                Presupuesto
+              </button>
+              <button 
+                onClick={() => setModoTabsBasico('materiales')}
+                className={`py-3.5 px-6 font-extrabold text-xs uppercase tracking-wider border-b-[3px] transition-all flex items-center gap-2 ${
+                  modoTabsBasico === 'materiales' ? 'border-[#fc8127] text-[#00355f]' : 'border-transparent text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                <Package className="w-4 h-4 text-[#fc8127]" />
+                Lista de Materiales
+              </button>
+            </div>
+
+            {/* Cabecera del Documento Básico */}
+            <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-200 shadow-sm space-y-6">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Nombre del Presupuesto / Trabajo</label>
+                  <input 
+                    type="text"
+                    value={tituloBasico}
+                    onChange={(e) => setTituloBasico(e.target.value)}
+                    placeholder="Ej: Instalación de Baño y Cañerías"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-bold text-[#00355f] focus:outline-none focus:border-[#fc8127] focus:bg-white transition-all text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Cliente / Destinatario (Opcional)</label>
+                  <input 
+                    type="text"
+                    value={clienteBasico}
+                    onChange={(e) => setClienteBasico(e.target.value)}
+                    placeholder="Ej: Sra. María Gómez"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-semibold text-gray-800 focus:outline-none focus:border-[#fc8127] focus:bg-white transition-all text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Ficha Emisor Auto-completado */}
+              <div className="bg-blue-50/60 p-4 rounded-2xl border border-blue-100 flex items-center gap-3">
+                <div className="w-10 h-10 bg-[#00355f] text-white rounded-xl flex items-center justify-center font-bold text-sm shrink-0">
+                  {printNombrePro.charAt(0)}
+                </div>
+                <div>
+                  <p className="text-xs text-blue-800/80 font-semibold uppercase">Profesional Emisor (Auto-completado)</p>
+                  <p className="text-sm font-black text-[#00355f]">{printNombrePro || 'Profesional de OficiosYa'}</p>
+                </div>
+              </div>
+
+              {/* Tabla de Ítems / Materiales */}
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider">
+                    {modoTabsBasico === 'presupuesto' ? 'Ítems del Presupuesto' : 'Materiales e Insumos'}
+                  </h3>
+                  <button 
+                    onClick={addItemBasico}
+                    className="flex items-center gap-1.5 text-xs font-bold text-[#fc8127] hover:text-[#e06d19] bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Agregar Ítem
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm border-collapse min-w-[600px]">
+                    <thead>
+                      <tr className="border-b border-gray-200 text-gray-400 text-xs font-bold uppercase">
+                        <th className="py-3 px-3">Concepto / Material</th>
+                        <th className="py-3 px-3 w-28 text-center">Cantidad</th>
+                        <th className="py-3 px-3 w-36">Unidad</th>
+                        {modoTabsBasico === 'presupuesto' && (
+                          <>
+                            <th className="py-3 px-3 w-36 text-right">Precio Unit ($)</th>
+                            <th className="py-3 px-3 w-36 text-right">Subtotal ($)</th>
+                          </>
+                        )}
+                        <th className="py-3 px-3 w-12 text-center"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {itemsBasico.map((item) => {
+                        const sub = (Number(item.cantidad) || 0) * (Number(item.precioUnitario) || 0);
+                        return (
+                          <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
+                            <td className="py-2.5 px-3">
+                              <input 
+                                type="text"
+                                value={item.concepto}
+                                onChange={(e) => updateItemBasico(item.id, 'concepto', e.target.value)}
+                                placeholder="Ej. Instalación de cañerías"
+                                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:outline-none focus:border-[#fc8127] focus:bg-white"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <input 
+                                type="number"
+                                min="1"
+                                value={item.cantidad}
+                                onChange={(e) => updateItemBasico(item.id, 'cantidad', parseFloat(e.target.value) || 0)}
+                                className="w-20 px-2 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-center text-gray-800 focus:outline-none focus:border-[#fc8127] focus:bg-white"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <select 
+                                value={item.unidad}
+                                onChange={(e) => updateItemBasico(item.id, 'unidad', e.target.value)}
+                                className="w-full px-2 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 focus:outline-none focus:border-[#fc8127]"
+                              >
+                                <option value="Unidad">Unidad</option>
+                                <option value="Metros">Metros</option>
+                                <option value="m²">m²</option>
+                                <option value="m³">m³</option>
+                                <option value="Litros">Litros</option>
+                                <option value="Bolsas">Bolsas</option>
+                                <option value="Horas">Horas</option>
+                                <option value="Global">Global</option>
+                              </select>
+                            </td>
+                            {modoTabsBasico === 'presupuesto' && (
+                              <>
+                                <td className="py-2.5 px-3 text-right">
+                                  <input 
+                                    type="number"
+                                    min="0"
+                                    value={item.precioUnitario}
+                                    onChange={(e) => updateItemBasico(item.id, 'precioUnitario', parseFloat(e.target.value) || 0)}
+                                    className="w-28 px-2 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-right text-gray-800 focus:outline-none focus:border-[#fc8127] focus:bg-white"
+                                  />
+                                </td>
+                                <td className="py-2.5 px-3 text-right font-black text-gray-900 text-xs">
+                                  ${sub.toLocaleString('es-AR')}
+                                </td>
+                              </>
+                            )}
+                            <td className="py-2.5 px-3 text-center">
+                              <button 
+                                onClick={() => deleteItemBasico(item.id)}
+                                className="text-gray-300 hover:text-red-500 p-1.5 rounded-lg transition-colors"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {modoTabsBasico === 'presupuesto' && (
+                  <div className="flex justify-end pt-4 border-t border-gray-100">
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-right space-y-1 min-w-[240px]">
+                      <span className="text-xs text-gray-500 font-bold uppercase block">Total del Presupuesto</span>
+                      <span className="text-2xl font-black text-green-600">${totalBasico.toLocaleString('es-AR')}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Botones de Exportar / Compartir */}
+              <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button 
+                    onClick={handleShareWhatsAppBasico}
+                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    Compartir por WhatsApp
+                  </button>
+                  
+                  <button 
+                    onClick={handleShareChatBasico}
+                    className="flex items-center gap-2 bg-[#00355f] hover:bg-[#0f4c81] text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all"
+                  >
+                    <FileText className="w-4 h-4 text-[#fc8127]" />
+                    Enviar por Chat
+                  </button>
+                </div>
+
+                <button 
+                  onClick={() => window.print()}
+                  className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl font-bold text-xs transition-all"
+                >
+                  <Printer className="w-4 h-4" />
+                  Descargar PDF / Imprimir
+                </button>
+              </div>
+
+            </div>
+
+            {/* Banner CTA Promocional Pro */}
+            <div className="bg-gradient-to-r from-[#00355f] to-[#004e8a] p-6 rounded-3xl text-white flex flex-col md:flex-row items-center justify-between gap-4 shadow-md">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-[#fc8127]" />
+                  <h4 className="font-extrabold text-base">¿Querés automatizar cómputos por m² y guardar obras sin límites?</h4>
+                </div>
+                <p className="text-xs text-blue-100/80">
+                  Con los Planes Pro y Master accedés a calculadoras inteligentes para muros, losas, pintura y presupuestador de obras.
+                </p>
+              </div>
+              <button 
+                onClick={() => router.push('/planes')}
+                className="bg-[#fc8127] hover:bg-[#e06d19] text-white px-5 py-2.5 rounded-xl font-extrabold text-xs shrink-0 transition-all shadow-sm"
+              >
+                Conocer Plan Pro
+              </button>
+            </div>
+
+          </div>
+        ) : (
+          /* VISTA PRESUPUESTADOR PRO FLEX */
+          <div>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+              <div>
+                <h2 className="text-3xl font-black text-[#00355f] tracking-tight flex items-center gap-2">
+                  Presupuestador de Obras
+                  <span className="text-xs font-black bg-orange-100 text-[#fc8127] px-2 py-0.5 rounded-full uppercase">Flex</span>
+                </h2>
+                <p className="text-gray-500 text-sm mt-1">Calculador de materiales con módulos personalizables y agregables.</p>
+              </div>
+              <button 
+                onClick={() => setActiveTab('presupuestador')}
+                className="flex items-center gap-2 bg-[#00355f] hover:bg-[#0f4c81] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all"
+              >
+                <ClipboardCheck className="w-4 h-4 text-[#fc8127]" />
+                Ver Presupuesto ({presupuestoManoObra.length + presupuestoMateriales.length})
+              </button>
+            </div>
+
+            {/* Tabs Pro */}
+            <div className="flex border-b border-gray-200 mb-8 overflow-x-auto scrollbar-none">
+              <button 
+                onClick={() => setActiveTab('calculadoras')}
+                className={`py-3.5 px-5 font-bold text-xs tracking-wider border-b-[3px] transition-all uppercase flex items-center gap-2 shrink-0 ${activeTab === 'calculadoras' ? 'text-[#00355f] border-[#fc8127]' : 'text-gray-400 border-transparent hover:text-gray-600'}`}
+              >
+                <Calculator className="w-4 h-4" />
+                Calculadoras de Insumos
+              </button>
+              <button 
+                onClick={() => setActiveTab('presupuestador')}
+                className={`py-3.5 px-5 font-bold text-xs tracking-wider border-b-[3px] transition-all uppercase flex items-center gap-2 shrink-0 ${activeTab === 'presupuestador' ? 'text-[#00355f] border-[#fc8127]' : 'text-gray-400 border-transparent hover:text-gray-600'}`}
+              >
+                <Folder className="w-4 h-4" />
+                Presupuesto & Ítems ({presupuestoManoObra.length + presupuestoMateriales.length})
+              </button>
+              <button 
+                onClick={() => setActiveTab('historial')}
+                className={`py-3.5 px-5 font-bold text-xs tracking-wider border-b-[3px] transition-all uppercase flex items-center gap-2 shrink-0 ${activeTab === 'historial' ? 'text-[#00355f] border-[#fc8127]' : 'text-gray-400 border-transparent hover:text-gray-600'}`}
+              >
+                <FileText className="w-4 h-4" />
+                Historial de Obras ({historialPresupuestos.length})
+              </button>
+            </div>
 
         <div className="grid grid-cols-1 gap-8">
 
@@ -1612,7 +2087,9 @@ export default function PresupuestadorObrasPage() {
           )}
 
         </div>
-      </main>
+      </div>
+    )}
+  </main>
 
       {/* MODAL GUARDAR / ASOCIAR A CLIENTE / OBRA */}
       {showSaveModal && (

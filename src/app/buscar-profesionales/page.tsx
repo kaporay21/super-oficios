@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, Suspense } from 'react';
-import { Search, MapPin, Star, MessageSquare, ClipboardList, ArrowRight, Sparkles } from 'lucide-react';
+import { Search, MapPin, Star, MessageSquare, ClipboardList, ArrowRight, Sparkles, CheckCircle, Award } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { dbHelper } from '@/lib/supabase';
 import Tooltip from '@/components/Tooltip';
@@ -47,10 +47,13 @@ function BuscadorContenido() {
   const oficioParam = searchParams.get('oficio') || '';
   const provinciaParam = searchParams.get('provincia') || '';
 
-  // Estados de búsqueda
+  // Estados de búsqueda y filtros avanzados
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [provinciaFiltro, setProvinciaFiltro] = useState<string>('');
+  const [soloVerificados, setSoloVerificados] = useState<boolean>(false);
+  const [soloMatriculados, setSoloMatriculados] = useState<boolean>(false);
+  const [ordenarPor, setOrdenarPor] = useState<'destacados' | 'rating' | 'experiencia'>('destacados');
 
   const provinciasArgentinas = [
     'Buenos Aires',
@@ -185,9 +188,22 @@ function BuscadorContenido() {
         );
       });
 
-      return matchesCategory && matchesProvincia && matchesSearch;
+      const isVerif = !soloVerificados || (pro.verificacion === 'Verificado' || pro.estadoDNI === 'Validado');
+      const isMatric = !soloMatriculados || (pro.matriculadoVerificado || pro.estadoCertificados === 'Validado');
+
+      return matchesCategory && matchesProvincia && matchesSearch && isVerif && isMatric;
+    }).sort((a, b) => {
+      if (ordenarPor === 'rating') {
+        return (b.rating || 0) - (a.rating || 0);
+      }
+      if (ordenarPor === 'experiencia') {
+        const expA = parseInt(a.experiencia) || 0;
+        const expB = parseInt(b.experiencia) || 0;
+        return expB - expA;
+      }
+      return 0;
     });
-  }, [professionals, selectedCategory, searchQuery, provinciaFiltro]);
+  }, [professionals, selectedCategory, searchQuery, provinciaFiltro, soloVerificados, soloMatriculados, ordenarPor]);
 
   return (
     <main className="min-h-screen bg-[#F8F9FA] font-sans pb-24 selection:bg-[#0f4c81] selection:text-white">
@@ -322,8 +338,8 @@ function BuscadorContenido() {
           </div>
 
           {/* Filtros de Categorías */}
-          <div className="flex flex-col md:flex-row md:items-center gap-4 pt-2">
-            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none md:pb-0 w-full">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-2">
+            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none md:pb-0 flex-1">
               {categories.map((cat) => (
                 <button
                   key={cat.id}
@@ -337,6 +353,41 @@ function BuscadorContenido() {
                   {cat.label}
                 </button>
               ))}
+            </div>
+
+            {/* Filtros Rápidos de Insignias y Ordenamiento */}
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                onClick={() => setSoloVerificados(!soloVerificados)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all border flex items-center gap-1.5 ${
+                  soloVerificados
+                    ? 'bg-green-600 text-white border-green-600 shadow-sm'
+                    : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                <CheckCircle className="w-3.5 h-3.5" /> Solo Verificados (DNI)
+              </button>
+
+              <button
+                onClick={() => setSoloMatriculados(!soloMatriculados)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all border flex items-center gap-1.5 ${
+                  soloMatriculados
+                    ? 'bg-[#fc8127] text-white border-[#fc8127] shadow-sm'
+                    : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                <Award className="w-3.5 h-3.5" /> Solo Matriculados
+              </button>
+
+              <select
+                value={ordenarPor}
+                onChange={(e: any) => setOrdenarPor(e.target.value)}
+                className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold text-[#00355f] outline-none cursor-pointer hover:bg-gray-50"
+              >
+                <option value="destacados">Orden: Destacados</option>
+                <option value="rating">Más Valorados (Estrellas)</option>
+                <option value="experiencia">Mayor Experiencia</option>
+              </select>
             </div>
           </div>
         </section>
@@ -402,6 +453,20 @@ function BuscadorContenido() {
                           <p className="text-[11px] font-extrabold text-[#fc8127] tracking-wider uppercase mt-1">
                             {pro.trade}
                           </p>
+
+                          <div className="flex flex-wrap gap-1.5 mt-2 mb-1">
+                            {(pro.verificacion === 'Verificado' || pro.estadoDNI === 'Validado') && (
+                              <span className="inline-flex items-center gap-1 bg-green-100 text-green-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full" title="Identidad Verificada (DNI)">
+                                <CheckCircle className="w-3 h-3 text-green-600" /> Verificado
+                              </span>
+                            )}
+
+                            {(pro.matriculadoVerificado || pro.estadoCertificados === 'Validado') && (
+                              <span className="inline-flex items-center gap-1 bg-orange-100 text-orange-900 text-[10px] font-extrabold px-2 py-0.5 rounded-full" title="Profesional Matriculado / Certificado">
+                                <Award className="w-3 h-3 text-[#fc8127]" /> Matriculado
+                              </span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-1.5 text-gray-500 text-xs mt-3 mb-5">
                             <MapPin className="w-4 h-4 text-[#00355f]" />
                             <span className="line-clamp-1">{pro.location}</span>

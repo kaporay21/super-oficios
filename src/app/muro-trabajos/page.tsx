@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { 
   Search, Bell, Home, Briefcase, MessageSquare, 
   User, PlusCircle, Grid, Wrench, Zap, Paintbrush, 
-  Hammer, Sparkles, MapPin, Clock, LayoutDashboard, Send
+  Hammer, Sparkles, MapPin, Clock, LayoutDashboard, Send,
+  HelpCircle, ChevronDown, ChevronUp
 } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import { PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, ConfiguracionIcon, HerramientasIcon } from '@/components/ModernIcons';
@@ -28,11 +29,48 @@ function MuroTrabajosContent() {
   const [presupuestosCount, setPresupuestosCount] = useState(0);
   const [obrasGanadasCount, setObrasGanadasCount] = useState(0);
 
+  // Estados para Preguntas y Respuestas Pre-Presupuesto
+  const [expandedJobQuestionsId, setExpandedJobQuestionsId] = useState<number | string | null>(null);
+  const [preguntasMap, setPreguntasMap] = useState<{ [jobId: string]: any[] }>({});
+  const [nuevaPreguntaTextoMap, setNuevaPreguntaTextoMap] = useState<{ [jobId: string]: string }>({});
+
+  const [userPlan, setUserPlan] = useState<'Gratis' | 'Pro' | 'Master'>('Gratis');
+
+  useEffect(() => {
+    const storedPerfil = localStorage.getItem('oficiosya_profesional_perfil');
+    if (storedPerfil) {
+      try {
+        const parsed = JSON.parse(storedPerfil);
+        if (parsed.plan) setUserPlan(parsed.plan);
+      } catch (e) {}
+    }
+  }, []);
+
+  const toggleQuestions = async (jobId: number | string) => {
+    if (expandedJobQuestionsId === jobId) {
+      setExpandedJobQuestionsId(null);
+    } else {
+      setExpandedJobQuestionsId(jobId);
+      const pregs = await dbHelper.getPreguntasTrabajo(jobId);
+      setPreguntasMap(prev => ({ ...prev, [String(jobId)]: pregs }));
+    }
+  };
+
+  const handleSendPregunta = async (jobId: number | string) => {
+    const text = (nuevaPreguntaTextoMap[String(jobId)] || '').trim();
+    if (!text) return;
+
+    await dbHelper.addPreguntaTrabajo(jobId, text);
+    const updatedPregs = await dbHelper.getPreguntasTrabajo(jobId);
+    setPreguntasMap(prev => ({ ...prev, [String(jobId)]: updatedPregs }));
+    setNuevaPreguntaTextoMap(prev => ({ ...prev, [String(jobId)]: '' }));
+  };
+
   useEffect(() => {
     const loadJobsAndStats = async () => {
       try {
         const allJobs = typeof dbHelper.getJobs === 'function' ? await dbHelper.getJobs() : [];
-        const clientRequests = (allJobs || []).filter((j: any) => !j.tipo && !j.salario);
+        const clientRequests = (allJobs || []).filter((j: any) => !j.salario);
         setTrabajos(clientRequests);
 
         if (typeof dbHelper.getPresupuestos === 'function') {
@@ -63,6 +101,8 @@ function MuroTrabajosContent() {
   const trabajosFiltrados = categoriaActiva === 'Todos' 
     ? trabajos 
     : trabajos.filter(trabajo => trabajo.categoria === categoriaActiva);
+
+  const sugeridosTrabajos = trabajos.slice(0, 3);
 
   const categorias = ['Todos', 'Plomería', 'Electricidad', 'Pintura', 'Carpintería', 'Albañilería'];
 
@@ -113,17 +153,19 @@ function MuroTrabajosContent() {
           </button>
         </Tooltip>
 
-        <Tooltip title="Mis trabajos" text="Revisá y gestioná tus trabajos en curso, presupuestados o finalizados." position="right">
-          <button 
-            onClick={() => router.push('/mis-trabajos')}
-            className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
-          >
-            <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
-              <TrabajosIcon className="w-6 h-6" active={false} />
-            </div>
-            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Trabajos</span>
-          </button>
-        </Tooltip>
+        {(userPlan === 'Pro' || userPlan === 'Master') && (
+          <Tooltip title="Mis trabajos" text="Revisá y gestioná tus trabajos en curso, presupuestados o finalizados." position="right">
+            <button 
+              onClick={() => router.push('/mis-trabajos')}
+              className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
+            >
+              <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
+                <TrabajosIcon className="w-6 h-6" active={false} />
+              </div>
+              <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Trabajos</span>
+            </button>
+          </Tooltip>
+        )}
 
         <Tooltip title="Mensajes" text="Chateá directamente con tus clientes para coordinar visitas y detalles de los trabajos." position="right">
           <button 
@@ -149,7 +191,7 @@ function MuroTrabajosContent() {
           </button>
         </Tooltip>
 
-        <Tooltip title="Herramientas" text="Calculadora de materiales, mano de obra y cómputos para albañilería y cuadrillas." position="right">
+        <Tooltip title="Presupuestador" text="Calculadora de materiales, mano de obra y cómputos de obra." position="right">
           <button 
             onClick={() => router.push('/presupuestador-obras')}
             className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
@@ -157,7 +199,7 @@ function MuroTrabajosContent() {
             <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
               <HerramientasIcon className="w-6 h-6" active={false} />
             </div>
-            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Herramientas</span>
+            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Presupuestador</span>
           </button>
         </Tooltip>
 
@@ -228,23 +270,80 @@ function MuroTrabajosContent() {
                     </div>
                   )}
                   <div className="w-full md:w-56 h-48 md:h-auto rounded-xl overflow-hidden flex-shrink-0 bg-gray-100 relative">
-                    <img className="absolute inset-0 w-full h-full object-cover" src={job.imagen} alt={job.titulo} />
+                    <img className="absolute inset-0 w-full h-full object-cover" src={job.imagen || 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?q=80&w=1000&auto=format&fit=crop'} alt={job.titulo} />
                   </div>
                   <div className="flex-grow flex flex-col justify-between">
                     <div>
-                      <span className="text-xs font-black text-[#00355f] uppercase tracking-wider bg-blue-50 px-2 py-1 rounded-md">{job.categoria}</span>
+                      <span className="text-xs font-black text-[#00355f] uppercase tracking-wider bg-blue-50 px-2 py-1 rounded-md">{job.categoria || job.oficio || 'General'}</span>
                       <h3 className="text-xl font-bold text-gray-900 mt-3">{job.titulo}</h3>
                       <p className="text-sm text-gray-600 mt-2 line-clamp-3 leading-relaxed">{job.descripcion}</p>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 mt-4 border-t border-gray-100">
                       <div className="flex flex-col gap-1.5 text-xs font-medium text-gray-500">
-                        <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4 text-gray-400" /> {job.ubicacion}</span>
-                        <span className="flex items-center gap-1.5"><Clock className="w-4 h-4 text-gray-400" /> Publicado {job.tiempo}</span>
+                        <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4 text-gray-400" /> {job.ubicacion || job.ciudad || 'Sin ubicación'}</span>
+                        <span className="flex items-center gap-1.5"><Clock className="w-4 h-4 text-gray-400" /> {job.tiempo || 'Hace un momento'}</span>
                       </div>
-                      <button onClick={() => router.push('/mis-trabajos')} className="bg-[#00355f] hover:bg-[#0f4c81] text-white px-5 py-3 rounded-xl font-bold text-sm transition-all active:scale-95 shadow-sm sm:w-auto w-full flex justify-center">
-                        Enviar Presupuesto
-                      </button>
+                      <div className="flex items-center gap-2 sm:w-auto w-full">
+                        <button 
+                          onClick={() => toggleQuestions(job.id)}
+                          className="bg-blue-50 hover:bg-blue-100 text-[#00355f] border border-blue-200 px-3.5 py-3 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5"
+                        >
+                          <HelpCircle className="w-4 h-4 text-[#fc8127]" /> Preguntas ({preguntasMap[String(job.id)]?.length || 0})
+                        </button>
+                        <button onClick={() => router.push('/mis-trabajos')} className="bg-[#00355f] hover:bg-[#0f4c81] text-white px-5 py-3 rounded-xl font-bold text-sm transition-all active:scale-95 shadow-sm flex-1 sm:flex-initial flex justify-center">
+                          Enviar Presupuesto
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Desplegable de Preguntas Pre-Presupuesto (Estilo Mercado Libre) */}
+                    {expandedJobQuestionsId === job.id && (
+                      <div className="mt-4 pt-4 border-t border-dashed border-gray-200 bg-gray-50 p-4 rounded-xl space-y-4">
+                        <h5 className="text-xs font-bold text-[#00355f] uppercase tracking-wider flex items-center gap-1.5">
+                          <HelpCircle className="w-4 h-4 text-[#fc8127]" /> Preguntas al Cliente sobre esta Solicitud
+                        </h5>
+
+                        {/* Input para hacer una pregunta */}
+                        <div className="flex gap-2">
+                          <input 
+                            type="text"
+                            value={nuevaPreguntaTextoMap[String(job.id)] || ''}
+                            onChange={(e) => setNuevaPreguntaTextoMap(prev => ({ ...prev, [String(job.id)]: e.target.value }))}
+                            placeholder="Escribe tu consulta previa (ej: ¿Es casa o dpto? ¿Tienes los materiales?)..."
+                            className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#00355f]"
+                          />
+                          <button 
+                            onClick={() => handleSendPregunta(job.id)}
+                            className="bg-[#fc8127] hover:bg-[#e67320] text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors flex items-center gap-1 shrink-0"
+                          >
+                            <Send className="w-3.5 h-3.5" /> Preguntar
+                          </button>
+                        </div>
+
+                        {/* Historial de Preguntas y Respuestas */}
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {(!preguntasMap[String(job.id)] || preguntasMap[String(job.id)].length === 0) ? (
+                            <p className="text-xs text-gray-400 italic">Nadie ha hecho preguntas aún sobre esta solicitud. ¡Sé el primero en consultar!</p>
+                          ) : (
+                            preguntasMap[String(job.id)].map((p: any) => (
+                              <div key={p.id} className="p-3 bg-white border border-gray-150 rounded-xl space-y-1 text-xs">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-gray-900">Q: "{p.pregunta}"</span>
+                                  <span className="text-[10px] text-gray-400 font-medium">{new Date(p.fecha).toLocaleDateString('es-AR')}</span>
+                                </div>
+                                {p.respuesta ? (
+                                  <p className="text-[#00355f] bg-blue-50 p-2 rounded-lg font-medium text-[11px] mt-1">
+                                    <strong>Respuesta del Cliente:</strong> {p.respuesta}
+                                  </p>
+                                ) : (
+                                  <span className="text-[10px] text-orange-600 italic block mt-0.5">Esperando respuesta del cliente...</span>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </article>
               ))
@@ -263,16 +362,20 @@ function MuroTrabajosContent() {
 
             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
               <h4 className="text-base font-bold text-[#00355f]">Sugeridos cerca tuyo</h4>
-              <div className="space-y-4 text-sm divide-y divide-gray-100">
-                <div className="pt-2">
-                  <p className="font-bold text-gray-900 cursor-pointer hover:text-[#fc8127]">Instalación Termotanque</p>
-                  <p className="text-xs text-gray-500 flex items-center gap-1 mt-1"><MapPin className="w-3 h-3 text-gray-400" /> San Miguel de Tucumán</p>
+              {sugeridosTrabajos.length === 0 ? (
+                <p className="text-xs text-gray-500">No hay trabajos sugeridos por el momento.</p>
+              ) : (
+                <div className="space-y-4 text-sm divide-y divide-gray-100">
+                  {sugeridosTrabajos.map((job, idx) => (
+                    <div key={job.id || idx} className={idx > 0 ? "pt-3" : "pt-1"}>
+                      <p className="font-bold text-gray-900 cursor-pointer hover:text-[#fc8127] line-clamp-1">{job.titulo}</p>
+                      <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                        <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" /> {job.ubicacion || job.ciudad || 'Sin ubicación'}
+                      </p>
+                    </div>
+                  ))}
                 </div>
-                <div className="pt-3">
-                  <p className="font-bold text-gray-900 cursor-pointer hover:text-[#fc8127]">Cortocircuito en cocina</p>
-                  <p className="text-xs text-gray-500 flex items-center gap-1 mt-1"><MapPin className="w-3 h-3 text-gray-400" /> San Andrés</p>
-                </div>
-              </div>
+              )}
             </div>
           </aside>
 

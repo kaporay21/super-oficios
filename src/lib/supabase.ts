@@ -140,20 +140,24 @@ export const dbHelper = {
     return {
       id: data.id,
       name: data.nombre,
-      nombre: data.nombre,
-      email: data.email,
+      nombre: data.nombre || '',
+      apellido: data.apellido || '',
+      email: data.email || '',
       role: isEmailAdmin(data.email) || data.rol === 'admin' ? 'Admin' : (data.rol === 'profesional' ? 'Profesional' : 'Cliente'),
       rol: isEmailAdmin(data.email) ? 'admin' : data.rol,
       plan: data.plan || 'Gratis',
       status: 'Activo',
       date: data.created_at ? new Date(data.created_at).toLocaleDateString() : 'Reciente',
       verificacion: data.verificado ? 'Verificado' : (data.rol === 'profesional' ? 'Pendiente' : 'Sin Solicitud'),
+      estadoDNI: data.estado_dni || (data.verificado ? 'Validado' : 'Pendiente'),
+      matriculadoVerificado: data.matriculado_verificado || data.estado_certificados === 'Validado' || false,
+      estadoCertificados: data.estado_certificados || (data.certificados && data.certificados.length > 0 ? 'Pendiente' : 'Sin Cargar'),
       trade: data.oficios && data.oficios.length > 0 ? data.oficios.join(', ') : '',
       rating: 5.0,
-      docMatricula: '-',
+      docMatricula: data.nro_matricula || '-',
       avatar: data.foto_perfil || 'https://i.pravatar.cc/150?u=' + data.id,
       fotoPerfil: data.foto_perfil || '',
-      location: data.ciudad && data.provincia ? `${data.ciudad}, ${data.provincia}` : (data.provincia || ''),
+      location: data.ciudad && data.provincia ? `${data.ciudad}, ${data.provincia}` : (data.provincia || 'Argentina'),
       category: data.oficios && data.oficios.length > 0 ? data.oficios[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '',
       experiencia: data.experiencia || '',
       biografia: data.biografia || '',
@@ -161,6 +165,11 @@ export const dbHelper = {
       telefono: data.telefono || '',
       provincia: data.provincia || '',
       ciudad: data.ciudad || '',
+      fechaNacimiento: data.fecha_nacimiento || '',
+      pais: data.pais || 'Argentina',
+      nroMatricula: data.nro_matricula || '',
+      certificados: data.certificados || [],
+      portafolio: data.portafolio || [],
       oficios: data.oficios || [],
     };
   },
@@ -170,11 +179,12 @@ export const dbHelper = {
     if (error) throw error;
   },
 
-  async updateUserVerification(id: string, verificado: boolean, estadoDni?: string): Promise<void> {
+  async updateUserVerification(id: string, verificado: boolean, estadoDni?: string, matriculadoVerificado?: boolean, estadoCertificados?: string): Promise<void> {
     const updates: any = { verificado };
-    if (estadoDni) {
-      updates.estado_dni = estadoDni;
-    }
+    if (estadoDni !== undefined) updates.estado_dni = estadoDni;
+    if (matriculadoVerificado !== undefined) updates.matriculado_verificado = matriculadoVerificado;
+    if (estadoCertificados !== undefined) updates.estado_certificados = estadoCertificados;
+
     const { error } = await supabase.from('perfiles').update(updates).eq('id', id);
     if (error) throw error;
   },
@@ -186,6 +196,7 @@ export const dbHelper = {
   async updateProfile(id: string, updates: any): Promise<void> {
     const dbUpdates: any = {};
     if (updates.nombre !== undefined) dbUpdates.nombre = updates.nombre;
+    if (updates.apellido !== undefined) dbUpdates.apellido = updates.apellido;
     if (updates.telefono !== undefined) dbUpdates.telefono = updates.telefono;
     if (updates.provincia !== undefined) dbUpdates.provincia = updates.provincia;
     if (updates.ciudad !== undefined) dbUpdates.ciudad = updates.ciudad;
@@ -194,6 +205,15 @@ export const dbHelper = {
     if (updates.foto_perfil !== undefined) dbUpdates.foto_perfil = updates.foto_perfil;
     if (updates.oficios !== undefined) dbUpdates.oficios = updates.oficios;
     if (updates.monto_minimo !== undefined) dbUpdates.monto_minimo = updates.monto_minimo;
+    if (updates.fecha_nacimiento !== undefined || updates.fechaNacimiento !== undefined) {
+      dbUpdates.fecha_nacimiento = updates.fecha_nacimiento || updates.fechaNacimiento;
+    }
+    if (updates.pais !== undefined) dbUpdates.pais = updates.pais;
+    if (updates.nro_matricula !== undefined || updates.nroMatricula !== undefined) {
+      dbUpdates.nro_matricula = updates.nro_matricula || updates.nroMatricula;
+    }
+    if (updates.certificados !== undefined) dbUpdates.certificados = updates.certificados;
+    if (updates.portafolio !== undefined) dbUpdates.portafolio = updates.portafolio;
     
     const { error } = await supabase.from('perfiles').update(dbUpdates).eq('id', id);
     if (error) throw error;
@@ -262,33 +282,41 @@ export const dbHelper = {
     return data;
   },
 
-  async registerProfesional(fullName: string, email: string, phone: string, password: string, oficios: string[], provincia?: string, ciudad?: string): Promise<any> {
+  async registerProfesional(
+    fullName: string, 
+    email: string, 
+    phone: string, 
+    password: string, 
+    oficios: string[], 
+    provincia?: string, 
+    ciudad?: string,
+    extraData?: { apellido?: string; fechaNacimiento?: string; pais?: string; experiencia?: string }
+  ): Promise<any> {
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
     
     if (data.user) {
-      const { error: profileError } = await supabase.from('perfiles').insert([{
+      const profileInsert: any = {
         id: data.user.id,
         nombre: fullName,
+        apellido: extraData?.apellido || '',
         email,
         telefono: phone,
         oficios,
         rol: 'profesional',
         provincia: provincia || '',
         ciudad: ciudad || '',
-      }]);
+        fecha_nacimiento: extraData?.fechaNacimiento || '',
+        pais: extraData?.pais || 'Argentina',
+        experiencia: extraData?.experiencia || ''
+      };
+
+      const { error: profileError } = await supabase.from('perfiles').insert([profileInsert]);
       if (profileError) throw profileError;
 
       const profileData = {
-        id: data.user.id,
-        nombre: fullName,
-        email,
-        telefono: phone,
-        oficios,
-        rol: 'profesional',
+        ...profileInsert,
         fotoPerfil: '',
-        provincia: provincia || '',
-        ciudad: ciudad || '',
       };
       localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(profileData));
       localStorage.setItem('oficiosya_session', JSON.stringify(profileData));
@@ -721,6 +749,65 @@ export const dbHelper = {
       .eq('conversacion_id', conversacionId)
       .eq('receptor_id', receptorId)
       .eq('leido', false);
+  },
+
+  // ============================================================
+  // PREGUNTAS Y RESPUESTAS PRE-PRESUPUESTO (Estilo Mercado Libre)
+  // ============================================================
+
+  async addPreguntaTrabajo(jobId: number | string, pregunta: string, usuarioId?: string, usuarioNombre?: string): Promise<any> {
+    const newPregunta = {
+      id: Date.now(),
+      job_id: jobId,
+      pregunta,
+      usuario_id: usuarioId || 'anon',
+      usuario_nombre: usuarioNombre || 'Profesional',
+      fecha: new Date().toISOString(),
+      respuesta: null,
+      fecha_respuesta: null
+    };
+
+    try {
+      await supabase.from('preguntas_trabajos').insert([newPregunta]);
+    } catch (e) {
+      console.warn("Tabla preguntas_trabajos guardando en local cache:", e);
+    }
+
+    const key = `oficiosya_preguntas_job_${jobId}`;
+    const existing = JSON.parse(localStorage.getItem(key) || '[]');
+    existing.unshift(newPregunta);
+    localStorage.setItem(key, JSON.stringify(existing));
+
+    return newPregunta;
+  },
+
+  async responderPreguntaTrabajo(jobId: number | string, preguntaId: number | string, respuesta: string): Promise<void> {
+    try {
+      await supabase.from('preguntas_trabajos').update({ respuesta, fecha_respuesta: new Date().toISOString() }).eq('id', preguntaId);
+    } catch (e) {
+      console.warn("Tabla preguntas_trabajos respondiendo en local cache:", e);
+    }
+
+    const key = `oficiosya_preguntas_job_${jobId}`;
+    const existing = JSON.parse(localStorage.getItem(key) || '[]');
+    const updated = existing.map((p: any) => p.id === preguntaId ? { ...p, respuesta, fecha_respuesta: new Date().toISOString() } : p);
+    localStorage.setItem(key, JSON.stringify(updated));
+  },
+
+  async getPreguntasTrabajo(jobId: number | string): Promise<any[]> {
+    const key = `oficiosya_preguntas_job_${jobId}`;
+    const localData = JSON.parse(localStorage.getItem(key) || '[]');
+
+    try {
+      const { data } = await supabase.from('preguntas_trabajos').select('*').eq('job_id', jobId).order('created_at', { ascending: false });
+      if (data && data.length > 0) {
+        return data;
+      }
+    } catch (e) {
+      // Table fallback
+    }
+
+    return localData;
   },
 
   // ============================================================

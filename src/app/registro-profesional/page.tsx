@@ -64,6 +64,9 @@ export default function RegistroProfesionalPage() {
 
   // Estados del Formulario Estructurado
   const [nombre, setNombre] = useState('');
+  const [apellido, setApellido] = useState('');
+  const [fechaNacimiento, setFechaNacimiento] = useState('');
+  const [pais, setPais] = useState('Argentina');
   const [telefono, setTelefono] = useState('');
   const [email, setEmail] = useState('');
   const [experiencia, setExperiencia] = useState('');
@@ -97,7 +100,17 @@ export default function RegistroProfesionalPage() {
     setIsSubmitting(true);
     
     try {
-      await dbHelper.registerProfesional(nombre, email, telefono, password, selectedOficios);
+      const nombreCompleto = apellido ? `${nombre} ${apellido}`.trim() : nombre;
+      await dbHelper.registerProfesional(
+        nombreCompleto, 
+        email, 
+        telefono, 
+        password, 
+        selectedOficios, 
+        selectedProvincia, 
+        selectedCiudad,
+        { apellido, fechaNacimiento, pais, experiencia }
+      );
       
       setTimeout(() => {
         setIsSubmitting(false);
@@ -221,19 +234,60 @@ export default function RegistroProfesionalPage() {
               </div>
               
               <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-                           {/* Nombre */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-bold text-gray-700 px-1" htmlFor="fullName">Nombre completo</label>
-                  <div className="relative group">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-[#00355f] transition-colors" />
+                            {/* Nombre y Apellido */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-bold text-gray-700 px-1" htmlFor="nombre">Nombre</label>
+                    <div className="relative group">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-[#00355f] transition-colors" />
+                      <input 
+                        required 
+                        id="nombre" 
+                        type="text" 
+                        placeholder="Ej: Juan" 
+                        value={nombre}
+                        onChange={(e) => setNombre(e.target.value)}
+                        className="w-full h-12 pl-10 pr-4 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none transition-all" 
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-bold text-gray-700 px-1" htmlFor="apellido">Apellido</label>
+                    <div className="relative group">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-[#00355f] transition-colors" />
+                      <input 
+                        required 
+                        id="apellido" 
+                        type="text" 
+                        placeholder="Ej: Pérez" 
+                        value={apellido}
+                        onChange={(e) => setApellido(e.target.value)}
+                        className="w-full h-12 pl-10 pr-4 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none transition-all" 
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Fecha de Nacimiento y País */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-bold text-gray-700 px-1" htmlFor="fechaNacimiento">Fecha de Nacimiento</label>
                     <input 
-                      required 
-                      id="fullName" 
+                      type="date" 
+                      id="fechaNacimiento" 
+                      value={fechaNacimiento}
+                      onChange={(e) => setFechaNacimiento(e.target.value)}
+                      className="w-full h-12 px-4 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none transition-all text-sm font-medium text-gray-800" 
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-bold text-gray-700 px-1" htmlFor="pais">País</label>
+                    <input 
                       type="text" 
-                      placeholder="Ej: Juan Pérez" 
-                      value={nombre}
-                      onChange={(e) => setNombre(e.target.value)}
-                      className="w-full h-12 pl-10 pr-4 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none transition-all" 
+                      id="pais" 
+                      value={pais}
+                      onChange={(e) => setPais(e.target.value)}
+                      className="w-full h-12 px-4 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none transition-all text-sm font-medium text-gray-800" 
                     />
                   </div>
                 </div>

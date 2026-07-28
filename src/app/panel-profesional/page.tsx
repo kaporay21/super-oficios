@@ -307,17 +307,19 @@ function PanelProfesionalContent() {
           </button>
         </Tooltip>
 
-        <Tooltip title="Mis trabajos" text="Revisá y gestioná tus trabajos en curso, presupuestados o finalizados." position="right">
-          <button 
-            onClick={() => router.push('/mis-trabajos')}
-            className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
-          >
-            <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
-              <TrabajosIcon className="w-6 h-6" active={false} />
-            </div>
-            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Trabajos</span>
-          </button>
-        </Tooltip>
+        {(perfil?.plan === 'Pro' || perfil?.plan === 'Master') && (
+          <Tooltip title="Mis trabajos" text="Revisá y gestioná tus trabajos en curso, presupuestados o finalizados." position="right">
+            <button 
+              onClick={() => router.push('/mis-trabajos')}
+              className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
+            >
+              <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
+                <TrabajosIcon className="w-6 h-6" active={false} />
+              </div>
+              <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Trabajos</span>
+            </button>
+          </Tooltip>
+        )}
 
         <Tooltip title="Mensajes" text="Chateá directamente con tus clientes para coordinar visitas y detalles de los trabajos." position="right">
           <button 
@@ -343,7 +345,7 @@ function PanelProfesionalContent() {
           </button>
         </Tooltip>
 
-        <Tooltip title="Herramientas" text="Calculadora de materiales, mano de obra y cómputos para albañilería y cuadrillas." position="right">
+        <Tooltip title="Presupuestador" text="Calculadora de materiales, mano de obra y cómputos de obra." position="right">
           <button 
             onClick={() => router.push('/presupuestador-obras')}
             className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
@@ -351,7 +353,7 @@ function PanelProfesionalContent() {
             <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
               <HerramientasIcon className="w-6 h-6" active={false} />
             </div>
-            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Herramientas</span>
+            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Presupuestador</span>
           </button>
         </Tooltip>
 
@@ -905,7 +907,7 @@ function PanelProfesionalContent() {
             </button>
 
             <div>
-              <h3 className="text-xl font-bold text-[#00355f]">Soporte Técnico de OficiosYa</h3>
+              <h3 className="text-xl font-bold text-[#00355f]">Soporte Técnico de Oficios<span className="text-[#fc8127]">Ya</span></h3>
               <p className="text-xs text-gray-400 mt-1">Reporta quejas, sugerencias o dudas. Mira aquí mismo las respuestas de la administración.</p>
             </div>
 
@@ -1016,7 +1018,7 @@ function PanelProfesionalContent() {
 
                         {t.respuesta && (
                           <div className="p-2.5 bg-green-50 border border-green-100 rounded-lg space-y-1">
-                            <p className="text-[9px] font-bold text-green-800">Respuesta de OficiosYa:</p>
+                            <p className="text-[9px] font-bold text-green-800">Respuesta de Oficios<span className="text-[#fc8127]">Ya</span>:</p>
                             <p className="text-xs text-gray-600 leading-relaxed font-medium">"{t.respuesta}"</p>
                           </div>
                         )}

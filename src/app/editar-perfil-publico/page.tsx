@@ -153,7 +153,7 @@ export default function EditarPerfilPublicoPage() {
         
         <section className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
           <div className="relative h-40 md:h-56 bg-gray-200 w-full group">
-            <img src={perfil.bannerUrl} alt="Portada del Perfil" className="w-full h-full object-cover" />
+            <img src={perfil.bannerUrl || 'https://images.unsplash.com/photo-1581092921461-eab62e97a780?w=1200&q=80'} alt="Portada del Perfil" className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
               <button onClick={() => bannerRef.current?.click()} className="bg-white text-[#00355f] px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-gray-50 active:scale-95 transition-transform">
                 <Camera className="w-4 h-4" /> Cambiar Portada

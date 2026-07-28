@@ -7,7 +7,7 @@ import {
   Wrench, Settings, Shield, LogOut, LayoutDashboard, 
   Briefcase, MessageSquare, Edit2, Save, Loader2, 
   Zap, Clock, ShieldAlert, Award, Grid, Star, MapPin, Eye,
-  HelpCircle, ShieldCheck, Timer, UploadCloud, X, Smartphone, Plus, Trash2, FileCheck, Key
+  HelpCircle, ShieldCheck, Timer, UploadCloud, X, Smartphone, Plus, Trash2, FileCheck, Key, Info
 } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import { PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, ConfiguracionIcon, HerramientasIcon } from '@/components/ModernIcons';
@@ -24,8 +24,40 @@ const OFICIOS_PRECARGADOS = [
   'Gasista Matriculado',
   'Herrería',
   'Pintura',
-  'Plomería'
+  'Plomería',
+  'Durlock / Yeso',
+  'Jardinería',
+  'Fumigación',
+  'Techista / Impermeabilización',
+  'Fletes y Mudanzas'
 ];
+
+const PROVINCIAS_Y_CIUDADES: Record<string, string[]> = {
+  'Buenos Aires': ['La Plata', 'Mar del Plata', 'Bahía Blanca', 'Tandil', 'Pilar', 'Campana'],
+  'CABA (Ciudad Autónoma de Buenos Aires)': ['Palermo', 'Caballito', 'Belgrano', 'Recoleta', 'Flores', 'Almagro', 'Villa Urquiza'],
+  'Catamarca': ['San Fernando del Valle de Catamarca', 'Andalgalá', 'Tinogasta'],
+  'Chaco': ['Resistencia', 'Sáenz Peña', 'Villa Ángela'],
+  'Chubut': ['Rawson', 'Comodoro Rivadavia', 'Trelew', 'Puerto Madryn'],
+  'Córdoba': ['Córdoba Capital', 'Villa Carlos Paz', 'Río Cuarto', 'Villa María', 'San Francisco'],
+  'Corrientes': ['Corrientes Capital', 'Goya', 'Paso de los Libres'],
+  'Entre Ríos': ['Paraná', 'Concordia', 'Gualeguaychú'],
+  'Formosa': ['Formosa Capital', 'Clorinda'],
+  'Jujuy': ['San Salvador de Jujuy', 'San Pedro', 'Libertador General San Martín'],
+  'La Pampa': ['Santa Rosa', 'General Pico'],
+  'La Rioja': ['La Rioja Capital', 'Chilecito'],
+  'Mendoza': ['Mendoza Capital', 'San Rafael', 'Godoy Cruz', 'Luján de Cuyo'],
+  'Misiones': ['Posadas', 'Eldorado', 'Oberá'],
+  'Neuquén': ['Neuquén Capital', 'San Martín de los Andes', 'Villa La Angostura'],
+  'Río Negro': ['Viedma', 'San Carlos de Bariloche', 'General Roca', 'Cipolletti'],
+  'Salta': ['Salta Capital', 'San Ramón de la Nueva Orán', 'Tartagal'],
+  'San Juan': ['San Juan Capital', 'Caucete', 'Chimbas'],
+  'San Luis': ['San Luis Capital', 'Villa Mercedes', 'Merlo'],
+  'Santa Cruz': ['Río Gallegos', 'Caleta Olivia', 'El Calafate'],
+  'Santa Fe': ['Rosario', 'Santa Fe Capital', 'Rafaela', 'Venado Tuerto', 'Reconquista'],
+  'Santiago del Estero': ['Santiago del Estero Capital', 'La Banda', 'Termas de Río Hondo'],
+  'Tierra del Fuego': ['Ushuaia', 'Río Grande', 'Tolhuin'],
+  'Tucumán': ['San Miguel de Tucumán', 'Yerba Buena', 'Tafí Viejo', 'Concepción', 'Aguilares', 'Banda del Río Salí']
+};
 
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
@@ -58,6 +90,7 @@ function PerfilProfesionalContent() {
   const [nuevaEspecialidad, setNuevaEspecialidad] = useState('');
 
   // Estados para Ventanas Modales
+  const [modalPersonalInfo, setModalPersonalInfo] = useState(false);
   const [modalPassword, setModalPassword] = useState(false);
   const [modal2FA, setModal2FA] = useState(false);
   const [modalDevices, setModalDevices] = useState(false);
@@ -70,16 +103,24 @@ function PerfilProfesionalContent() {
   // Estado con los datos del usuario real
   const [perfil, setPerfil] = useState({
     nombre: '',
+    apellido: '',
     correo: '',
     telefono: '',
+    fechaNacimiento: '',
+    pais: 'Argentina',
+    provincia: '',
+    ciudad: '',
     cobertura: '',
     especialidades: [] as string[],
     estadoDNI: 'Pendiente',
-    avatar: '',
+    avatar: 'https://i.pravatar.cc/150?u=default',
     certificados: [] as any[],
+    nroMatricula: '',
     plan: 'Gratis',
     postulacionesUsadas: 0,
     bio: '',
+    experiencia: '',
+    montoMinimo: '',
     bannerUrl: 'https://images.unsplash.com/photo-1581092921461-eab62e97a780?q=80&w=2070&auto=format&fit=crop',
     portafolio: [] as any[]
   });
@@ -87,20 +128,33 @@ function PerfilProfesionalContent() {
   // Cargar perfil real desde AuthContext
   useEffect(() => {
     if (authProfile) {
+      const nombreCompleto = authProfile.nombre || '';
+      const partesNombre = nombreCompleto.trim().split(' ');
+      const pNombre = authProfile.nombre ? partesNombre[0] : 'Profesional';
+      const pApellido = authProfile.apellido || (partesNombre.length > 1 ? partesNombre.slice(1).join(' ') : '');
+
       setPerfil({
-        nombre: authProfile.nombre || 'Profesional',
+        nombre: pNombre,
+        apellido: pApellido,
         correo: authProfile.email || user?.email || '',
         telefono: authProfile.telefono || '',
+        fechaNacimiento: authProfile.fechaNacimiento || authProfile.fecha_nacimiento || '',
+        pais: authProfile.pais || 'Argentina',
+        provincia: authProfile.provincia || '',
+        ciudad: authProfile.ciudad || '',
         cobertura: authProfile.ciudad && authProfile.provincia ? `${authProfile.ciudad}, ${authProfile.provincia}` : (authProfile.provincia || 'Argentina'),
         especialidades: authProfile.oficios || [],
         estadoDNI: authProfile.estado_dni || (authProfile.verificado ? 'Validado' : 'Pendiente'),
-        avatar: authProfile.foto_perfil || authProfile.fotoPerfil || 'https://i.pravatar.cc/150?u=' + authProfile.id,
-        certificados: [],
+        avatar: authProfile.foto_perfil || authProfile.fotoPerfil || ('https://i.pravatar.cc/150?u=' + (authProfile.id || 'profesional')),
+        certificados: authProfile.certificados || [],
+        nroMatricula: authProfile.nroMatricula || authProfile.nro_matricula || '',
         plan: authProfile.plan || 'Gratis',
         postulacionesUsadas: 0,
         bio: authProfile.biografia || '',
+        experiencia: authProfile.experiencia || '',
+        montoMinimo: authProfile.montoMinimo || authProfile.monto_minimo || '',
         bannerUrl: 'https://images.unsplash.com/photo-1581092921461-eab62e97a780?q=80&w=2070&auto=format&fit=crop',
-        portafolio: []
+        portafolio: authProfile.portafolio || []
       });
     }
 
@@ -115,7 +169,7 @@ function PerfilProfesionalContent() {
     window.dispatchEvent(new Event('oficiosya_tooltips_changed'));
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setPerfil({ ...perfil, [e.target.name]: e.target.value });
   };
 
@@ -123,16 +177,29 @@ function PerfilProfesionalContent() {
     if (!user) return;
     setIsSaving(true);
     try {
+      const nombreCompleto = `${perfil.nombre} ${perfil.apellido}`.trim();
       await dbHelper.updateProfile(user.id, {
-        nombre: perfil.nombre,
+        nombre: nombreCompleto,
+        apellido: perfil.apellido,
         telefono: perfil.telefono,
+        fecha_nacimiento: perfil.fechaNacimiento,
+        pais: perfil.pais,
+        provincia: perfil.provincia,
+        ciudad: perfil.ciudad,
         biografia: perfil.bio,
+        experiencia: perfil.experiencia,
+        monto_minimo: perfil.montoMinimo,
+        nro_matricula: perfil.nroMatricula,
         foto_perfil: perfil.avatar,
-        oficios: perfil.especialidades
+        oficios: perfil.especialidades,
+        certificados: perfil.certificados,
+        portafolio: perfil.portafolio
       });
       await refreshProfile();
       setIsSaving(false);
       setIsEditing(false);
+      setModalPersonalInfo(false);
+      alert('¡Información guardada exitosamente!');
     } catch (err: any) {
       console.error("Error guardando perfil profesional:", err);
       alert("Error al guardar perfil: " + (err.message || err));
@@ -140,13 +207,16 @@ function PerfilProfesionalContent() {
     }
   };
 
-  // Manejo de Especialidades (Ahora desde lista precargada y persistido)
+  // Manejo de Especialidades
   const agregarEspecialidad = () => {
     if (nuevaEspecialidad !== '' && !perfil.especialidades.includes(nuevaEspecialidad)) {
-      const nuevoPerfil = { ...perfil, especialidades: [...perfil.especialidades, nuevaEspecialidad] };
+      const nuevas = [...perfil.especialidades, nuevaEspecialidad];
+      const nuevoPerfil = { ...perfil, especialidades: nuevas };
       setPerfil(nuevoPerfil);
-      localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(nuevoPerfil));
-      setNuevaEspecialidad(''); // Limpiar el select
+      setNuevaEspecialidad('');
+      if (user) {
+        dbHelper.updateProfile(user.id, { oficios: nuevas }).catch(console.error);
+      }
     }
   };
 
@@ -155,10 +225,12 @@ function PerfilProfesionalContent() {
     actualizadas.splice(index, 1);
     const nuevoPerfil = { ...perfil, especialidades: actualizadas };
     setPerfil(nuevoPerfil);
-    localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(nuevoPerfil));
+    if (user) {
+      dbHelper.updateProfile(user.id, { oficios: actualizadas }).catch(console.error);
+    }
   };
 
-  // Subida de archivos real (Certificados y Foto Perfil)
+  // Subida de archivos (Certificados y Foto Perfil)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, tipo: string) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -166,22 +238,24 @@ function PerfilProfesionalContent() {
     setIsSaving(true);
     
     try {
-      const bucket = tipo === 'avatar' ? 'avatars' : 'certificates';
-      const path = `${perfil.correo || 'anonymous'}/${Date.now()}_${file.name}`;
-      
-      const { publicUrl, error } = await uploadImageToSupabase(bucket, path, file);
-      
-      if (error) {
-        alert(`Error al subir el archivo: ${error.message || error}`);
-        setIsSaving(false);
-        return;
-      }
-      
-      if (publicUrl) {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const fileBase64 = reader.result as string;
+        let publicUrl = fileBase64;
+        
+        try {
+          const bucket = tipo === 'avatar' ? 'avatars' : 'certificates';
+          const path = `${perfil.correo || 'anonymous'}/${Date.now()}_${file.name}`;
+          const res = await uploadImageToSupabase(bucket, path, file);
+          if (res.publicUrl) publicUrl = res.publicUrl;
+        } catch {
+          // Usa Base64 si falla Supabase storage
+        }
+
         if (tipo === 'avatar') {
           const nuevoPerfil = { ...perfil, avatar: publicUrl };
           setPerfil(nuevoPerfil);
-          localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(nuevoPerfil));
+          if (user) await dbHelper.updateProfile(user.id, { foto_perfil: publicUrl });
           alert('Foto de perfil actualizada correctamente.');
         } else if (tipo === 'certificado') {
           const nuevoCert = {
@@ -189,28 +263,29 @@ function PerfilProfesionalContent() {
             nombre: file.name,
             archivoBase64: publicUrl
           };
-          const nuevoPerfil = { 
-            ...perfil, 
-            certificados: [...perfil.certificados, nuevoCert] 
-          };
+          const nuevosCerts = [...perfil.certificados, nuevoCert];
+          const nuevoPerfil = { ...perfil, certificados: nuevosCerts };
           setPerfil(nuevoPerfil);
-          localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(nuevoPerfil));
-          alert('Certificado subido correctamente.');
+          if (user) await dbHelper.updateProfile(user.id, { certificados: nuevosCerts });
+          alert('Certificado / Matrícula guardado correctamente.');
         }
-      }
+        setIsSaving(false);
+      };
+      reader.readAsDataURL(file);
     } catch (err: any) {
-      alert(`Error en el proceso de subida: ${err.message || err}`);
-    } finally {
+      alert(`Error en la subida: ${err.message || err}`);
       setIsSaving(false);
     }
   };
 
-  const eliminarCertificado = (id: string) => {
+  const eliminarCertificado = async (id: string) => {
     if (confirm('¿Estás seguro de que deseas eliminar este certificado?')) {
       const actualizados = perfil.certificados.filter(c => c.id !== id);
       const nuevoPerfil = { ...perfil, certificados: actualizados };
       setPerfil(nuevoPerfil);
-      localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(nuevoPerfil));
+      if (user) {
+        await dbHelper.updateProfile(user.id, { certificados: actualizados });
+      }
     }
   };
 
@@ -317,17 +392,19 @@ function PerfilProfesionalContent() {
           </button>
         </Tooltip>
 
-        <Tooltip title="Mis trabajos" text="Revisá y gestioná tus trabajos en curso, presupuestados o finalizados." position="right">
-          <button 
-            onClick={() => router.push('/mis-trabajos')}
-            className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
-          >
-            <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
-              <TrabajosIcon className="w-6 h-6" active={false} />
-            </div>
-            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Trabajos</span>
-          </button>
-        </Tooltip>
+        {(perfil?.plan === 'Pro' || perfil?.plan === 'Master') && (
+          <Tooltip title="Mis trabajos" text="Revisá y gestioná tus trabajos en curso, presupuestados o finalizados." position="right">
+            <button 
+              onClick={() => router.push('/mis-trabajos')}
+              className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
+            >
+              <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
+                <TrabajosIcon className="w-6 h-6" active={false} />
+              </div>
+              <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Trabajos</span>
+            </button>
+          </Tooltip>
+        )}
 
         <Tooltip title="Mensajes" text="Chateá directamente con tus clientes para coordinar visitas y detalles de los trabajos." position="right">
           <button 
@@ -353,7 +430,7 @@ function PerfilProfesionalContent() {
           </button>
         </Tooltip>
 
-        <Tooltip title="Herramientas" text="Calculadora de materiales, mano de obra y cómputos para albañilería y cuadrillas." position="right">
+        <Tooltip title="Presupuestador" text="Calculadora de materiales, mano de obra y cómputos de obra." position="right">
           <button 
             onClick={() => router.push('/presupuestador-obras')}
             className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
@@ -361,7 +438,7 @@ function PerfilProfesionalContent() {
             <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
               <HerramientasIcon className="w-6 h-6" active={false} />
             </div>
-            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Herramientas</span>
+            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Presupuestador</span>
           </button>
         </Tooltip>
 
@@ -379,6 +456,22 @@ function PerfilProfesionalContent() {
 
       <main className="pt-24 pb-8 max-w-2xl mx-auto px-4">
         
+        {/* Inputs Ocultos para Archivos */}
+        <input 
+          type="file" 
+          ref={fotoPerfilRef} 
+          className="hidden" 
+          accept="image/*" 
+          onChange={(e) => handleFileUpload(e, 'avatar')} 
+        />
+        <input 
+          type="file" 
+          ref={certificadoRef} 
+          className="hidden" 
+          accept="image/*,application/pdf" 
+          onChange={(e) => handleFileUpload(e, 'certificado')} 
+        />
+
         {/* Profile Header */}
         <section className="flex flex-col items-center mb-8 relative">
           
@@ -389,39 +482,36 @@ function PerfilProfesionalContent() {
                 disabled={isSaving}
                 className="flex items-center gap-2 bg-[#00355f] text-white px-4 py-2 rounded-full font-bold text-sm hover:bg-[#0f4c81] transition-all active:scale-95 shadow-md"
               >
-                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Guardar
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Guardar Cambios
               </button>
             ) : (
               <button 
                 onClick={() => setIsEditing(true)}
                 className="flex items-center gap-2 bg-white border border-gray-200 text-[#00355f] px-4 py-2 rounded-full font-bold text-sm hover:bg-gray-50 transition-all active:scale-95 shadow-sm"
               >
-                <Edit2 className="w-4 h-4" /> Editar
+                <Edit2 className="w-4 h-4" /> Editar Perfil
               </button>
             )}
           </div>
 
           <div className="relative">
             <div className={`w-24 h-24 rounded-full border-4 shadow-md overflow-hidden bg-gray-100 ${perfil.estadoDNI === 'Validado' ? 'border-green-400' : 'border-white'}`}>
-              <img src={perfil.avatar} alt={perfil.nombre} className={`w-full h-full object-cover ${isSaving ? 'opacity-50' : 'opacity-100'}`} />
+              <img src={perfil.avatar || 'https://i.pravatar.cc/150?u=profesional'} alt={perfil.nombre || 'Perfil'} className={`w-full h-full object-cover ${isSaving ? 'opacity-50' : 'opacity-100'}`} />
             </div>
-            {isEditing && (
-              <button 
-                onClick={() => fotoPerfilRef.current?.click()}
-                className="absolute bottom-0 right-0 p-2 bg-[#fc8127] text-white rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95"
-              >
-                <Camera className="w-4 h-4" />
-              </button>
-            )}
+            <button 
+              onClick={() => fotoPerfilRef.current?.click()}
+              className="absolute bottom-0 right-0 p-2 bg-[#fc8127] text-white rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95"
+              title="Cambiar foto de perfil"
+            >
+              <Camera className="w-4 h-4" />
+            </button>
           </div>
           
-          {isEditing ? (
-            <input 
-              type="text" name="nombre" value={perfil.nombre} onChange={handleChange}
-              className="mt-4 text-2xl font-bold text-center text-gray-900 bg-white border-b-2 border-[#00355f] outline-none focus:bg-blue-50 px-2 py-1 rounded-t-md transition-colors"
-            />
-          ) : (
-            <h2 className="mt-4 text-2xl font-bold text-gray-900">{perfil.nombre}</h2>
+          <h2 className="mt-4 text-2xl font-bold text-gray-900">{perfil.nombre} {perfil.apellido}</h2>
+          {perfil.cobertura && (
+            <p className="text-xs text-gray-500 flex items-center gap-1 mt-1 font-medium">
+              <MapPin className="w-3.5 h-3.5 text-[#fc8127]" /> {perfil.cobertura}
+            </p>
           )}
 
           {perfil.estadoDNI === 'Validado' ? (
@@ -455,81 +545,98 @@ function PerfilProfesionalContent() {
                 <UploadCloud className="w-5 h-5 text-[#fc8127]" />
               </button>
             )}
+
+            {/* Globito Informativo Insignia DNI */}
+            <div className="p-3.5 bg-blue-50 border-t border-gray-100 flex items-start gap-2.5">
+              <Info className="w-4 h-4 text-[#00355f] shrink-0 mt-0.5" />
+              <p className="text-[11px] text-[#00355f] leading-relaxed">
+                <strong>Insignia "Identidad Verificada":</strong> Al subir tu DNI y ser verificado por la administración, se te asignará automáticamente el sello verde de <strong>Identidad Verificada</strong> en tu perfil público.
+              </p>
+            </div>
           </SectionCard>
 
+          {/* Mi Perfil / Información Personal */}
           <SectionCard title="Mi Perfil" icon={User}>
-            {isEditing ? (
-              <div className="p-4 space-y-4 bg-gray-50 border-b border-gray-100">
-                <div>
-                  <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Correo Electrónico</label>
-                  <input type="email" name="correo" value={perfil.correo} onChange={handleChange} className="w-full h-10 px-3 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#00355f]" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Teléfono</label>
-                  <input type="tel" name="telefono" value={perfil.telefono} onChange={handleChange} className="w-full h-10 px-3 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#00355f]" />
-                </div>
+            <button 
+              onClick={() => setModalPersonalInfo(true)}
+              className="w-full flex items-center justify-between px-4 py-4 hover:bg-gray-50 transition-colors text-left border-b border-gray-100 group cursor-pointer"
+            >
+              <div className="flex flex-col pr-4">
+                <span className="text-sm font-bold text-[#00355f] group-hover:text-[#fc8127] transition-colors flex items-center gap-2">
+                  Información Personal
+                  <Edit2 className="w-3.5 h-3.5 text-gray-400 group-hover:text-[#fc8127]" />
+                </span>
+                <span className="text-xs text-gray-500 mt-1">
+                  {perfil.nombre} {perfil.apellido} • {perfil.correo} • {perfil.telefono} • {perfil.ciudad ? `${perfil.ciudad}, ` : ''}{perfil.provincia}
+                </span>
               </div>
-            ) : (
-              <ListItem title="Información Personal" subtitle={`${perfil.correo} • ${perfil.telefono}`} />
-            )}
+              <ChevronRight className="w-5 h-5 text-gray-400 group-hover:translate-x-1 transition-transform shrink-0" />
+            </button>
             <ListItem title="Contraseña" subtitle="Cambia tu clave de acceso" onClick={() => setModalPassword(true)} />
           </SectionCard>
 
+          {/* Mi Oficio y Certificados */}
           <SectionCard title="Mi Oficio" icon={Wrench}>
+            
+            {/* Especialidades */}
             <div className="w-full flex flex-col px-4 py-4 border-b border-gray-100">
               <span className="text-sm font-bold text-[#00355f] mb-2">Especialidades</span>
               
-              <div className="flex flex-wrap gap-2 mb-2">
-                {perfil.especialidades.map((esp, i) => (
-                  <span key={i} className="flex items-center gap-1 bg-[#d2e4ff] text-[#00355f] px-2 py-1 rounded-md text-[11px] font-extrabold uppercase">
-                    {esp}
-                    {isEditing && (
-                      <button onClick={() => eliminarEspecialidad(i)} className="hover:text-red-500"><X className="w-3 h-3" /></button>
-                    )}
-                  </span>
-                ))}
+              <div className="flex flex-wrap gap-2 mb-3">
+                {perfil.especialidades.length === 0 ? (
+                  <span className="text-xs text-gray-400 italic">No tienes especialidades seleccionadas.</span>
+                ) : (
+                  perfil.especialidades.map((esp, i) => (
+                    <span key={i} className="flex items-center gap-1.5 bg-[#d2e4ff] text-[#00355f] px-3 py-1.5 rounded-full text-xs font-extrabold uppercase">
+                      {esp}
+                      <button onClick={() => eliminarEspecialidad(i)} className="hover:text-red-600 transition-colors" title="Eliminar especialidad"><X className="w-3.5 h-3.5" /></button>
+                    </span>
+                  ))
+                )}
               </div>
 
-              {isEditing && (
-                <div className="flex gap-2 mt-2">
-                  <select 
-                    value={nuevaEspecialidad} 
-                    onChange={(e) => setNuevaEspecialidad(e.target.value)}
-                    className="flex-1 h-9 px-3 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#00355f]"
-                  >
-                    <option value="" disabled>Selecciona un oficio...</option>
-                    {oficiosDisponibles.map((oficio) => (
-                      <option key={oficio} value={oficio}>{oficio}</option>
-                    ))}
-                  </select>
-                  <button 
-                    onClick={agregarEspecialidad}
-                    disabled={!nuevaEspecialidad}
-                    className="bg-[#00355f] text-white px-3 rounded-lg flex items-center justify-center hover:bg-[#0f4c81] disabled:opacity-50"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
+              <div className="flex gap-2 mt-1">
+                <select 
+                  value={nuevaEspecialidad} 
+                  onChange={(e) => setNuevaEspecialidad(e.target.value)}
+                  className="flex-1 h-10 px-3 bg-white border border-gray-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#00355f]"
+                >
+                  <option value="" disabled>Selecciona un oficio para agregar...</option>
+                  {OFICIOS_PRECARGADOS.map((oficio) => (
+                    <option key={oficio} value={oficio}>{oficio}</option>
+                  ))}
+                </select>
+                <button 
+                  onClick={agregarEspecialidad}
+                  disabled={!nuevaEspecialidad}
+                  className="bg-[#00355f] text-white px-4 rounded-xl flex items-center gap-1 font-bold text-xs hover:bg-[#0f4c81] disabled:opacity-50 shadow-sm"
+                >
+                  <Plus className="w-4 h-4" /> Agregar
+                </button>
+              </div>
             </div>
             
+            {/* Certificaciones y Títulos */}
             <div className="w-full flex flex-col border-b border-gray-100">
-              {isEditing ? (
-                <button 
-                  onClick={() => certificadoRef.current?.click()} 
-                  className="w-full flex items-center justify-between px-4 py-4 bg-gray-50 hover:bg-gray-100/70 transition-colors text-left group border-b border-gray-150"
-                >
-                  <div className="flex flex-col pr-4">
-                    <span className="text-sm font-bold text-[#00355f]">Certificaciones y Títulos</span>
-                    <span className="text-xs text-[#fc8127] font-bold">Subir archivo (PDF / Imagen)</span>
-                  </div>
-                  <UploadCloud className="w-5 h-5 text-gray-400 group-hover:text-[#00355f]" />
-                </button>
-              ) : (
-                <div className="px-4 py-3 bg-gray-50 flex items-center justify-between border-b border-gray-150">
-                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Mis Certificados ({perfil.certificados.length})</span>
-                </div>
-              )}
+              <div className="px-4 py-3 bg-gray-50 flex items-center justify-between border-b border-gray-150">
+                <span className="text-xs font-bold text-[#00355f] uppercase tracking-wider flex items-center gap-1.5">
+                  <Award className="w-4 h-4 text-[#fc8127]" /> Mis Certificados y Matrículas ({perfil.certificados.length})
+                </span>
+              </div>
+
+              {/* Número de Matrícula */}
+              <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
+                <label className="text-xs font-bold text-gray-700 whitespace-nowrap">N° Matrícula:</label>
+                <input 
+                  type="text" 
+                  name="nroMatricula" 
+                  placeholder="Ej: MAT-129482" 
+                  value={perfil.nroMatricula} 
+                  onChange={handleChange}
+                  onBlur={handleGuardar}
+                  className="flex-1 h-9 px-3 bg-white border border-gray-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#00355f]" 
+                />
+              </div>
 
               {/* Lista dinámica de certificados */}
               <div className="divide-y divide-gray-100 bg-white">
@@ -554,29 +661,103 @@ function PerfilProfesionalContent() {
                         )}
                       </div>
                       
-                      {isEditing && (
-                        <button 
-                          onClick={() => eliminarCertificado(cert.id)}
-                          className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
-                          title="Eliminar certificado"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
+                      <button 
+                        onClick={() => eliminarCertificado(cert.id)}
+                        className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                        title="Eliminar certificado"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   ))
                 )}
               </div>
+
+              {/* Botón para cargar certificados de manera sucesiva */}
+              <div className="p-3 bg-gray-50 border-t border-gray-100">
+                <button 
+                  onClick={() => certificadoRef.current?.click()} 
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-dashed border-[#fc8127] text-[#fc8127] hover:bg-orange-50 rounded-xl font-bold text-xs transition-colors shadow-sm"
+                >
+                  <UploadCloud className="w-4 h-4" />
+                  {perfil.certificados.length === 0 ? '+ Agregar Certificado / Matrícula (PDF o Imagen)' : '+ Agregar otro certificado'}
+                </button>
+              </div>
+
+              {/* Globito Informativo Insignia Matriculado */}
+              <div className="p-3.5 bg-orange-50 border-t border-gray-100 flex items-start gap-2.5">
+                <Award className="w-4 h-4 text-[#fc8127] shrink-0 mt-0.5" />
+                <p className="text-[11px] text-orange-950 leading-relaxed">
+                  <strong>Insignia "Profesional Matriculado / Certificado":</strong> Al subir tu comprobante de matrícula o certificados y ser validados por la administración, obtendrás la insignia dorada de <strong>Profesional Matriculado / Certificado</strong> visible públicamente.
+                </p>
+              </div>
             </div>
             
-            {isEditing ? (
-              <div className="p-4 bg-gray-50 border-t border-gray-100">
-                <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Área de Cobertura</label>
-                <input type="text" name="cobertura" value={perfil.cobertura} onChange={handleChange} className="w-full h-10 px-3 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#00355f]" />
+            {/* Área de Cobertura */}
+            <div className="p-4 bg-white space-y-3">
+              <span className="block text-xs font-bold text-[#00355f] uppercase tracking-wider">Área de Cobertura</span>
+              <div>
+                <label className="block text-[11px] font-bold text-gray-600 uppercase mb-1">Provincia de Cobertura</label>
+                <select 
+                  name="provincia" 
+                  value={perfil.provincia} 
+                  onChange={(e) => {
+                    const prov = e.target.value;
+                    setPerfil({ ...perfil, provincia: prov, cobertura: prov });
+                  }}
+                  className="w-full h-10 px-3 bg-white border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#00355f]"
+                >
+                  <option value="">Seleccionar Provincia</option>
+                  {Object.keys(PROVINCIAS_Y_CIUDADES).map((prov) => (
+                    <option key={prov} value={prov}>{prov}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-gray-400 mt-1">Tu perfil figurará como disponible en toda la provincia seleccionada.</p>
               </div>
-            ) : (
-              <ListItem title="Área de Cobertura" subtitle={perfil.cobertura} />
-            )}
+            </div>
+
+          </SectionCard>
+
+          {/* Información Profesional Adicional */}
+          <SectionCard title="Información Comercial & Presentación" icon={Briefcase}>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Biografía / Presentación Profesional</label>
+                <textarea 
+                  name="bio" 
+                  rows={3} 
+                  placeholder="Escribe una breve descripción de tus servicios, años de experiencia y valores de trabajo para tus clientes..." 
+                  value={perfil.bio} 
+                  onChange={handleChange} 
+                  className="w-full p-3 bg-white border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#00355f]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Años de Experiencia</label>
+                  <input 
+                    type="text" 
+                    name="experiencia" 
+                    placeholder="Ej: 5 años" 
+                    value={perfil.experiencia} 
+                    onChange={handleChange} 
+                    className="w-full h-10 px-3 bg-white border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#00355f]" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Presupuesto / Visita Mínima ($)</label>
+                  <input 
+                    type="text" 
+                    name="montoMinimo" 
+                    placeholder="Ej: $ 15.000" 
+                    value={perfil.montoMinimo} 
+                    onChange={handleChange} 
+                    className="w-full h-10 px-3 bg-white border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#00355f]" 
+                  />
+                </div>
+              </div>
+            </div>
           </SectionCard>
 
           <SectionCard title="Preferencias" icon={Settings}>
@@ -631,6 +812,127 @@ function PerfilProfesionalContent() {
       </main>
 
       {/* --- MODALES --- */}
+
+      {/* Modal Editar Información Personal */}
+      {modalPersonalInfo && (
+        <ModalWrapper title="Editar Información Personal" onClose={() => setModalPersonalInfo(false)}>
+          <div className="space-y-4 mt-2 max-h-[75vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Nombre</label>
+                <input 
+                  type="text" 
+                  name="nombre" 
+                  value={perfil.nombre} 
+                  onChange={handleChange} 
+                  className="w-full h-10 px-3 border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#00355f]" 
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Apellido</label>
+                <input 
+                  type="text" 
+                  name="apellido" 
+                  value={perfil.apellido} 
+                  onChange={handleChange} 
+                  className="w-full h-10 px-3 border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#00355f]" 
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Correo Electrónico</label>
+              <input 
+                type="email" 
+                name="correo" 
+                value={perfil.correo} 
+                onChange={handleChange} 
+                className="w-full h-10 px-3 border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#00355f]" 
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Fecha de Nacimiento</label>
+                <input 
+                  type="date" 
+                  name="fechaNacimiento" 
+                  value={perfil.fechaNacimiento} 
+                  onChange={handleChange} 
+                  className="w-full h-10 px-3 border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#00355f]" 
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Celular / Teléfono</label>
+                <input 
+                  type="tel" 
+                  name="telefono" 
+                  value={perfil.telefono} 
+                  onChange={handleChange} 
+                  className="w-full h-10 px-3 border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#00355f]" 
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">País</label>
+              <input 
+                type="text" 
+                name="pais" 
+                value={perfil.pais} 
+                onChange={handleChange} 
+                className="w-full h-10 px-3 border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#00355f]" 
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Provincia</label>
+                <select 
+                  name="provincia" 
+                  value={perfil.provincia} 
+                  onChange={(e) => {
+                    const prov = e.target.value;
+                    setPerfil({ ...perfil, provincia: prov, ciudad: '', cobertura: prov });
+                  }}
+                  className="w-full h-10 px-3 border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#00355f]"
+                >
+                  <option value="">Seleccionar provincia</option>
+                  {Object.keys(PROVINCIAS_Y_CIUDADES).map((prov) => (
+                    <option key={prov} value={prov}>{prov}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Ciudad / Localidad</label>
+                <select 
+                  name="ciudad" 
+                  value={perfil.ciudad} 
+                  disabled={!perfil.provincia}
+                  onChange={(e) => {
+                    const ciu = e.target.value;
+                    setPerfil({ ...perfil, ciudad: ciu, cobertura: `${ciu}, ${perfil.provincia}` });
+                  }}
+                  className="w-full h-10 px-3 border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#00355f] disabled:opacity-50"
+                >
+                  <option value="">Seleccionar ciudad</option>
+                  {perfil.provincia && PROVINCIAS_Y_CIUDADES[perfil.provincia]?.map((loc) => (
+                    <option key={loc} value={loc}>{loc}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <button 
+              onClick={handleGuardar} 
+              disabled={isSaving}
+              className="w-full h-12 bg-[#00355f] text-white font-bold rounded-xl mt-4 hover:bg-[#0f4c81] flex items-center justify-center gap-2 shadow-md"
+            >
+              {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Guardar Información Personal'}
+            </button>
+          </div>
+        </ModalWrapper>
+      )}
 
       {/* Modal Cambiar Contraseña */}
       {modalPassword && (

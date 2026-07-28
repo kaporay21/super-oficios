@@ -9,6 +9,7 @@ import {
 import Logo from '@/components/Logo';
 import Tooltip from '@/components/Tooltip';
 import { PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, ConfiguracionIcon, HerramientasIcon } from '@/components/ModernIcons';
+import { dbHelper } from '@/lib/supabase';
 
 // Tipo de dato para las notificaciones
 interface Notificacion {
@@ -23,77 +24,60 @@ interface Notificacion {
 export default function NotificacionesPage() {
   const router = useRouter();
   const [filtroActivo, setFiltroActivo] = useState<'todas' | 'trabajos' | 'mensajes'>('todas');
+  const [userPlan, setUserPlan] = useState<'Gratis' | 'Pro' | 'Master'>('Gratis');
 
-  // Estado inicial de las notificaciones
-  const [notificaciones, setNotificaciones] = useState<Notificacion[]>([
-    {
-      id: 1,
-      tipo: 'trabajo',
-      titulo: 'Nuevo trabajo cerca de tu zona: Pintura de living',
-      descripcion: 'Una nueva solicitud de pintura interior ha sido publicada a 2km de tu ubicación actual.',
-      tiempo: 'Hace 5 min',
-      leida: false,
-      trabajoId: 2 // Vinculado al trabajo de Pintura estático/muro (ID 2)
-    } as any,
-    {
-      id: 2,
-      tipo: 'trabajo',
-      titulo: '¡Juan Pérez aceptó tu presupuesto!',
-      descripcion: 'El profesional ha confirmado los términos. Ahora puedes coordinar la fecha de inicio por el chat.',
-      tiempo: 'Hace 20 min',
-      leida: false
-    },
-    {
-      id: 3,
-      tipo: 'mensaje',
-      titulo: 'Has recibido un nuevo mensaje',
-      descripcion: 'María García: "Hola, ¿podrías enviarme una foto de los materiales que necesitas?"',
-      tiempo: 'Hace 1 h',
-      leida: false
-    },
-    {
-      id: 4,
-      tipo: 'sistema',
-      titulo: 'Tu postulación ha sido enviada con éxito',
-      descripcion: 'Tu presupuesto para "Arreglo de grifería" fue recibido por el cliente. Te avisaremos cuando lo revise.',
-      tiempo: 'Ayer',
-      leida: true
-    },
-    {
-      id: 5,
-      tipo: 'alerta',
-      titulo: 'Actualiza tu perfil',
-      descripcion: 'Completa tus certificados para ganar mayor visibilidad en las búsquedas de clientes.',
-      tiempo: 'Hace 2 días',
-      leida: true
-    }
-  ]);
+  // Estado inicial de las notificaciones (100% dinámico desde BD)
+  const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
 
-  // Cargar anuncios de marketing masivos y notificaciones dinámicas del usuario desde localStorage
   useEffect(() => {
-    // 1. Cargar notificaciones dinámicas del usuario
-    const userNotifs = localStorage.getItem('oficiosya_user_notifications');
-    let loadedNotifs = [...notificaciones];
-    if (userNotifs) {
-      loadedNotifs = [...JSON.parse(userNotifs), ...loadedNotifs];
+    const storedPerfil = localStorage.getItem('oficiosya_profesional_perfil');
+    if (storedPerfil) {
+      try {
+        const parsed = JSON.parse(storedPerfil);
+        if (parsed.plan) setUserPlan(parsed.plan);
+      } catch (e) {}
     }
+  }, []);
 
-    // 2. Cargar anuncios globales de marketing
-    const storedAnnouncements = localStorage.getItem('oficiosya_global_notifications');
-    if (storedAnnouncements) {
-      const parsed = JSON.parse(storedAnnouncements);
-      const formateadas: Notificacion[] = parsed.map((ann: any) => ({
-        id: parseInt(ann.id) || Date.now(),
-        tipo: 'alerta',
-        titulo: `📢 ${ann.titulo}`,
-        descripcion: ann.mensaje,
-        tiempo: ann.fecha || 'Reciente',
-        leida: false
-      }));
-      setNotificaciones([...formateadas, ...loadedNotifs]);
-    } else {
-      setNotificaciones(loadedNotifs);
-    }
+  // Cargar anuncios de marketing masivos y publicaciones reales desde Supabase
+  useEffect(() => {
+    const loadRealNotifications = async () => {
+      let resultNotifs: Notificacion[] = [];
+
+      // 1. Cargar anuncios globales de marketing
+      const storedAnnouncements = localStorage.getItem('oficiosya_global_notifications');
+      if (storedAnnouncements) {
+        try {
+          const parsed = JSON.parse(storedAnnouncements);
+          const formateadas: Notificacion[] = parsed.map((ann: any) => ({
+            id: parseInt(ann.id) || Date.now(),
+            tipo: 'alerta',
+            titulo: `📢 ${ann.titulo}`,
+            descripcion: ann.mensaje,
+            tiempo: ann.fecha || 'Reciente',
+            leida: false
+          }));
+          resultNotifs = [...resultNotifs, ...formateadas];
+        } catch (e) {
+          console.error("Error al parsear anuncios globales:", e);
+        }
+      }
+
+      // 2. Cargar notificaciones dinámicas guardadas para el usuario (postulaciones, mensajes, contrataciones)
+      const userNotifs = localStorage.getItem('oficiosya_user_notifications');
+      if (userNotifs) {
+        try {
+          const parsedUser = JSON.parse(userNotifs);
+          resultNotifs = [...resultNotifs, ...parsedUser];
+        } catch (e) {
+          console.error("Error al parsear notificaciones de usuario:", e);
+        }
+      }
+
+      setNotificaciones(resultNotifs);
+    };
+
+    loadRealNotifications();
   }, []);
 
   // Función para marcar como leída al hacer clic
@@ -113,8 +97,17 @@ export default function NotificacionesPage() {
 
   const handleNotificacionClick = (notif: Notificacion) => {
     marcarComoLeida(notif.id);
-    if (notif.tipo === 'trabajo' && (notif as any).trabajoId) {
-      router.push(`/enviar-presupuesto?jobId=${(notif as any).trabajoId}`);
+    if (notif.tipo === 'trabajo' || (notif as any).trabajoId) {
+      const isBolsaEmpleo = (notif as any).esEmpleo || (notif as any).salario || notif.titulo.toLowerCase().includes('ayudante') || notif.titulo.toLowerCase().includes('empleo');
+      if (isBolsaEmpleo) {
+        router.push('/bolsa-empleo');
+      } else if ((notif as any).trabajoId) {
+        router.push(`/enviar-presupuesto?jobId=${(notif as any).trabajoId}`);
+      } else {
+        router.push('/muro-trabajos');
+      }
+    } else if (notif.tipo === 'mensaje') {
+      router.push('/chat');
     }
   };
 
@@ -190,17 +183,19 @@ export default function NotificacionesPage() {
           </button>
         </Tooltip>
 
-        <Tooltip title="Mis trabajos" text="Revisá y gestioná tus trabajos en curso, presupuestados o finalizados." position="right">
-          <button 
-            onClick={() => router.push('/mis-trabajos')}
-            className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
-          >
-            <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
-              <TrabajosIcon className="w-6 h-6" active={false} />
-            </div>
-            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Trabajos</span>
-          </button>
-        </Tooltip>
+        {(userPlan === 'Pro' || userPlan === 'Master') && (
+          <Tooltip title="Mis trabajos" text="Revisá y gestioná tus trabajos en curso, presupuestados o finalizados." position="right">
+            <button 
+              onClick={() => router.push('/mis-trabajos')}
+              className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
+            >
+              <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
+                <TrabajosIcon className="w-6 h-6" active={false} />
+              </div>
+              <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Trabajos</span>
+            </button>
+          </Tooltip>
+        )}
 
         <Tooltip title="Mensajes" text="Chateá directamente con tus clientes para coordinar visitas y detalles de los trabajos." position="right">
           <button 
@@ -226,7 +221,7 @@ export default function NotificacionesPage() {
           </button>
         </Tooltip>
 
-        <Tooltip title="Herramientas" text="Calculadora de materiales, mano de obra y cómputos para albañilería y cuadrillas." position="right">
+        <Tooltip title="Presupuestador" text="Calculadora de materiales, mano de obra y cómputos de obra." position="right">
           <button 
             onClick={() => router.push('/presupuestador-obras')}
             className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
@@ -234,7 +229,7 @@ export default function NotificacionesPage() {
             <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
               <HerramientasIcon className="w-6 h-6" active={false} />
             </div>
-            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Herramientas</span>
+            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Presupuestador</span>
           </button>
         </Tooltip>
 
