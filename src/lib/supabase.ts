@@ -811,6 +811,651 @@ export const dbHelper = {
   },
 
   // ============================================================
+  // ÓRDENES DE TRABAJO (Informe 7 + 9)
+  // ============================================================
+
+  /**
+   * Crea una nueva Orden de Trabajo entre profesional y cliente.
+   */
+  async createOrdenTrabajo(orden: {
+    profesional_id: string;
+    cliente_id: string;
+    titulo: string;
+    descripcion?: string;
+    garantia?: string;
+    fecha_inicio?: string;
+    monto?: number;
+  }): Promise<any> {
+    const { data, error } = await supabase
+      .from('ordenes_trabajo')
+      .insert([{
+        profesional_id: orden.profesional_id,
+        cliente_id: orden.cliente_id,
+        titulo: orden.titulo,
+        descripcion: orden.descripcion || '',
+        estado: 'pendiente',
+        garantia: orden.garantia || 'sin_garantia',
+        fecha_inicio: orden.fecha_inicio || new Date().toISOString().split('T')[0],
+        monto: orden.monto || 0,
+      }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Obtiene órdenes de trabajo de un profesional.
+   */
+  async getOrdenesTrabajoProfesional(profesionalId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('ordenes_trabajo')
+      .select('*, perfiles!ordenes_trabajo_cliente_id_fkey(nombre, foto_perfil, telefono)')
+      .eq('profesional_id', profesionalId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn('Error cargando órdenes de trabajo:', error.message);
+      return [];
+    }
+    return data || [];
+  },
+
+  /**
+   * Obtiene órdenes de trabajo de un cliente.
+   */
+  async getOrdenesTrabajoCliente(clienteId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('ordenes_trabajo')
+      .select('*, perfiles!ordenes_trabajo_profesional_id_fkey(nombre, foto_perfil, telefono, oficios)')
+      .eq('cliente_id', clienteId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn('Error cargando órdenes de trabajo del cliente:', error.message);
+      return [];
+    }
+    return data || [];
+  },
+
+  /**
+   * Actualiza el estado de una Orden de Trabajo.
+   */
+  async updateOrdenTrabajoEstado(id: string, estado: string, fechaFin?: string): Promise<void> {
+    const updates: any = { estado };
+    if (fechaFin) updates.fecha_fin = fechaFin;
+    const { error } = await supabase.from('ordenes_trabajo').update(updates).eq('id', id);
+    if (error) throw error;
+  },
+
+  // ============================================================
+  // RESEÑAS INTELIGENTES (Informe 7)
+  // ============================================================
+
+  /**
+   * Crea una reseña inteligente con preguntas estructuradas.
+   * Solo se puede crear si existe una Orden de Trabajo registrada.
+   */
+  async createResenaInteligente(resena: {
+    orden_trabajo_id: string;
+    profesional_id: string;
+    cliente_id: string;
+    puntualidad: number;
+    resolvio_problema: number;
+    volveria_contratar: boolean;
+    dejo_limpio: number;
+    comentario?: string;
+  }): Promise<any> {
+    const rating_promedio = (resena.puntualidad + resena.resolvio_problema + resena.dejo_limpio) / 3;
+    const { data, error } = await supabase
+      .from('resenas_inteligentes')
+      .insert([{ ...resena, rating_promedio: Math.round(rating_promedio * 10) / 10 }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Obtiene todas las reseñas inteligentes de un profesional.
+   */
+  async getResenasProfesional(profesionalId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('resenas_inteligentes')
+      .select('*, perfiles!resenas_inteligentes_cliente_id_fkey(nombre, foto_perfil)')
+      .eq('profesional_id', profesionalId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn('Error cargando reseñas inteligentes:', error.message);
+      return [];
+    }
+    return data || [];
+  },
+
+  /**
+   * Verifica si un cliente puede dejar reseña (tiene orden de trabajo finalizada).
+   */
+  async puedeDejarResena(profesionalId: string, clienteId: string): Promise<boolean> {
+    const { data } = await supabase
+      .from('ordenes_trabajo')
+      .select('id')
+      .eq('profesional_id', profesionalId)
+      .eq('cliente_id', clienteId)
+      .in('estado', ['finalizado', 'con_garantia'])
+      .limit(1);
+    return (data?.length || 0) > 0;
+  },
+
+  // ============================================================
+  // ÍNDICE DE CONFIANZA (Informe 7)
+  // ============================================================
+
+  /**
+   * Calcula el Índice de Confianza de un profesional (0-100).
+   * Ponderación:
+   *   - Identidad verificada: 20 pts
+   *   - Perfil completo (foto, bio, oficios, zona): 15 pts
+   *   - Trabajos completados (máx 20 pts escalonado): 20 pts
+   *   - Rating promedio de reseñas: 20 pts
+   *   - Tiempo de respuesta: 15 pts
+   *   - Sin reclamos activos: 10 pts
+   */
+  async calcularIndiceConfianza(profesionalId: string): Promise<{
+    total: number;
+    desglose: Record<string, number>;
+    sugerencias: string[];
+  }> {
+    try {
+      const [perfil, resenas, ordenes] = await Promise.all([
+        supabase.from('perfiles').select('*').eq('id', profesionalId).maybeSingle(),
+        supabase.from('resenas_inteligentes').select('rating_promedio').eq('profesional_id', profesionalId),
+        supabase.from('ordenes_trabajo').select('id, estado').eq('profesional_id', profesionalId).in('estado', ['finalizado', 'con_garantia']),
+      ]);
+
+      const p = perfil.data;
+      const desglose: Record<string, number> = {};
+      const sugerencias: string[] = [];
+
+      // 1. Identidad verificada (20 pts)
+      desglose.identidad = p?.verificado ? 20 : 0;
+      if (!p?.verificado) sugerencias.push('Verificá tu identidad para ganar 20 puntos');
+
+      // 2. Perfil completo (15 pts)
+      let perfilPts = 0;
+      if (p?.foto_perfil) perfilPts += 4;
+      if (p?.biografia && p.biografia.length > 30) perfilPts += 4;
+      if (p?.oficios?.length > 0) perfilPts += 4;
+      if (p?.provincia && p?.ciudad) perfilPts += 3;
+      desglose.perfilCompleto = perfilPts;
+      if (perfilPts < 15) sugerencias.push('Completá tu perfil (foto, descripción, zona)');
+
+      // 3. Trabajos completados (20 pts, escalonado)
+      const totalTrab = ordenes.data?.length || 0;
+      let trabajoPts = 0;
+      if (totalTrab >= 1) trabajoPts = 5;
+      if (totalTrab >= 5) trabajoPts = 10;
+      if (totalTrab >= 10) trabajoPts = 15;
+      if (totalTrab >= 25) trabajoPts = 20;
+      desglose.trabajos = trabajoPts;
+      if (trabajoPts < 20) sugerencias.push(`Completá más trabajos (tenés ${totalTrab}, necesitás 25 para el máximo)`);
+
+      // 4. Rating promedio (20 pts)
+      const ratings = resenas.data?.map((r: any) => r.rating_promedio) || [];
+      const avgRating = ratings.length > 0 ? ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length : 0;
+      const ratingPts = ratings.length === 0 ? 0 : Math.round((avgRating / 5) * 20);
+      desglose.rating = ratingPts;
+      if (ratings.length === 0) sugerencias.push('Conseguí tus primeras reseñas verificadas');
+
+      // 5. Tiempo de respuesta (15 pts)
+      const tiempoRespuesta = p?.tiempo_respuesta_minutos || 999;
+      let tiempoPts = 0;
+      if (tiempoRespuesta <= 10) tiempoPts = 15;
+      else if (tiempoRespuesta <= 30) tiempoPts = 10;
+      else if (tiempoRespuesta <= 60) tiempoPts = 5;
+      desglose.tiempoRespuesta = tiempoPts;
+      if (tiempoPts < 15) sugerencias.push('Respondé más rápido a los mensajes');
+
+      // 6. Sin reclamos (10 pts)
+      const { count: reclamos } = await supabase
+        .from('reportes')
+        .select('*', { count: 'exact', head: true })
+        .eq('reportado_id', profesionalId)
+        .eq('estado', 'pendiente');
+      desglose.sinReclamos = (reclamos || 0) === 0 ? 10 : Math.max(0, 10 - (reclamos || 0) * 3);
+
+      const total = Object.values(desglose).reduce((a, b) => a + b, 0);
+      return { total: Math.min(100, total), desglose, sugerencias: sugerencias.slice(0, 3) };
+    } catch (e) {
+      console.warn('Error calculando índice de confianza:', e);
+      return { total: 0, desglose: {}, sugerencias: [] };
+    }
+  },
+
+  // ============================================================
+  // MI HOGAR — Centro Digital del Hogar (Informe 8-9)
+  // ============================================================
+
+  /**
+   * Obtiene todas las propiedades de un cliente.
+   */
+  async getPropiedades(clienteId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('mi_hogar_propiedades')
+      .select('*')
+      .eq('cliente_id', clienteId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn('Error cargando propiedades:', error.message);
+      return [];
+    }
+    return data || [];
+  },
+
+  /**
+   * Crea una nueva propiedad en Mi Hogar.
+   */
+  async createPropiedad(propiedad: {
+    cliente_id: string;
+    nombre: string;
+    direccion?: string;
+    tipo?: string;
+    superficie_m2?: number;
+    anio_construccion?: number;
+  }): Promise<any> {
+    const { data, error } = await supabase
+      .from('mi_hogar_propiedades')
+      .insert([propiedad])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Actualiza una propiedad existente.
+   */
+  async updatePropiedad(id: string, updates: any): Promise<void> {
+    const { error } = await supabase.from('mi_hogar_propiedades').update(updates).eq('id', id);
+    if (error) throw error;
+  },
+
+  /**
+   * Elimina una propiedad y todos sus datos asociados.
+   */
+  async deletePropiedad(id: string): Promise<void> {
+    await supabase.from('mi_hogar_comprobantes').delete().eq('propiedad_id', id);
+    await supabase.from('mi_hogar_mantenimientos').delete().eq('propiedad_id', id);
+    const { error } = await supabase.from('mi_hogar_propiedades').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  /**
+   * Obtiene comprobantes de una propiedad.
+   */
+  async getComprobantes(propiedadId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('mi_hogar_comprobantes')
+      .select('*')
+      .eq('propiedad_id', propiedadId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn('Error cargando comprobantes:', error.message);
+      return [];
+    }
+    return data || [];
+  },
+
+  /**
+   * Crea un nuevo comprobante en una propiedad.
+   */
+  async createComprobante(comprobante: {
+    propiedad_id: string;
+    cliente_id: string;
+    tipo: string;
+    descripcion?: string;
+    url_archivo?: string;
+    monto?: number;
+    fecha_documento?: string;
+    fecha_vencimiento?: string;
+  }): Promise<any> {
+    const { data, error } = await supabase
+      .from('mi_hogar_comprobantes')
+      .insert([comprobante])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Elimina un comprobante.
+   */
+  async deleteComprobante(id: string): Promise<void> {
+    const { error } = await supabase.from('mi_hogar_comprobantes').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  /**
+   * Obtiene los mantenimientos programados de una propiedad.
+   */
+  async getMantenimientos(propiedadId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('mi_hogar_mantenimientos')
+      .select('*')
+      .eq('propiedad_id', propiedadId)
+      .order('proxima_fecha', { ascending: true });
+    if (error) {
+      console.warn('Error cargando mantenimientos:', error.message);
+      return [];
+    }
+    return data || [];
+  },
+
+  /**
+   * Crea un recordatorio de mantenimiento.
+   */
+  async createMantenimiento(mantenimiento: {
+    propiedad_id: string;
+    cliente_id: string;
+    titulo: string;
+    descripcion?: string;
+    frecuencia?: string;
+    proxima_fecha?: string;
+  }): Promise<any> {
+    const { data, error } = await supabase
+      .from('mi_hogar_mantenimientos')
+      .insert([{ ...mantenimiento, completado: false }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Marca un mantenimiento como completado.
+   */
+  async completarMantenimiento(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('mi_hogar_mantenimientos')
+      .update({ completado: true })
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  /**
+   * Obtiene el historial completo de trabajos de una propiedad.
+   */
+  async getHistorialPropiedad(propiedadId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('ordenes_trabajo')
+      .select('*, perfiles!ordenes_trabajo_profesional_id_fkey(nombre, foto_perfil, oficios)')
+      .eq('propiedad_id', propiedadId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn('Error cargando historial de propiedad:', error.message);
+      return [];
+    }
+    return data || [];
+  },
+
+  // ============================================================
+  // LOGROS Y MISIONES / GAMIFICACIÓN (Informe 8)
+  // ============================================================
+
+  /**
+   * Obtiene los logros desbloqueados de un profesional.
+   */
+  async getLogros(profesionalId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('logros_profesional')
+      .select('*')
+      .eq('profesional_id', profesionalId)
+      .order('desbloqueado_en', { ascending: false });
+    if (error) {
+      console.warn('Error cargando logros:', error.message);
+      return [];
+    }
+    return data || [];
+  },
+
+  /**
+   * Desbloquea un logro para un profesional (si no lo tiene ya).
+   */
+  async desbloquearLogro(profesionalId: string, tipo: string, titulo: string, descripcion: string): Promise<void> {
+    const { data: existing } = await supabase
+      .from('logros_profesional')
+      .select('id')
+      .eq('profesional_id', profesionalId)
+      .eq('tipo', tipo)
+      .maybeSingle();
+    if (existing) return; // Ya tiene el logro
+    await supabase.from('logros_profesional').insert([{
+      profesional_id: profesionalId,
+      tipo,
+      titulo,
+      descripcion,
+    }]);
+  },
+
+  /**
+   * Calcula el nivel de plataforma según trabajos completados.
+   * Bronce: 0-9, Plata: 10-49, Oro: 50-99, Platino: 100+
+   */
+  getNivelPlataforma(totalTrabajos: number): { nivel: string; emoji: string; siguiente: number } {
+    if (totalTrabajos >= 100) return { nivel: 'Platino', emoji: '💎', siguiente: 0 };
+    if (totalTrabajos >= 50) return { nivel: 'Oro', emoji: '🥇', siguiente: 100 };
+    if (totalTrabajos >= 10) return { nivel: 'Plata', emoji: '🥈', siguiente: 50 };
+    return { nivel: 'Bronce', emoji: '🥉', siguiente: 10 };
+  },
+
+  // ============================================================
+  // PANEL FINANCIERO (Informe 9) — Solo estadísticas, sin pagos
+  // ============================================================
+
+  /**
+   * Obtiene estadísticas financieras del profesional.
+   * No maneja pagos reales, solo organiza información registrada.
+   */
+  async getEstadisticasFinancieras(profesionalId: string): Promise<{
+    totalPresupuestado: number;
+    ticketPromedio: number;
+    trabajosEstesMes: number;
+    serviciosMasVendidos: Array<{ servicio: string; cantidad: number }>;
+    evolucionMensual: Array<{ mes: string; total: number }>;
+  }> {
+    try {
+      const { data: ordenes } = await supabase
+        .from('ordenes_trabajo')
+        .select('monto, titulo, created_at, estado')
+        .eq('profesional_id', profesionalId)
+        .in('estado', ['finalizado', 'con_garantia']);
+
+      const items = ordenes || [];
+      const totalPresupuestado = items.reduce((acc: number, o: any) => acc + (o.monto || 0), 0);
+      const ticketPromedio = items.length > 0 ? totalPresupuestado / items.length : 0;
+
+      const now = new Date();
+      const trabajosEstesMes = items.filter((o: any) => {
+        const d = new Date(o.created_at);
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      }).length;
+
+      // Servicios más frecuentes
+      const conteo: Record<string, number> = {};
+      items.forEach((o: any) => {
+        const key = o.titulo?.split(' ')[0] || 'Otro';
+        conteo[key] = (conteo[key] || 0) + 1;
+      });
+      const serviciosMasVendidos = Object.entries(conteo)
+        .map(([servicio, cantidad]) => ({ servicio, cantidad }))
+        .sort((a, b) => b.cantidad - a.cantidad)
+        .slice(0, 5);
+
+      // Evolución últimos 6 meses
+      const evolucionMensual: Array<{ mes: string; total: number }> = [];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date();
+        d.setMonth(d.getMonth() - i);
+        const mes = d.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' });
+        const total = items
+          .filter((o: any) => {
+            const od = new Date(o.created_at);
+            return od.getMonth() === d.getMonth() && od.getFullYear() === d.getFullYear();
+          })
+          .reduce((acc: number, o: any) => acc + (o.monto || 0), 0);
+        evolucionMensual.push({ mes, total });
+      }
+
+      return { totalPresupuestado, ticketPromedio, trabajosEstesMes, serviciosMasVendidos, evolucionMensual };
+    } catch (e) {
+      console.warn('Error cargando estadísticas financieras:', e);
+      return { totalPresupuestado: 0, ticketPromedio: 0, trabajosEstesMes: 0, serviciosMasVendidos: [], evolucionMensual: [] };
+    }
+  },
+
+  // ============================================================
+  // REPORTES BIDIRECCIONALES (Informe 7)
+  // ============================================================
+
+  /**
+   * Crea un reporte (cliente reporta profesional o viceversa).
+   */
+  async createReporte(reporte: {
+    reportador_id: string;
+    reportado_id: string;
+    tipo: string;
+    descripcion: string;
+  }): Promise<any> {
+    const { data, error } = await supabase
+      .from('reportes')
+      .insert([{ ...reporte, estado: 'pendiente' }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Obtiene todos los reportes (para admin).
+   */
+  async getReportes(): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('reportes')
+      .select('*, reportador:perfiles!reportes_reportador_id_fkey(nombre, foto_perfil), reportado:perfiles!reportes_reportado_id_fkey(nombre, foto_perfil)')
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn('Error cargando reportes:', error.message);
+      return [];
+    }
+    return data || [];
+  },
+
+  /**
+   * Actualiza el estado de un reporte (para admin).
+   */
+  async updateReporteEstado(id: string, estado: string): Promise<void> {
+    const { error } = await supabase.from('reportes').update({ estado }).eq('id', id);
+    if (error) throw error;
+  },
+
+  // ============================================================
+  // RESUMEN DIARIO DEL PROFESIONAL (Informe 9) — Sin IA
+  // ============================================================
+
+  /**
+   * Genera el resumen diario real del profesional.
+   * Datos 100% de Supabase, sin IA, sin datos simulados.
+   */
+  async getResumenDiarioProfesional(profesionalId: string): Promise<{
+    trabajosHoy: number;
+    presupuestosPendientes: number;
+    mensajesNoLeidos: number;
+    nuevasSolicitudes: number;
+    alertas: string[];
+  }> {
+    try {
+      const hoy = new Date().toISOString().split('T')[0];
+
+      const [ordenesHoy, presupuestos, mensajes, solicitudes] = await Promise.all([
+        supabase.from('ordenes_trabajo').select('id', { count: 'exact', head: true })
+          .eq('profesional_id', profesionalId)
+          .eq('fecha_inicio', hoy)
+          .eq('estado', 'en_progreso'),
+        supabase.from('presupuestos').select('id', { count: 'exact', head: true })
+          .eq('profesional_id', profesionalId)
+          .eq('estado', 'pendiente'),
+        supabase.from('mensajes').select('id', { count: 'exact', head: true })
+          .eq('receptor_id', profesionalId)
+          .eq('leido', false),
+        supabase.from('trabajos').select('id', { count: 'exact', head: true })
+          .eq('estado', 'abierto')
+          .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()),
+      ]);
+
+      // Alertas inteligentes basadas en reglas (sin IA)
+      const alertas: string[] = [];
+      if ((mensajes.count || 0) > 3) alertas.push(`Tenés ${mensajes.count} mensajes sin leer`);
+      if ((presupuestos.count || 0) > 2) alertas.push(`${presupuestos.count} presupuestos esperan tu respuesta`);
+
+      return {
+        trabajosHoy: ordenesHoy.count || 0,
+        presupuestosPendientes: presupuestos.count || 0,
+        mensajesNoLeidos: mensajes.count || 0,
+        nuevasSolicitudes: solicitudes.count || 0,
+        alertas,
+      };
+    } catch (e) {
+      console.warn('Error cargando resumen diario:', e);
+      return { trabajosHoy: 0, presupuestosPendientes: 0, mensajesNoLeidos: 0, nuevasSolicitudes: 0, alertas: [] };
+    }
+  },
+
+  // ============================================================
+  // ESTADÍSTICAS DE PERFIL / MI MARCA (Informe 8)
+  // ============================================================
+
+  /**
+   * Obtiene estadísticas de visitas al perfil del profesional.
+   * Usa tabla profile_views si existe, fallback a 0.
+   */
+  async getEstadisticasPerfil(profesionalId: string): Promise<{
+    visitasTotal: number;
+    visitasSemana: number;
+    contactosSemana: number;
+    clientesRecurrentes: number;
+  }> {
+    try {
+      const semanaAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      const [visitasSemana, contactosSemana, clientesRecurrentes] = await Promise.all([
+        supabase.from('profile_views').select('id', { count: 'exact', head: true })
+          .eq('profesional_id', profesionalId)
+          .gte('created_at', semanaAtras),
+        supabase.from('conversaciones').select('id', { count: 'exact', head: true })
+          .or(`usuario1_id.eq.${profesionalId},usuario2_id.eq.${profesionalId}`)
+          .gte('created_at', semanaAtras),
+        supabase.from('ordenes_trabajo').select('cliente_id')
+          .eq('profesional_id', profesionalId)
+          .in('estado', ['finalizado', 'con_garantia']),
+      ]);
+
+      // Contar clientes únicos con más de 1 trabajo
+      const clientesIds = (clientesRecurrentes.data || []).map((o: any) => o.cliente_id);
+      const conteo: Record<string, number> = {};
+      clientesIds.forEach((id: string) => { conteo[id] = (conteo[id] || 0) + 1; });
+      const recurrentes = Object.values(conteo).filter(v => v > 1).length;
+
+      return {
+        visitasTotal: 0, // Requiere función RPC especial en Supabase
+        visitasSemana: visitasSemana.count || 0,
+        contactosSemana: contactosSemana.count || 0,
+        clientesRecurrentes: recurrentes,
+      };
+    } catch (e) {
+      console.warn('Error cargando estadísticas de perfil:', e);
+      return { visitasTotal: 0, visitasSemana: 0, contactosSemana: 0, clientesRecurrentes: 0 };
+    }
+  },
+
+  // ============================================================
   // DATA CLEANUP — Limpieza total de datos
   // ============================================================
 

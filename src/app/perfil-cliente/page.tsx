@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { 
   Menu, MapPin, CheckCircle, Wrench, 
   HelpCircle, LogOut, ChevronRight, Search, 
-  Briefcase, MessageSquare, User, Plus, X, Settings, Star, ArrowRight
+  Briefcase, MessageSquare, User, Plus, X, Settings, Star, ArrowRight,
+  Building, AlertTriangle
 } from 'lucide-react';
 import Logo from '@/components/Logo';
 import AuthGuard from '@/components/AuthGuard';
@@ -76,7 +77,7 @@ function PerfilClienteContent() {
     verificado: false,
     trabajosSolicitados: 0,
     presupuestosRecibidos: 0,
-    avatar: '',
+    avatar: 'https://i.pravatar.cc/150',
     miembroDesde: '',
     descripcion: ''
   });
@@ -143,7 +144,7 @@ function PerfilClienteContent() {
             {/* Perfil Mini en Menú */}
             <div className="p-6 bg-gradient-to-br from-[#00355f] to-[#0f4c81] text-white flex items-center gap-4">
               <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white/50 shrink-0 bg-white/10">
-                <img src={perfil.avatar} alt={perfil.nombre} className="w-full h-full object-cover" />
+                <img src={perfil.avatar || 'https://i.pravatar.cc/150'} alt={perfil.nombre || 'Perfil'} className="w-full h-full object-cover" />
               </div>
               <div className="overflow-hidden">
                 <h4 className="font-bold text-sm truncate">{perfil.nombre}</h4>
@@ -163,6 +164,13 @@ function PerfilClienteContent() {
                 >
                   <Search className="w-5 h-5 text-gray-400" />
                   Buscar Oficios / Profesionales
+                </button>
+                <button 
+                  onClick={() => { setIsMenuOpen(false); router.push('/mi-hogar'); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-[#00355f] rounded-xl transition-all"
+                >
+                  <Building className="w-5 h-5 text-[#fc8127]" />
+                  Mi Hogar (Centro Digital)
                 </button>
                 <button 
                   onClick={() => { setIsMenuOpen(false); router.push('/perfil-publico-cliente'); }}
@@ -187,6 +195,13 @@ function PerfilClienteContent() {
                 >
                   <HelpCircle className="w-5 h-5 text-gray-400" />
                   Centro de Ayuda / Soporte
+                </button>
+                <button 
+                  onClick={() => { setIsMenuOpen(false); router.push('/reportar'); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-red-600 rounded-xl transition-all"
+                >
+                  <AlertTriangle className="w-5 h-5 text-red-500" />
+                  Reportar un Problema
                 </button>
                 <button 
                   onClick={handleLogout}
@@ -223,7 +238,7 @@ function PerfilClienteContent() {
           onClick={() => router.push('/configuracion-cliente')}
           className="w-9 h-9 rounded-full overflow-hidden border border-gray-200 cursor-pointer hover:opacity-85 transition-opacity"
         >
-          <img src={perfil.avatar} alt="Perfil" className="w-full h-full object-cover" />
+          <img src={perfil.avatar || 'https://i.pravatar.cc/150'} alt="Perfil" className="w-full h-full object-cover" />
         </div>
       </header>
 
@@ -237,7 +252,7 @@ function PerfilClienteContent() {
             <section className="text-center animate-in fade-in slide-in-from-top-4 duration-500 bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
               <div className="relative inline-block mb-3">
                 <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-md mx-auto">
-                  <img src={perfil.avatar} alt={perfil.nombre} className="w-full h-full object-cover" />
+                  <img src={perfil.avatar || 'https://i.pravatar.cc/150'} alt={perfil.nombre || 'Perfil'} className="w-full h-full object-cover" />
                 </div>
                 {perfil.verificado && (
                   <div className="absolute bottom-0 right-0 bg-[#7efba4] text-[#003c1b] p-1 rounded-full border-2 border-white shadow-sm">
@@ -277,6 +292,33 @@ function PerfilClienteContent() {
             </button>
 
             {/* Active Jobs */}
+            {/* --- BANNER DESTACADO: MI HOGAR --- */}
+            <section 
+              onClick={() => router.push('/mi-hogar')}
+              className="bg-gradient-to-r from-slate-900 via-[#001529] to-slate-900 text-white p-5 rounded-3xl border border-slate-700/60 shadow-lg cursor-pointer hover:border-[#fc8127]/50 transition-all group relative overflow-hidden mb-6"
+            >
+              <div className="flex items-center justify-between relative z-10">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-[#fc8127] to-amber-500 rounded-2xl flex items-center justify-center text-white font-bold shadow-md group-hover:scale-105 transition-transform">
+                    <Building className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-black text-base text-white">Mi Hogar</h3>
+                      <span className="bg-[#fc8127]/20 text-[#fc8127] text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-[#fc8127]/30 uppercase">Centro Digital</span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      Organizá tus propiedades, comprobantes, garantías y mantenimientos.
+                    </p>
+                  </div>
+                </div>
+                <div className="hidden sm:flex items-center gap-1 text-xs font-bold text-[#fc8127] group-hover:translate-x-1 transition-transform">
+                  <span>Ingresar</span>
+                  <ChevronRight className="w-4 h-4" />
+                </div>
+              </div>
+            </section>
+
             <section>
               <div className="flex justify-between items-center mb-3">
                 <h3 className="font-bold text-gray-900">Trabajos en curso</h3>
@@ -485,6 +527,7 @@ function PerfilClienteContent() {
       {/* Bottom Nav */}
       <nav className="fixed bottom-0 w-full bg-white border-t border-gray-200 flex justify-around p-3 z-50 md:hidden shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
         <NavButton icon={Search} label="Explorar" onClick={() => router.push('/cliente')} />
+        <NavButton icon={Building} label="Mi Hogar" onClick={() => router.push('/mi-hogar')} />
         <NavButton icon={Plus} label="Publicar" onClick={() => router.push('/publicar-trabajo')} />
         <NavButton icon={MessageSquare} label="Mensajes" onClick={() => router.push('/chat')} />
         <NavButton icon={User} label="Perfil" active />

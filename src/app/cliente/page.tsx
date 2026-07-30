@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { Search, MapPin, Star, MessageSquare, Plus, Bell, Menu, Home, ClipboardList, User, Sparkles, Wrench, Zap, Paintbrush } from 'lucide-react';
+import { Search, MapPin, Star, MessageSquare, Plus, Bell, Menu, Home, ClipboardList, User, Sparkles, Wrench, Zap, Paintbrush, Building, ChevronRight, ShieldAlert } from 'lucide-react';
 import { Screen, Professional, Job } from '@/types';
 import { useRouter } from 'next/navigation';
 import Tooltip from '@/components/Tooltip';
@@ -128,6 +128,18 @@ function HomePageContent() {
                 <Home className="w-6 h-6 fill-current" />
               </div>
               <span className="text-[11px] font-bold text-[#00355f]">Explorar</span>
+            </div>
+          </Tooltip>
+
+          <Tooltip text="Mi Hogar" position="top">
+            <div 
+              onClick={() => router.push('/mi-hogar')}
+              className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#fc8127] cursor-pointer transition-colors active:scale-95"
+            >
+              <div className="p-1.5">
+                <Building className="w-6 h-6" />
+              </div>
+              <span className="text-[11px] font-medium">Mi Hogar</span>
             </div>
           </Tooltip>
 
@@ -276,6 +288,33 @@ const HomeClient: React.FC<HomeClientProps> = ({
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* --- BANNER DESTACADO: MI HOGAR --- */}
+      <section 
+        onClick={() => router.push('/mi-hogar')}
+        className="bg-gradient-to-r from-slate-900 via-[#001529] to-slate-900 text-white p-6 rounded-3xl border border-slate-700/60 shadow-md cursor-pointer hover:border-[#fc8127]/50 transition-all group relative overflow-hidden"
+      >
+        <div className="flex items-center justify-between relative z-10">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 bg-gradient-to-br from-[#fc8127] to-amber-500 rounded-2xl flex items-center justify-center text-white font-bold shadow-md group-hover:scale-105 transition-transform shrink-0">
+              <Building className="w-7 h-7" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-lg text-white">Mi Hogar</h3>
+                <span className="bg-[#fc8127]/20 text-[#fc8127] text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-[#fc8127]/30 uppercase">Centro Digital</span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1 max-w-md">
+                Guardá propiedades, comprobantes, garantías y mantenimientos de tu casa en un solo lugar.
+              </p>
+            </div>
+          </div>
+          <div className="hidden sm:flex items-center gap-1 text-xs font-bold text-[#fc8127] group-hover:translate-x-1 transition-transform shrink-0">
+            <span>Abrir Mi Hogar</span>
+            <ChevronRight className="w-4 h-4" />
+          </div>
         </div>
       </section>
 

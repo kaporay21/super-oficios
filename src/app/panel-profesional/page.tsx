@@ -2,13 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  Bell, Edit2, Calendar, FileText, TrendingUp, 
-  Zap, Clock, ChevronRight, ChevronLeft, Wrench, Paintbrush, 
-  CheckCircle, ShieldCheck, Timer, LayoutDashboard, 
+import {
+  Bell, Edit2, Calendar, FileText, TrendingUp,
+  Zap, Clock, ChevronRight, ChevronLeft, Wrench, Paintbrush,
+  CheckCircle, ShieldCheck, Timer, LayoutDashboard,
   Briefcase, MessageSquare, User, Users, Plus, Settings, BarChart2,
   Hammer, Grid, ImagePlus, Star, Crown, HelpCircle, Send, X, Loader2,
-  Lightbulb, Info, Trash2, Compass, BookmarkPlus, Handshake
+  Lightbulb, Info, Trash2, Compass, BookmarkPlus, Handshake, AlertTriangle
 } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import { PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, ConfiguracionIcon, HerramientasIcon } from '@/components/ModernIcons';
@@ -68,16 +68,16 @@ function PanelProfesionalContent() {
         // Get real data from database
         const allPostulaciones = await dbHelper.getAllPostulaciones();
         const myApps = allPostulaciones.filter((p: any) => p.candidato === perfil.nombre);
-        
+
         const realPresupuestos = myApps.length;
         const realActiveJobs = myApps.filter((p: any) => p.estado === 'Aceptado').length;
 
         // Get real reviews count
         const reviews = await dbHelper.getReviewsForProfessional(perfil.id);
-        const avgRating = reviews.length > 0 
-          ? reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / reviews.length 
+        const avgRating = reviews.length > 0
+          ? reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / reviews.length
           : 5.0;
-        
+
         setStats({
           activeJobs: realActiveJobs,
           presupuestos: realPresupuestos,
@@ -105,7 +105,7 @@ function PanelProfesionalContent() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [currentMonth, setCurrentMonth] = useState<number>(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
-  const [notes, setNotes] = useState<{[key: string]: string}>({});
+  const [notes, setNotes] = useState<{ [key: string]: string }>({});
   const [activeNote, setActiveNote] = useState<string>('');
 
   useEffect(() => {
@@ -252,10 +252,10 @@ function PanelProfesionalContent() {
   return (
     <main className="min-h-screen bg-[#f7fafc] text-[#181c1e] font-sans overflow-x-hidden md:pl-24 pb-24 md:pb-0">
       <BienvenidaProModal />
-      
+
       {/* Top AppBar */}
       <header className="bg-white border-b border-gray-200 shadow-sm w-full top-0 sticky z-40 flex justify-between items-center px-4 md:px-8 h-16 md:h-20">
-        <div 
+        <div
           className="flex items-center gap-2 cursor-pointer"
           onClick={() => router.push('/')}
         >
@@ -263,7 +263,7 @@ function PanelProfesionalContent() {
         </div>
         <div className="flex items-center gap-4">
           <Tooltip title="Notificaciones" text="Revisá avisos importantes, alertas de empleo y actualizaciones sobre tu cuenta al instante." position="bottom">
-            <button 
+            <button
               onClick={() => router.push('/notificaciones')}
               className="text-gray-500 hover:bg-gray-100 p-2 rounded-full transition-colors relative"
             >
@@ -273,9 +273,9 @@ function PanelProfesionalContent() {
           </Tooltip>
           <Tooltip title="Mi Perfil" text="Actualizá tus datos personales, especialidades, coberturas y subí certificados profesionales." position="bottom">
             <div className="w-8 h-8 md:w-10 md:h-10 rounded-full overflow-hidden border border-gray-200 cursor-pointer" onClick={() => router.push('/configuracion-profesional')}>
-              <img 
-                className="w-full h-full object-cover" 
-                alt="Perfil de Roberto" 
+              <img
+                className="w-full h-full object-cover"
+                alt="Perfil de Roberto"
                 src={perfil?.avatar || "https://lh3.googleusercontent.com/aida-public/AB6AXuC1W2fOmSq-AynqbO3ZoWLKh_XWhnamU4gzNipXAwgMd19QXjrLW74lvJpK-ZQeavvPt4luRYD7mhyI0qQuA6QCs8afpj3cqqLqgCs6S4po0rIeUYesugVkfTIMWiABeNBgEH8TIKJHiZdH_Pv9DLWbTS8ggXJkSpU6taEOfoFmwVs-S04n62fGxmqyzsGqJSR4eb_sNOrD5MTYiXByZcjscbg4QHwR8TpMzDU7dtp1JrFSPFMp9pBSecyG65yj2h2KnVBnkMvHuipY"}
               />
             </div>
@@ -285,7 +285,7 @@ function PanelProfesionalContent() {
 
       {/* Navegación Lateral (Desktop) */}
       <div className="hidden md:flex fixed left-0 top-16 bottom-0 w-24 bg-white border-r border-gray-200 z-30 flex-col items-center py-4 gap-3 select-none shadow-sm overflow-y-auto scrollbar-none">
-        
+
         <Tooltip title="Panel" text="Hacé clic para ver el resumen de tu actividad, trabajos activos y ganancias del mes." position="right">
           <button className="flex flex-col items-center justify-center gap-1 group text-[#fc8127] hover:scale-105 transition-all">
             <div className="w-12 h-12 bg-orange-50 text-[#fc8127] rounded-xl flex items-center justify-center border border-orange-100 shadow-sm group-hover:shadow-md transition-all">
@@ -296,7 +296,7 @@ function PanelProfesionalContent() {
         </Tooltip>
 
         <Tooltip title="Muro de trabajos" text="Explorá el muro de solicitudes publicadas por clientes y postulá tus presupuestos." position="right">
-          <button 
+          <button
             onClick={() => router.push('/muro-trabajos')}
             className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
           >
@@ -309,7 +309,7 @@ function PanelProfesionalContent() {
 
         {(perfil?.plan === 'Pro' || perfil?.plan === 'Master') && (
           <Tooltip title="Mis trabajos" text="Revisá y gestioná tus trabajos en curso, presupuestados o finalizados." position="right">
-            <button 
+            <button
               onClick={() => router.push('/mis-trabajos')}
               className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
             >
@@ -322,7 +322,7 @@ function PanelProfesionalContent() {
         )}
 
         <Tooltip title="Mensajes" text="Chateá directamente con tus clientes para coordinar visitas y detalles de los trabajos." position="right">
-          <button 
+          <button
             onClick={() => router.push('/chat')}
             className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#00355f] hover:scale-105 transition-all active:scale-95"
           >
@@ -334,7 +334,7 @@ function PanelProfesionalContent() {
         </Tooltip>
 
         <Tooltip title="Buzón de Soporte" text="¿Tenés dudas o sugerencias? Escribinos y nuestro equipo te responderá directamente." position="right">
-          <button 
+          <button
             onClick={() => setShowSupportModal(true)}
             className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#00355f] hover:scale-105 transition-all active:scale-95"
           >
@@ -346,7 +346,7 @@ function PanelProfesionalContent() {
         </Tooltip>
 
         <Tooltip title="Presupuestador" text="Calculadora de materiales, mano de obra y cómputos de obra." position="right">
-          <button 
+          <button
             onClick={() => router.push('/presupuestador-obras')}
             className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all active:scale-95"
           >
@@ -359,8 +359,8 @@ function PanelProfesionalContent() {
 
         <div className="mt-auto mb-6">
           <Tooltip title="Configuración" text="Editá tus datos, cambia tu contraseña y activa o desactiva estos globitos aclaratorios." position="right">
-            <button 
-              onClick={() => router.push('/configuracion-profesional')} 
+            <button
+              onClick={() => router.push('/configuracion-profesional')}
               className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#00355f] hover:scale-105 transition-all active:scale-95"
             >
               <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-inner border border-gray-100">
@@ -373,36 +373,79 @@ function PanelProfesionalContent() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-8">
-        
+
         {/* Welcome & Quick Actions */}
-         <section className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <section className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Hola, {perfil?.nombre?.split(' ')[0] || 'Roberto'}</h2>
               {perfil?.plan && (
-                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase ${
-                  perfil.plan === 'Master' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
-                  perfil.plan === 'Pro' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                  'bg-gray-100 text-gray-600 border border-gray-200'
-                }`}>
+                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase ${perfil.plan === 'Master' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
+                    perfil.plan === 'Pro' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                      'bg-gray-100 text-gray-600 border border-gray-200'
+                  }`}>
                   Plan {perfil.plan === 'Gratis' ? 'Básico' : perfil.plan}
                 </span>
               )}
             </div>
             <p className="text-sm md:text-base text-gray-500 mt-1">Tu panel de profesional está actualizado para hoy.</p>
           </div>
-          <div className="flex gap-3">
-            <button 
+          <div className="flex flex-wrap gap-2.5">
+            <button
               onClick={() => router.push('/editar-perfil-publico')}
-              className="flex-1 md:flex-none px-6 h-12 bg-[#fc8127] text-white font-bold text-sm rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2 hover:bg-[#e67320]"
+              className="flex-1 md:flex-none px-5 h-11 bg-[#fc8127] text-white font-bold text-xs rounded-xl shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2 hover:bg-[#e67320]"
             >
               <ImagePlus className="w-4 h-4" />
               Perfil Público
             </button>
-            <button className="flex-1 md:flex-none px-6 h-12 border-2 border-[#00355f] text-[#00355f] font-bold text-sm rounded-xl active:scale-95 transition-transform flex items-center justify-center gap-2 hover:bg-blue-50">
-              <Calendar className="w-4 h-4" />
-              Disponibilidad
+            <button
+              onClick={() => router.push('/mi-marca')}
+              className="flex-1 md:flex-none px-5 h-11 border-2 border-[#00355f] text-[#00355f] font-bold text-xs rounded-xl active:scale-95 transition-transform flex items-center justify-center gap-2 hover:bg-blue-50"
+            >
+              <Zap className="w-4 h-4 text-[#fc8127]" />
+              Mi Marca & Confianza
             </button>
+            <button
+              onClick={() => router.push('/reportar')}
+              className="flex-1 md:flex-none px-4 h-11 border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs rounded-xl active:scale-95 transition-all flex items-center justify-center gap-1.5"
+            >
+              <AlertTriangle className="w-4 h-4" />
+              Reportar
+            </button>
+          </div>
+        </section>
+
+        {/* === MÓDULOS DEL SISTEMA OPERATIVO PROFESIONAL === */}
+        <section className="bg-gradient-to-r from-[#001529] via-[#002547] to-[#001529] rounded-3xl p-6 text-white shadow-xl border border-slate-800">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xl font-black text-white">Sistema Operativo</h3>
+                <span className="bg-[#fc8127]/20 text-[#fc8127] text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-[#fc8127]/30 uppercase">SuperOficios PRO</span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">Gestión integral de tus trabajos, marca, finanzas y crecimiento</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { route: '/orden-trabajo', label: 'Órdenes de Trabajo', desc: 'Gestión formal con garantía', bg: 'from-blue-500/20 to-blue-600/10', border: 'border-blue-500/30', icon: '📋', iconColor: 'bg-blue-500/20 text-blue-300' },
+              { route: '/mi-marca', label: 'Mi Marca', desc: 'Índice de Confianza y marketing', bg: 'from-purple-500/20 to-pink-500/10', border: 'border-purple-500/30', icon: '⚡', iconColor: 'bg-purple-500/20 text-purple-300' },
+              { route: '/mis-finanzas', label: 'Panel Financiero', desc: 'Estadísticas y evolución', bg: 'from-emerald-500/20 to-teal-500/10', border: 'border-emerald-500/30', icon: '📈', iconColor: 'bg-emerald-500/20 text-emerald-300' },
+              { route: '/centro-crecimiento', label: 'Centro de Crecimiento', desc: 'Misiones, logros y nivel', bg: 'from-amber-500/20 to-orange-500/10', border: 'border-amber-500/30', icon: '🏆', iconColor: 'bg-amber-500/20 text-amber-300' },
+            ].map(mod => (
+              <div
+                key={mod.route}
+                onClick={() => router.push(mod.route)}
+                className={`bg-gradient-to-br ${mod.bg} border ${mod.border} rounded-2xl p-4 cursor-pointer hover:scale-[1.02] hover:shadow-lg transition-all group active:scale-[0.98]`}
+              >
+                <div className={`w-10 h-10 ${mod.iconColor} rounded-xl flex items-center justify-center text-xl mb-2.5 group-hover:scale-110 transition-transform`}>
+                  {mod.icon}
+                </div>
+                <p className="text-sm font-black text-white">{mod.label}</p>
+                <p className="text-[10px] text-slate-300 mt-0.5 leading-tight">{mod.desc}</p>
+              </div>
+            ))}
           </div>
         </section>
 
@@ -417,7 +460,7 @@ function PanelProfesionalContent() {
               <p className="text-3xl font-bold text-gray-900">{String(stats.activeJobs).padStart(2, '0')}</p>
             </div>
           </div>
-          
+
           <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-6">
             <div className="p-4 bg-orange-50 text-[#fc8127] rounded-full shrink-0">
               <FileText className="w-8 h-8" />
@@ -427,7 +470,7 @@ function PanelProfesionalContent() {
               <p className="text-3xl font-bold text-gray-900">{String(stats.presupuestos).padStart(2, '0')}</p>
             </div>
           </div>
-          
+
           <div className="bg-[#00355f] text-white p-6 rounded-2xl shadow-lg flex items-center gap-6 relative overflow-hidden">
             <div className="p-4 bg-white/20 text-white rounded-full shrink-0 z-10">
               <TrendingUp className="w-8 h-8" />
@@ -437,13 +480,13 @@ function PanelProfesionalContent() {
               <p className="text-3xl font-bold text-white">{stats.ganancias}</p>
             </div>
             <div className="absolute -right-6 -bottom-6 opacity-10">
-               <TrendingUp className="w-40 h-40" />
+              <TrendingUp className="w-40 h-40" />
             </div>
           </div>
         </section>
 
         {/* NUEVO: Accesos Rápidos a Bolsa de Empleo */}
-        <section 
+        <section
           onClick={() => router.push('/bolsa-empleo')}
           className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6 mb-6 hover:shadow-md transition-shadow cursor-pointer group"
         >
@@ -461,19 +504,19 @@ function PanelProfesionalContent() {
             </div>
           </div>
           <div className="flex gap-2 md:gap-3 w-full md:w-auto shrink-0 flex-wrap md:flex-nowrap">
-            <button 
+            <button
               onClick={(e) => { e.stopPropagation(); router.push('/mis-postulaciones'); }}
               className="flex-1 md:flex-none px-5 h-11 bg-white border border-gray-200 text-gray-700 font-bold text-xs md:text-sm rounded-xl hover:bg-gray-50 transition-all flex items-center justify-center gap-2 hover:border-gray-300 shadow-sm"
             >
               <BookmarkPlus className="w-4 h-4 text-[#00355f]" /> Mis Postulaciones
             </button>
-            <button 
+            <button
               onClick={(e) => { e.stopPropagation(); router.push('/candidatos-empleo'); }}
               className="flex-1 md:flex-none px-5 h-11 bg-blue-50 border border-blue-100 text-[#00355f] font-bold text-xs md:text-sm rounded-xl hover:bg-blue-100 transition-all flex items-center justify-center gap-2 shadow-sm"
             >
               <Users className="w-4 h-4 text-[#fc8127]" /> Candidatos
             </button>
-            <button 
+            <button
               onClick={(e) => { e.stopPropagation(); router.push('/publicar-empleo'); }}
               className="w-full md:w-auto md:flex-none px-6 h-11 bg-gradient-to-r from-[#00355f] to-[#0f4c81] text-white font-bold text-xs md:text-sm rounded-xl hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2 md:mt-0 active:scale-95"
             >
@@ -494,14 +537,14 @@ function PanelProfesionalContent() {
                   {perfil?.plan === 'Pro' ? '¡Llegá a lo más alto!' : '¡Destacá tu perfil y ganá más clientes!'}
                 </h3>
                 <p className="text-blue-100 text-sm">
-                  {perfil?.plan === 'Pro' 
-                    ? 'Actualizá al Plan Master para postulaciones y fotos ilimitadas y el 1° puesto como "Más Recomendado".' 
+                  {perfil?.plan === 'Pro'
+                    ? 'Actualizá al Plan Master para postulaciones y fotos ilimitadas y el 1° puesto como "Más Recomendado".'
                     : 'Pasate a un plan superior para tener postulaciones ilimitadas y aparecer primero.'}
                 </p>
               </div>
             </div>
-            <button 
-              onClick={() => router.push('/planes')} 
+            <button
+              onClick={() => router.push('/planes')}
               className="w-full md:w-auto shrink-0 bg-[#fc8127] text-white px-6 py-3 rounded-xl font-bold shadow-md hover:bg-[#e67320] active:scale-95 transition-all whitespace-nowrap"
             >
               {perfil?.plan === 'Pro' ? 'Ver Plan Master' : 'Ver Planes'}
@@ -518,8 +561,8 @@ function PanelProfesionalContent() {
                 <p className="text-blue-100 text-sm">Disfrutás de visibilidad de prioridad máxima, soporte 24/7 y herramientas ilimitadas.</p>
               </div>
             </div>
-            <button 
-              onClick={() => router.push('/planes')} 
+            <button
+              onClick={() => router.push('/planes')}
               className="w-full md:w-auto shrink-0 bg-white/15 text-white px-6 py-3 rounded-xl font-bold border border-white/20 hover:bg-white/25 active:scale-95 transition-all whitespace-nowrap"
             >
               Gestionar Plan
@@ -529,22 +572,22 @@ function PanelProfesionalContent() {
 
         {/* Main Content Area */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
+
           {/* Active Jobs Section */}
           <section className="lg:col-span-2 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-xl font-bold text-gray-900">Trabajos en curso</h3>
               <button onClick={() => router.push('/mis-trabajos')} className="text-[#00355f] font-bold text-sm hover:underline">Ver todos</button>
             </div>
-            
+
             <div className="space-y-4">
               {stats.activeJobs === 0 ? (
                 <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center shadow-sm">
                   <Wrench className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <h4 className="font-bold text-gray-700 text-base mb-1">No tenés trabajos activos en curso</h4>
                   <p className="text-xs text-gray-400 max-w-sm mx-auto mb-4">Postulate a búsquedas laborales en el Muro para conseguir tus primeros clientes.</p>
-                  <button 
-                    onClick={() => router.push('/muro-trabajos')} 
+                  <button
+                    onClick={() => router.push('/muro-trabajos')}
                     className="bg-[#00355f] text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-[#0f4c81]"
                   >
                     Explorar Muro de Trabajos
@@ -569,7 +612,7 @@ function PanelProfesionalContent() {
 
           {/* Sidebar Section */}
           <aside className="space-y-6">
-            
+
             {/* Promo Card: Perfil Público */}
             <div className="bg-gradient-to-br from-[#00355f] to-[#0f4c81] rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
               <div className="relative z-10">
@@ -580,7 +623,7 @@ function PanelProfesionalContent() {
                 <p className="text-sm text-blue-100 mb-4 leading-relaxed">
                   Los clientes confían en lo que ven. Añade fotos de tus trabajos y una presentación llamativa para destacar entre la competencia.
                 </p>
-                <button 
+                <button
                   onClick={() => router.push('/editar-perfil-publico')}
                   className="w-full py-2.5 bg-[#fc8127] hover:bg-[#e67320] text-white font-bold text-sm rounded-xl transition-colors shadow-md active:scale-95 flex items-center justify-center gap-2"
                 >
@@ -594,7 +637,7 @@ function PanelProfesionalContent() {
             </div>
 
             <h3 className="text-xl font-bold text-gray-900 mt-2">Tu Rendimiento</h3>
-            
+
             <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
               <div className="p-6 bg-[#00355f] text-white">
                 <p className="text-[10px] font-extrabold uppercase tracking-widest text-blue-200 mb-2">Calificación Promedio</p>
@@ -602,12 +645,12 @@ function PanelProfesionalContent() {
                   <span className="text-5xl font-bold leading-none">{stats.rating.toFixed(1)}</span>
                 </div>
                 <p className="text-sm text-blue-100 mt-3">
-                  {stats.rating >= 4.8 
-                    ? '¡Excelente! Estás en el top 5% de profesionales de tu zona.' 
+                  {stats.rating >= 4.8
+                    ? '¡Excelente! Estás en el top 5% de profesionales de tu zona.'
                     : '¡Buen rendimiento! Sigue sumando trabajos exitosos.'}
                 </p>
               </div>
-              
+
               <div className="p-6 space-y-5">
                 <div className="flex items-center justify-between border-b border-gray-100 pb-4">
                   <div className="flex items-center gap-3">
@@ -630,7 +673,7 @@ function PanelProfesionalContent() {
                   </div>
                   <span className="text-lg font-bold text-gray-900">{stats.tasaRespuesta}</span>
                 </div>
-                
+
                 <button onClick={() => router.push('/mis-trabajos')} className="w-full py-3 bg-gray-50 text-[#00355f] font-bold text-sm rounded-xl hover:bg-gray-100 transition-colors">
                   Ver historial completo
                 </button>
@@ -638,36 +681,61 @@ function PanelProfesionalContent() {
             </div>
 
             {/* Availability Toggle */}
-            <div className={`p-5 border rounded-2xl flex items-center justify-between transition-colors ${
-              isAvailable ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
-            }`}>
+            <div className={`p-5 border rounded-2xl flex items-center justify-between transition-colors ${isAvailable ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+              }`}>
               <div className="flex items-center gap-3">
-                <div className={`w-3 h-3 rounded-full shadow-sm transition-colors ${
-                  isAvailable ? 'bg-green-500 shadow-green-500/50' : 'bg-gray-400'
-                }`}></div>
-                <span className={`text-sm font-bold transition-colors ${
-                  isAvailable ? 'text-green-800' : 'text-gray-600'
-                }`}>
+                <div className={`w-3 h-3 rounded-full shadow-sm transition-colors ${isAvailable ? 'bg-green-500 shadow-green-500/50' : 'bg-gray-400'
+                  }`}></div>
+                <span className={`text-sm font-bold transition-colors ${isAvailable ? 'text-green-800' : 'text-gray-600'
+                  }`}>
                   Disponible para urgencias
                 </span>
               </div>
-              <button 
+              <button
                 onClick={() => setIsAvailable(!isAvailable)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                  isAvailable ? 'bg-[#00355f]' : 'bg-gray-300'
-                }`}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${isAvailable ? 'bg-[#00355f]' : 'bg-gray-300'
+                  }`}
               >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  isAvailable ? 'translate-x-6' : 'translate-x-1'
-                }`} />
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isAvailable ? 'translate-x-6' : 'translate-x-1'
+                  }`} />
               </button>
             </div>
           </aside>
         </div>
 
+        {/* === MÓDULOS NUEVOS — Sistema Operativo del Profesional === */}
+        <section className="mt-8 pt-8 border-t border-gray-200">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">Sistema Operativo</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Herramientas profesionales de SuperOficios</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { route: '/orden-trabajo', label: 'Órdenes de Trabajo', desc: 'Gestión formal con garantía', bg: 'from-blue-500/10 to-blue-600/5', border: 'border-blue-500/20', icon: '📋', iconColor: 'bg-blue-500/10 text-blue-600' },
+              { route: '/mi-marca', label: 'Mi Marca', desc: 'Índice de Confianza y marketing', bg: 'from-purple-500/10 to-pink-500/5', border: 'border-purple-500/20', icon: '⚡', iconColor: 'bg-purple-500/10 text-purple-600' },
+              { route: '/mis-finanzas', label: 'Panel Financiero', desc: 'Estadísticas y evolución', bg: 'from-emerald-500/10 to-teal-500/5', border: 'border-emerald-500/20', icon: '📈', iconColor: 'bg-emerald-500/10 text-emerald-600' },
+              { route: '/centro-crecimiento', label: 'Centro de Crecimiento', desc: 'Misiones, logros y nivel', bg: 'from-amber-500/10 to-orange-500/5', border: 'border-amber-500/20', icon: '🏆', iconColor: 'bg-amber-500/10 text-amber-600' },
+            ].map(mod => (
+              <div
+                key={mod.route}
+                onClick={() => router.push(mod.route)}
+                className={`bg-gradient-to-br ${mod.bg} border ${mod.border} rounded-2xl p-4 cursor-pointer hover:shadow-md transition-all group active:scale-[0.98]`}
+              >
+                <div className={`w-10 h-10 ${mod.iconColor} rounded-xl flex items-center justify-center text-xl mb-3 group-hover:scale-110 transition-transform`}>
+                  {mod.icon}
+                </div>
+                <p className="text-sm font-black text-gray-900">{mod.label}</p>
+                <p className="text-[10px] text-gray-500 mt-0.5">{mod.desc}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* Nueva Sección: Calendario de Notas, FAQ de Iconos y Buzón de Sugerencias */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-12 pt-12 border-t border-gray-200">
-          
+
           {/* Calendario con Notas (lg:col-span-7) */}
           <div className="lg:col-span-7 bg-white rounded-3xl p-6 border border-gray-200 shadow-sm flex flex-col space-y-6">
             <div className="flex items-center justify-between">
@@ -676,8 +744,8 @@ function PanelProfesionalContent() {
                 <h3 className="font-extrabold text-xl text-[#00355f]">Agenda & Notas</h3>
               </div>
               <div className="flex items-center gap-3">
-                <button 
-                  onClick={handlePrevMonth} 
+                <button
+                  onClick={handlePrevMonth}
                   className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-[#00355f] transition-colors"
                 >
                   <ChevronLeft className="w-4 h-4" />
@@ -685,8 +753,8 @@ function PanelProfesionalContent() {
                 <span className="text-sm font-bold text-gray-700 min-w-[100px] text-center">
                   {monthsList[currentMonth]} {currentYear}
                 </span>
-                <button 
-                  onClick={handleNextMonth} 
+                <button
+                  onClick={handleNextMonth}
                   className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-[#00355f] transition-colors"
                 >
                   <ChevronRight className="w-4 h-4" />
@@ -714,7 +782,7 @@ function PanelProfesionalContent() {
 
                 const cellDate = new Date(currentYear, currentMonth, cell);
                 const isSelected = selectedDate.getDate() === cell && selectedDate.getMonth() === currentMonth && selectedDate.getFullYear() === currentYear;
-                
+
                 const cellKey = `${currentYear}-${currentMonth + 1}-${cell}`;
                 const hasNote = !!notes[cellKey];
 
@@ -725,13 +793,12 @@ function PanelProfesionalContent() {
                   <button
                     key={`day-${cell}`}
                     onClick={() => setSelectedDate(cellDate)}
-                    className={`aspect-square rounded-2xl flex flex-col items-center justify-center relative transition-all active:scale-90 ${
-                      isSelected 
-                        ? 'bg-[#00355f] text-white shadow-md font-bold' 
-                        : isToday 
+                    className={`aspect-square rounded-2xl flex flex-col items-center justify-center relative transition-all active:scale-90 ${isSelected
+                        ? 'bg-[#00355f] text-white shadow-md font-bold'
+                        : isToday
                           ? 'bg-orange-50 text-[#fc8127] border border-[#fc8127] font-bold'
                           : 'bg-gray-50 hover:bg-gray-100 text-gray-700 font-medium'
-                    }`}
+                      }`}
                   >
                     <span className="text-xs">{cell}</span>
                     {hasNote && (
@@ -749,7 +816,7 @@ function PanelProfesionalContent() {
                   Notas del {selectedDate.getDate()} de {monthsList[selectedDate.getMonth()]} {selectedDate.getFullYear()}
                 </span>
                 {notes[`${selectedDate.getFullYear()}-${selectedDate.getMonth() + 1}-${selectedDate.getDate()}`] && (
-                  <button 
+                  <button
                     onClick={handleDeleteNote}
                     className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1 text-[11px] font-bold cursor-pointer"
                   >
@@ -777,14 +844,14 @@ function PanelProfesionalContent() {
 
           {/* Guía de Iconos FAQ y Buzón de Sugerencias (lg:col-span-5) */}
           <div className="lg:col-span-5 flex flex-col gap-6">
-            
+
             {/* FAQ / Guía de Iconos */}
             <div className="bg-white rounded-3xl p-6 border border-gray-200 shadow-sm flex flex-col space-y-4">
               <div className="flex items-center gap-2 mb-2">
                 <Info className="w-6 h-6 text-[#00355f]" />
                 <h3 className="font-extrabold text-xl text-[#00355f]">Guía de Iconos</h3>
               </div>
-              
+
               <div className="space-y-4">
                 <div className="flex gap-3.5 items-start">
                   <div className="p-2.5 bg-blue-50 text-[#00355f] rounded-xl shrink-0">
@@ -847,7 +914,7 @@ function PanelProfesionalContent() {
                   Queremos darte las mejores herramientas para tu oficio. Proponenos mejoras o utilidades que te sirvan para tu día a día desde el canal de sugerencias de soporte.
                 </p>
               </div>
-              <button 
+              <button
                 onClick={() => {
                   setSupportType('Sugerencia');
                   setShowSupportModal(true);
@@ -898,8 +965,8 @@ function PanelProfesionalContent() {
       {showSupportModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white p-6 md:p-8 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl relative space-y-6 animate-in zoom-in-95 duration-200">
-            
-            <button 
+
+            <button
               onClick={() => setShowSupportModal(false)}
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-1.5 rounded-full"
             >
@@ -912,14 +979,14 @@ function PanelProfesionalContent() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-              
+
               {/* Formulario a la izquierda */}
               <form onSubmit={handleSendTicket} className="space-y-4">
                 <p className="text-xs font-bold text-[#00355f] uppercase tracking-wider border-b border-gray-100 pb-2">Nueva Consulta</p>
                 <div>
                   <label className="block text-[10px] font-bold text-gray-500 mb-1">Motivo</label>
-                  <select 
-                    value={supportType} 
+                  <select
+                    value={supportType}
                     onChange={(e) => setSupportType(e.target.value)}
                     className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#00355f] text-xs font-bold"
                   >
@@ -931,7 +998,7 @@ function PanelProfesionalContent() {
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-gray-500 mb-1">Tu mensaje</label>
-                  <textarea 
+                  <textarea
                     rows={4}
                     required
                     value={supportMessage}
@@ -940,18 +1007,18 @@ function PanelProfesionalContent() {
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#00355f] text-xs leading-relaxed"
                   ></textarea>
                 </div>
-                
+
                 {/* Adjuntar Imagen */}
                 <div className="space-y-2">
                   <label className="block text-[10px] font-bold text-gray-500 mb-1">Adjuntar Imagen (Opcional)</label>
                   <div className="flex gap-2 items-center">
                     <label className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-[#00355f] font-bold text-[10px] rounded-xl cursor-pointer transition-colors shadow-sm">
                       Elegir Imagen
-                      <input 
-                        type="file" 
-                        accept="image/*" 
+                      <input
+                        type="file"
+                        accept="image/*"
                         onChange={handleSupportFileChange}
-                        className="hidden" 
+                        className="hidden"
                       />
                     </label>
                     {nombreArchivo && (
@@ -961,8 +1028,8 @@ function PanelProfesionalContent() {
                   {archivoBase64 && (
                     <div className="relative w-24 h-16 rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-gray-50">
                       <img src={archivoBase64} alt="Previsualización" className="w-full h-full object-cover" />
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         onClick={() => { setArchivoBase64(''); setNombreArchivo(''); }}
                         className="absolute top-0.5 right-0.5 bg-black/50 text-white p-0.5 rounded-full text-[8px] hover:bg-black/75"
                       >
@@ -972,8 +1039,8 @@ function PanelProfesionalContent() {
                   )}
                 </div>
 
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   disabled={isSendingTicket}
                   className="w-full py-2.5 bg-[#fc8127] text-white rounded-xl text-xs font-bold hover:bg-[#e67320] transition-colors flex items-center justify-center gap-1.5 active:scale-95 shadow-sm"
                 >
@@ -999,15 +1066,14 @@ function PanelProfesionalContent() {
                     myTickets.map((t: any) => (
                       <div key={t.id} className="p-3 bg-gray-50 border border-gray-150 rounded-xl text-xs space-y-2">
                         <div className="flex justify-between items-center">
-                          <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase ${
-                            t.estado === 'Resuelto' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                          }`}>
+                          <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase ${t.estado === 'Resuelto' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                            }`}>
                             {t.estado}
                           </span>
                           <span className="text-[9px] text-gray-400 font-bold">{t.fecha}</span>
                         </div>
                         <p className="text-gray-700 leading-relaxed"><strong className="text-gray-900 uppercase text-[9px]">{t.tipo}:</strong> {t.mensaje}</p>
-                        
+
                         {t.archivoBase64 && (
                           <div className="w-20 h-14 rounded-lg overflow-hidden border border-gray-200 shadow-sm mt-1">
                             <a href={t.archivoBase64} target="_blank" rel="noreferrer">
@@ -1030,7 +1096,7 @@ function PanelProfesionalContent() {
 
             </div>
 
-            <button 
+            <button
               onClick={() => setShowSupportModal(false)}
               className="w-full py-2.5 bg-gray-100 text-gray-700 rounded-xl font-bold text-xs hover:bg-gray-200 transition-colors"
             >
