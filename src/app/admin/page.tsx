@@ -85,13 +85,24 @@ function AdminContent() {
     };
     loadUsers();
 
-    // 2. Load tickets from soporte
+    // 2. Load tickets from soporte (real Supabase data)
     const loadTickets = async () => {
       try {
-        const allTickets = await dbHelper.getTickets();
-        setTickets(allTickets);
+        const allTickets = await dbHelper.getTodosLosTicketsAdmin();
+        const formatted = allTickets.map((t: any) => ({
+          id: t.id,
+          codigo: t.codigo_ticket || `#SO-${t.id.slice(0, 6)}`,
+          tipo: t.categoria || 'Consulta',
+          mensaje: t.mensaje,
+          nombre: t.usuario?.nombre || 'Usuario',
+          email: t.usuario?.email || '',
+          fecha: t.created_at ? new Date(t.created_at).toLocaleDateString('es-AR') : 'Reciente',
+          estado: t.estado || 'Recibida',
+          respuesta: t.respuesta_admin || ''
+        }));
+        setTickets(formatted);
       } catch (err) {
-        console.error("Error al cargar tickets:", err);
+        console.error("Error al cargar tickets en admin:", err);
       }
     };
     loadTickets();
@@ -270,12 +281,16 @@ function AdminContent() {
     saveTickets(updated);
   };
 
-  const handleSendReply = (id: string) => {
+  const handleSendReply = async (id: string) => {
     if (!replyText.trim()) return;
-    const updated = tickets.map(t => t.id === id ? { ...t, estado: 'Resuelto', respuesta: replyText } : t);
-    saveTickets(updated);
-    setReplyingTicketId(null);
-    setReplyText('');
+    try {
+      await dbHelper.responderTicketAdmin(id, replyText.trim(), 'Resuelto');
+      setTickets(prev => prev.map(t => t.id === id ? { ...t, estado: 'Resuelto', respuesta: replyText.trim() } : t));
+      setReplyingTicketId(null);
+      setReplyText('');
+    } catch (err) {
+      console.error('Error al responder ticket:', err);
+    }
   };
 
   const handleDeleteTicket = (id: string) => {

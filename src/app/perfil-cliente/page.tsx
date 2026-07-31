@@ -2,52 +2,17 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  Menu, MapPin, CheckCircle, Wrench, 
-  HelpCircle, LogOut, ChevronRight, Search, 
-  Briefcase, MessageSquare, User, Plus, X, Settings, Star, ArrowRight,
-  Building, AlertTriangle
+import {
+  User, Building, FileText, Folder, MessageSquare, ShieldAlert,
+  HelpCircle, LogOut, ChevronRight, MapPin, CheckCircle2,
+  Clock, Plus, Star, Search, AlertCircle, Loader2, Send,
+  Wrench, ShieldCheck, DollarSign, Calendar, ArrowLeft,
+  X, Save, FileCheck, Check, Sparkles, MessageCircle, FilePlus, Filter
 } from 'lucide-react';
-import Logo from '@/components/Logo';
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
-import { dbHelper, logout as doLogout } from '@/lib/supabase';
-
-const PROVINCIAS = [
-  'Buenos Aires',
-  'CABA',
-  'Catamarca',
-  'Chaco',
-  'Chubut',
-  'Córdoba',
-  'Corrientes',
-  'Entre Ríos',
-  'Formosa',
-  'Jujuy',
-  'La Pampa',
-  'La Rioja',
-  'Mendoza',
-  'Misiones',
-  'Neuquén',
-  'Río Negro',
-  'Salta',
-  'San Juan',
-  'San Luis',
-  'Santa Cruz',
-  'Santa Fe',
-  'Santiago del Estero',
-  'Tierra del Fuego',
-  'Tucumán'
-];
-
-const OFICIOS = [
-  { id: 'todos', label: 'Todos los oficios' },
-  { id: 'plomeria', label: 'Plomería' },
-  { id: 'electricidad', label: 'Electricidad' },
-  { id: 'albanileria', label: 'Albañilería' },
-  { id: 'pintura', label: 'Pintura' },
-  { id: 'carpinteria', label: 'Carpintería' },
-];
+import { dbHelper, logout as doLogout, supabase } from '@/lib/supabase';
+import Logo from '@/components/Logo';
 
 export default function PerfilClientePage() {
   return (
@@ -57,505 +22,835 @@ export default function PerfilClientePage() {
   );
 }
 
+type TabType = 'resumen' | 'hogar' | 'expedientes' | 'mensajes' | 'soporte';
+
 function PerfilClienteContent() {
   const router = useRouter();
-  const { profile: authProfile } = useAuth();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [searchProvince, setSearchProvince] = useState('');
-  const [searchTrade, setSearchTrade] = useState('todos');
+  const { user, profile: authProfile, loading: authLoading } = useAuth();
+  
+  const [activeTab, setActiveTab] = useState<TabType>('resumen');
+  const [propiedades, setPropiedades] = useState<any[]>([]);
+  const [expedientes, setExpedientes] = useState<any[]>([]);
+  const [conversaciones, setConversaciones] = useState<any[]>([]);
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [disputas, setDisputas] = useState<any[]>([]);
+  
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSearchPros = () => {
-    const params = new URLSearchParams();
-    if (searchProvince) params.append('provincia', searchProvince);
-    if (searchTrade && searchTrade !== 'todos') params.append('oficio', searchTrade);
-    router.push(`/cliente?${params.toString()}`);
-  };
-  const [misTrabajos, setMisTrabajos] = useState<any[]>([]);
-  const [perfil, setPerfil] = useState<any>({
-    nombre: '',
-    ubicacion: '',
-    verificado: false,
-    trabajosSolicitados: 0,
-    presupuestosRecibidos: 0,
-    avatar: 'https://i.pravatar.cc/150',
-    miembroDesde: '',
-    descripcion: ''
+  // Formulario nuevo ticket soporte (#SO-XXXXXX)
+  const [showFormTicket, setShowFormTicket] = useState(false);
+  const [ticketForm, setTicketForm] = useState({
+    categoria: 'Ayuda',
+    asunto: '',
+    mensaje: ''
   });
+  const [enviandoTicket, setEnviandoTicket] = useState(false);
+  const [ticketSuccessMsg, setTicketSuccessMsg] = useState<string | null>(null);
 
-  // Cargar perfil y datos reales desde Supabase DB
+  // Formulario Centro de Resolución
+  const [showFormDisputa, setShowFormDisputa] = useState(false);
+  const [disputaForm, setDisputaForm] = useState({
+    tipo_solucion: 'Hablar con profesional',
+    descripcion: '',
+    monto_reclamado: ''
+  });
+  const [enviandoDisputa, setEnviandoDisputa] = useState(false);
+
+  // Filtro de conversaciones por estado (consulta, trabajo, finalizado)
+  const [filterChatState, setFilterChatState] = useState<'todos' | 'consulta' | 'trabajo' | 'finalizado'>('todos');
+
   useEffect(() => {
-    if (!authProfile) return;
-    const loadRealData = async () => {
-      try {
-        const allJobs = await dbHelper.getJobs();
-        const myJobs = allJobs.filter((j: any) => j.empleador === authProfile.nombre || j.empleador_id === authProfile.id);
-        setMisTrabajos(myJobs);
+    if (user?.id) loadDashboardData();
+  }, [user?.id]);
 
-        const allApps = await dbHelper.getAllPostulaciones();
-        const myApps = allApps.filter((p: any) => myJobs.some((j: any) => String(j.id) === String(p.empleoId)));
+  const loadDashboardData = async () => {
+    if (!user?.id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [propsData, expsData, convsData, tixData, dispData] = await Promise.all([
+        dbHelper.getPropiedades(user.id),
+        dbHelper.getExpedientesCliente(user.id),
+        dbHelper.getConversaciones(user.id),
+        dbHelper.getTicketsSoporteUsuario(user.id),
+        dbHelper.getDisputasCliente(user.id)
+      ]);
+      setPropiedades(propsData);
+      setExpedientes(expsData);
+      setConversaciones(convsData);
+      setTickets(tixData);
+      setDisputas(dispData);
+    } catch (err: any) {
+      console.warn('Error al cargar datos del cliente:', err);
+      setError('Ocurrió un inconveniente al actualizar tus datos.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        setPerfil({
-          nombre: authProfile.nombre || 'Cliente',
-          ubicacion: authProfile.ciudad && authProfile.provincia ? `${authProfile.ciudad}, ${authProfile.provincia}` : (authProfile.provincia || 'Argentina'),
-          verificado: authProfile.verificado || false,
-          trabajosSolicitados: myJobs.length,
-          presupuestosRecibidos: myApps.length,
-          avatar: authProfile.foto_perfil || authProfile.fotoPerfil || 'https://i.pravatar.cc/150?u=' + authProfile.id,
-          miembroDesde: authProfile.created_at ? new Date(authProfile.created_at).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' }) : 'Reciente',
-          descripcion: authProfile.biografia || ''
-        });
-      } catch (e) {
-        console.error("Error al cargar datos reales del cliente:", e);
-      }
-    };
-    loadRealData();
-  }, [authProfile]);
+  const handleCrearTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.id || !ticketForm.mensaje.trim()) return;
+    setEnviandoTicket(true);
+    setTicketSuccessMsg(null);
+    try {
+      const nuevo = await dbHelper.crearTicketSoporte({
+        usuario_id: user.id,
+        categoria: ticketForm.categoria,
+        asunto: ticketForm.asunto || ticketForm.categoria,
+        mensaje: ticketForm.mensaje
+      });
+      setTickets(prev => [nuevo, ...prev]);
+      setTicketSuccessMsg(`¡Ticket ${nuevo.codigo_ticket} generado con éxito! El equipo de soporte lo revisará en breve.`);
+      setTicketForm({ categoria: 'Ayuda', asunto: '', mensaje: '' });
+      setShowFormTicket(false);
+    } catch (err: any) {
+      setError(err?.message || 'Error al enviar la consulta.');
+    } finally {
+      setEnviandoTicket(false);
+    }
+  };
+
+  const handleCrearDisputa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.id || !disputaForm.descripcion.trim()) return;
+    setEnviandoDisputa(true);
+    try {
+      const nueva = await dbHelper.crearDisputaResolucion({
+        cliente_id: user.id,
+        profesional_id: expedientes[0]?.profesional_id || user.id,
+        tipo_solucion: disputaForm.tipo_solucion,
+        descripcion: disputaForm.descripcion,
+        monto_reclamado: disputaForm.monto_reclamado ? parseFloat(disputaForm.monto_reclamado) : undefined
+      });
+      setDisputas(prev => [nueva, ...prev]);
+      setShowFormDisputa(false);
+      setDisputaForm({ tipo_solucion: 'Hablar con profesional', descripcion: '', monto_reclamado: '' });
+    } catch (err: any) {
+      setError(err?.message || 'Error al iniciar la mediación.');
+    } finally {
+      setEnviandoDisputa(false);
+    }
+  };
 
   const handleLogout = async () => {
     await doLogout();
     router.replace('/login');
   };
 
+  const filteredConversaciones = conversaciones.filter(c => {
+    if (filterChatState === 'todos') return true;
+    return (c.estado_chat || 'consulta') === filterChatState;
+  });
+
+  const getTicketStatusBadge = (estado: string) => {
+    switch (estado) {
+      case 'Recibida': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+      case 'En revisión': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+      case 'Aceptada': return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+      case 'En desarrollo': return 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30';
+      case 'Implementada':
+      case 'Resuelto': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+      default: return 'bg-slate-700 text-slate-400 border-slate-600';
+    }
+  };
+
+  if (authLoading || loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-[#001b33] to-slate-900 flex items-center justify-center">
+        <Loader2 className="w-10 h-10 text-[#fc8127] animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <main className="min-h-screen bg-[#f7fafc] pb-24 md:pb-8 font-sans text-gray-900 selection:bg-[#0f4c81] selection:text-white relative animate-fade-in flex flex-col justify-between">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-[#001b33] to-slate-900 text-white font-sans selection:bg-[#fc8127] selection:text-white pb-24">
       
-      {/* Drawer / Menú Lateral de Hamburguesa */}
-      {isMenuOpen && (
-        <div className="fixed inset-0 z-50 flex">
-          {/* Backdrop */}
-          <div 
-            onClick={() => setIsMenuOpen(false)} 
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300"
-          ></div>
-          
-          {/* Contenedor del Menú */}
-          <div className="relative flex flex-col w-80 max-w-sm bg-white h-full shadow-2xl z-10 animate-in slide-in-from-left duration-300">
-            {/* Header Drawer */}
-            <div className="flex items-center justify-between p-5 border-b border-gray-100">
-              <Logo size="sm" theme="light" />
-              <button 
-                onClick={() => setIsMenuOpen(false)} 
-                className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Perfil Mini en Menú */}
-            <div className="p-6 bg-gradient-to-br from-[#00355f] to-[#0f4c81] text-white flex items-center gap-4">
-              <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white/50 shrink-0 bg-white/10">
-                <img src={perfil.avatar || 'https://i.pravatar.cc/150'} alt={perfil.nombre || 'Perfil'} className="w-full h-full object-cover" />
-              </div>
-              <div className="overflow-hidden">
-                <h4 className="font-bold text-sm truncate">{perfil.nombre}</h4>
-                <div className="flex items-center gap-1 mt-0.5 text-blue-100 text-[10px]">
-                  <CheckCircle className="w-3.5 h-3.5 fill-current text-[#7efba4]" />
-                  <span className="font-semibold text-[#7efba4]">Cliente Verificado</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Listado de Opciones del Sidebar */}
-            <div className="flex-1 py-4 overflow-y-auto divide-y divide-gray-50">
-              <div className="pb-3 px-2 space-y-1">
-                <button 
-                  onClick={() => { setIsMenuOpen(false); router.push('/cliente'); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-[#00355f] rounded-xl transition-all"
-                >
-                  <Search className="w-5 h-5 text-gray-400" />
-                  Buscar Oficios / Profesionales
-                </button>
-                <button 
-                  onClick={() => { setIsMenuOpen(false); router.push('/mi-hogar'); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-[#00355f] rounded-xl transition-all"
-                >
-                  <Building className="w-5 h-5 text-[#fc8127]" />
-                  Mi Hogar (Centro Digital)
-                </button>
-                <button 
-                  onClick={() => { setIsMenuOpen(false); router.push('/perfil-publico-cliente'); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-[#00355f] rounded-xl transition-all"
-                >
-                  <User className="w-5 h-5 text-gray-400" />
-                  Ver Perfil Público
-                </button>
-                <button 
-                  onClick={() => { setIsMenuOpen(false); router.push('/configuracion-cliente'); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-[#00355f] rounded-xl transition-all"
-                >
-                  <Settings className="w-5 h-5 text-gray-400" />
-                  Editar Perfil / Configuración
-                </button>
-              </div>
-
-              <div className="pt-3 px-2 space-y-1">
-                <button 
-                  onClick={() => { setIsMenuOpen(false); router.push('/soporte'); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-[#00355f] rounded-xl transition-all"
-                >
-                  <HelpCircle className="w-5 h-5 text-gray-400" />
-                  Centro de Ayuda / Soporte
-                </button>
-                <button 
-                  onClick={() => { setIsMenuOpen(false); router.push('/reportar'); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-red-600 rounded-xl transition-all"
-                >
-                  <AlertTriangle className="w-5 h-5 text-red-500" />
-                  Reportar un Problema
-                </button>
-                <button 
-                  onClick={handleLogout}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                >
-                  <LogOut className="w-5 h-5" />
-                  Cerrar Sesión
-                </button>
-              </div>
-            </div>
-            
-            {/* Footer Drawer */}
-            <div className="p-4 border-t border-gray-100 text-center">
-              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">OficiosYa v1.2</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Top AppBar */}
-      <header className="bg-white border-b border-gray-200 fixed top-0 w-full z-40 h-16 flex justify-between items-center px-4">
+      {/* Top Header */}
+      <header className="bg-[#001529]/90 backdrop-blur-xl sticky top-0 z-50 border-b border-slate-800/60 px-4 md:px-8 py-3.5 flex items-center justify-between shadow-xl">
         <div className="flex items-center gap-3">
-          <button 
-            onClick={() => setIsMenuOpen(true)}
-            className="p-2 hover:bg-gray-100 rounded-full text-[#00355f] transition-colors"
-          >
-            <Menu className="w-6 h-6" />
+          <button onClick={() => router.push('/cliente')} className="p-2 rounded-xl hover:bg-slate-800 text-slate-300 transition-colors">
+            <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => router.push('/')}>
-            <Logo size="sm" theme="light" />
+          <div className="flex items-center gap-2">
+            <Logo size="sm" theme="dark" />
+            <span className="text-xs bg-orange-500/20 text-[#fc8127] border border-orange-500/30 px-2.5 py-0.5 rounded-full font-extrabold uppercase tracking-wider">
+              Mi Panel Cliente
+            </span>
           </div>
         </div>
-        <div 
-          onClick={() => router.push('/configuracion-cliente')}
-          className="w-9 h-9 rounded-full overflow-hidden border border-gray-200 cursor-pointer hover:opacity-85 transition-opacity"
-        >
-          <img src={perfil.avatar || 'https://i.pravatar.cc/150'} alt="Perfil" className="w-full h-full object-cover" />
+
+        <div className="flex items-center gap-3">
+          <button onClick={() => router.push('/configuracion-cliente')} className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all text-xs font-bold flex items-center gap-1.5">
+            <Wrench className="w-4 h-4 text-[#fc8127]" />
+            <span className="hidden sm:inline">Configuración</span>
+          </button>
+          <button onClick={handleLogout} className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-all text-xs font-bold flex items-center gap-1.5">
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </header>
 
-      {/* Content Container: Responsive Dual Column on PC */}
-      <div className="pt-20 px-4 max-w-6xl mx-auto w-full flex-grow flex items-center justify-center">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 w-full items-start justify-center">
-          
-          {/* Left Column: Profile Card, Stats, Active Jobs, Settings */}
-          <div className="lg:col-span-5 space-y-6 w-full max-w-lg mx-auto lg:mx-0">
-            {/* Profile Header */}
-            <section className="text-center animate-in fade-in slide-in-from-top-4 duration-500 bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-              <div className="relative inline-block mb-3">
-                <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-md mx-auto">
-                  <img src={perfil.avatar || 'https://i.pravatar.cc/150'} alt={perfil.nombre || 'Perfil'} className="w-full h-full object-cover" />
-                </div>
-                {perfil.verificado && (
-                  <div className="absolute bottom-0 right-0 bg-[#7efba4] text-[#003c1b] p-1 rounded-full border-2 border-white shadow-sm">
-                    <CheckCircle className="w-4 h-4 fill-current" />
-                  </div>
-                )}
-              </div>
-              <h2 className="text-xl font-bold text-[#00355f]">{perfil.nombre || 'Cliente'}</h2>
-              <div className="flex items-center justify-center gap-1 text-gray-500 text-xs font-semibold mt-1">
-                <MapPin className="w-3.5 h-3.5 text-[#fc8127]" />
-                <span>{perfil.ubicacion || 'Argentina'}</span>
-              </div>
-              <div className="mt-3 inline-flex items-center bg-green-50 text-green-700 px-3 py-1 rounded-full text-[10px] font-bold border border-green-200">
-                Cliente Verificado
-              </div>
-            </section>
+      {/* Main Container */}
+      <div className="max-w-6xl mx-auto px-4 md:px-8 py-6 space-y-6">
 
-            {/* Quick Stats */}
-            <section className="grid grid-cols-2 gap-4">
-              <div className="bg-white p-4 rounded-2xl border border-gray-150 shadow-sm flex flex-col items-center">
-                <span className="text-2xl font-black text-[#00355f]">{perfil.trabajosSolicitados}</span>
-                <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider text-center mt-1">Trabajos Solicitados</span>
-              </div>
-              <div className="bg-white p-4 rounded-2xl border border-gray-150 shadow-sm flex flex-col items-center">
-                <span className="text-2xl font-black text-[#fc8127]">{perfil.presupuestosRecibidos}</span>
-                <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider text-center mt-1">Presupuestos</span>
-              </div>
-            </section>
-
-            {/* --- BOTÓN PARA PUBLICAR --- */}
-            <button 
-              onClick={() => router.push('/publicar-trabajo')}
-              className="w-full bg-[#fc8127] hover:bg-[#e06b16] text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
-            >
-              <span className="text-2xl leading-none font-normal">+</span> 
-              Publicar Nuevo Trabajo
-            </button>
-
-            {/* Active Jobs */}
-            {/* --- BANNER DESTACADO: MI HOGAR --- */}
-            <section 
-              onClick={() => router.push('/mi-hogar')}
-              className="bg-gradient-to-r from-slate-900 via-[#001529] to-slate-900 text-white p-5 rounded-3xl border border-slate-700/60 shadow-lg cursor-pointer hover:border-[#fc8127]/50 transition-all group relative overflow-hidden mb-6"
-            >
-              <div className="flex items-center justify-between relative z-10">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-[#fc8127] to-amber-500 rounded-2xl flex items-center justify-center text-white font-bold shadow-md group-hover:scale-105 transition-transform">
-                    <Building className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-black text-base text-white">Mi Hogar</h3>
-                      <span className="bg-[#fc8127]/20 text-[#fc8127] text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-[#fc8127]/30 uppercase">Centro Digital</span>
-                    </div>
-                    <p className="text-xs text-slate-300 mt-0.5">
-                      Organizá tus propiedades, comprobantes, garantías y mantenimientos.
-                    </p>
-                  </div>
-                </div>
-                <div className="hidden sm:flex items-center gap-1 text-xs font-bold text-[#fc8127] group-hover:translate-x-1 transition-transform">
-                  <span>Ingresar</span>
-                  <ChevronRight className="w-4 h-4" />
-                </div>
-              </div>
-            </section>
-
-            <section>
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="font-bold text-gray-900">Trabajos en curso</h3>
-                <button onClick={() => router.push('/muro-trabajos')} className="text-xs font-bold text-[#00355f] hover:underline cursor-pointer">Ver muro</button>
-              </div>
-              
-              {misTrabajos.length === 0 ? (
-                <div className="bg-white p-6 rounded-2xl border border-gray-150 shadow-sm text-center">
-                  <Wrench className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                  <p className="text-sm font-semibold text-gray-600">No tenés trabajos publicados aún</p>
-                  <p className="text-xs text-gray-400 mt-1 mb-3">Publicá tu primer requerimiento para recibir presupuestos de profesionales.</p>
-                  <button 
-                    onClick={() => router.push('/publicar-trabajo')}
-                    className="text-xs font-bold text-[#fc8127] hover:underline"
-                  >
-                    + Publicar Trabajo
-                  </button>
-                </div>
-              ) : (
-                misTrabajos.slice(0, 3).map((job) => (
-                  <div 
-                    key={job.id}
-                    onClick={() => router.push('/muro-trabajos')} 
-                    className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm relative cursor-pointer hover:shadow-md hover:border-[#00355f]/30 transition-all duration-200 group mb-3"
-                  >
-                    <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <h4 className="font-bold text-gray-900 group-hover:text-[#00355f] transition-colors">{job.titulo}</h4>
-                        <p className="text-xs text-gray-500 mt-0.5">{job.ciudad ? `${job.ciudad}, ${job.provincia}` : job.categoria}</p>
-                      </div>
-                      <span className="bg-orange-100 text-[#fc8127] font-bold text-[9px] uppercase tracking-wider px-2 py-1 rounded-md">
-                        {job.urgencia || 'Activo'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between mt-4 border-t border-gray-100 pt-4 text-gray-600">
-                      <div className="flex items-center gap-2">
-                        <Wrench className="w-4 h-4 text-[#00355f]" />
-                        <span className="text-xs font-semibold text-gray-700">Publicado</span>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-1 transition-transform" />
-                    </div>
-                  </div>
-                ))
-              )}
-            </section>
-
-            {/* --- BANNER BOLSA DE EMPLEO Y BUSCADOR --- */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              
-              <section className="bg-gradient-to-r from-[#00355f] to-[#1a5fa8] rounded-2xl p-5 text-white shadow-md relative overflow-hidden group cursor-pointer flex flex-col justify-between animate-in duration-200" onClick={() => router.push('/bolsa-empleo')}>
-                <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-xl group-hover:bg-white/20 transition-colors"></div>
-                <div className="relative z-10">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Briefcase className="w-5 h-5 text-[#fc8127]" />
-                    <h3 className="font-bold text-base">Bolsa de Empleo</h3>
-                    <span className="bg-[#fc8127] text-white text-[9px] uppercase font-black px-2 py-0.5 rounded-full">Nuevo</span>
-                  </div>
-                  <p className="text-blue-100 text-xs mb-4 leading-relaxed">
-                    ¿Buscás trabajo? Postulate a cientos de ofertas de profesionales en tu zona hoy mismo.
-                  </p>
-                  <div className="flex gap-2.5">
-                    <button onClick={(e) => { e.stopPropagation(); router.push('/bolsa-empleo'); }} className="bg-white text-[#00355f] px-3.5 py-2 rounded-xl text-[11px] font-bold hover:bg-gray-50 transition-colors shadow-sm cursor-pointer">
-                      Ver Empleos
-                    </button>
-                    <button onClick={(e) => { e.stopPropagation(); router.push('/mis-postulaciones'); }} className="bg-white/20 text-white px-3.5 py-2 rounded-xl text-[11px] font-bold hover:bg-white/30 transition-colors cursor-pointer">
-                      Mis Postulaciones
-                    </button>
-                  </div>
-                </div>
-              </section>
-
-              <section className="bg-gradient-to-r from-[#fc8127] to-[#e67320] rounded-2xl p-5 text-white shadow-md relative overflow-hidden group flex flex-col justify-between animate-in duration-200">
-                <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-xl group-hover:bg-white/20 transition-colors"></div>
-                <div className="relative z-10 flex flex-col justify-between h-full">
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Search className="w-5 h-5 text-white" />
-                      <h3 className="font-bold text-base text-white">Buscar Especialistas</h3>
-                    </div>
-                    <p className="text-orange-100 text-[11px] mb-3 leading-relaxed">
-                      Encontrá los mejores profesionales verificados en tu zona.
-                    </p>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <select
-                      value={searchProvince}
-                      onChange={(e) => setSearchProvince(e.target.value)}
-                      className="w-full py-1.5 px-3 bg-white/90 backdrop-blur-sm border border-transparent rounded-lg text-gray-800 text-[11px] font-semibold focus:outline-none focus:ring-2 focus:ring-white appearance-none cursor-pointer"
-                    >
-                      <option value="">Todas las provincias</option>
-                      {PROVINCIAS.map((prov) => (
-                        <option key={prov} value={prov}>{prov}</option>
-                      ))}
-                    </select>
-
-                    <select
-                      value={searchTrade}
-                      onChange={(e) => setSearchTrade(e.target.value)}
-                      className="w-full py-1.5 px-3 bg-white/90 backdrop-blur-sm border border-transparent rounded-lg text-gray-800 text-[11px] font-semibold focus:outline-none focus:ring-2 focus:ring-white appearance-none cursor-pointer"
-                    >
-                      {OFICIOS.map((oficio) => (
-                        <option key={oficio.id} value={oficio.id}>{oficio.label}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <button
-                    onClick={handleSearchPros}
-                    className="mt-3.5 w-full bg-white text-[#fc8127] hover:bg-orange-50/95 font-bold py-2 rounded-xl text-[11px] flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
-                  >
-                    <span>Buscar Ahora</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </section>
-
-            </div>
+        {/* Global Error Banner */}
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-center gap-3 text-red-400 text-sm">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <span>{error}</span>
+            <button onClick={() => setError(null)} className="ml-auto">✕</button>
           </div>
+        )}
 
-          {/* Right Column: Platform Benefits Grid (Desktop only) */}
-          <div className="hidden lg:flex lg:col-span-7 flex-col space-y-6 bg-white p-8 rounded-3xl border border-gray-150 shadow-sm animate-in fade-in slide-in-from-right-8 duration-700">
-            <div className="space-y-2">
-              <span className="inline-flex px-4 py-1.5 bg-[#00355f]/10 text-[#00355f] text-xs font-black rounded-full uppercase tracking-wider">
-                Beneficios Activos de tu Cuenta
-              </span>
-              <h3 className="text-2xl font-black text-[#00355f]">
-                ¡Sácale el máximo provecho a <span className="text-[#fc8127]">OficiosYa</span>!
-              </h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Como miembro registrado, tienes acceso completo a todas nuestras herramientas diseñadas para simplificar las tareas de mantenimiento y reparaciones en tu hogar.
-              </p>
-            </div>
+        {ticketSuccessMsg && (
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 flex items-center gap-3 text-emerald-400 text-sm">
+            <CheckCircle2 className="w-5 h-5 shrink-0" />
+            <span>{ticketSuccessMsg}</span>
+            <button onClick={() => setTicketSuccessMsg(null)} className="ml-auto">✕</button>
+          </div>
+        )}
 
-            {/* Grilla de Beneficios */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              
-              <div className="flex gap-4 items-start bg-gray-50 p-4 rounded-xl border border-gray-100 hover:shadow-sm transition-shadow">
-                <div className="p-3 bg-blue-50 text-[#00355f] rounded-lg shrink-0">
-                  <Briefcase className="w-5 h-5" />
+        {/* Hero Profile Card — Estilo Mi Hogar */}
+        <section className="bg-gradient-to-r from-[#001529] via-[#002547] to-[#001529] border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-80 h-80 bg-[#fc8127]/10 rounded-full filter blur-3xl pointer-events-none" />
+          
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center relative z-10">
+            {/* Left: Avatar + Info */}
+            <div className="md:col-span-7 flex flex-col sm:flex-row items-center sm:items-start gap-5 text-center sm:text-left">
+              <div className="relative shrink-0">
+                <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-[#fc8127] shadow-xl bg-slate-800">
+                  <img
+                    src={authProfile?.foto_perfil || authProfile?.fotoPerfil || 'https://i.pravatar.cc/150'}
+                    alt={authProfile?.nombre || 'Cliente'}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
-                <div>
-                  <h4 className="font-extrabold text-xs text-[#00355f]">Recibí múltiples presupuestos</h4>
-                  <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
-                    Publicá tu necesidad totalmente gratis y compará propuestas de mano de obra en minutos.
-                  </p>
+                <div className="absolute -bottom-2 -right-2 bg-emerald-500 text-slate-950 p-1.5 rounded-xl border-2 border-slate-950 shadow-md">
+                  <ShieldCheck className="w-4 h-4 fill-current" />
                 </div>
               </div>
 
-              <div className="flex gap-4 items-start bg-gray-50 p-4 rounded-xl border border-gray-100 hover:shadow-sm transition-shadow">
-                <div className="p-3 bg-orange-50 text-[#fc8127] rounded-lg shrink-0">
-                  <Star className="w-5 h-5 fill-[#fc8127] text-[#fc8127]" />
+              <div className="space-y-1.5">
+                <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-bold text-emerald-400">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Cliente Verificado
                 </div>
-                <div>
-                  <h4 className="font-extrabold text-xs text-[#00355f]">Elegí por mejores reseñas</h4>
-                  <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
-                    Revisá la experiencia de otros clientes, calificaciones y fotos de trabajos previos de cada profesional.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-4 items-start bg-gray-50 p-4 rounded-xl border border-gray-100 hover:shadow-sm transition-shadow">
-                <div className="p-3 bg-green-50 text-green-700 rounded-lg shrink-0">
-                  <MapPin className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-extrabold text-xs text-[#00355f]">Profesionales en tu provincia</h4>
-                  <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
-                    Encontrá electricistas, plomeros, albañiles, pintores y más especialidades cerca de tu ubicación.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-4 items-start bg-gray-50 p-4 rounded-xl border border-gray-100 hover:shadow-sm transition-shadow">
-                <div className="p-3 bg-purple-50 text-purple-700 rounded-lg shrink-0">
-                  <MessageSquare className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-extrabold text-xs text-[#00355f]">Chat rápido e inmediato</h4>
-                  <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
-                    Conversá directamente con los profesionales para coordinar visitas técnicas, presupuestos y materiales.
-                  </p>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Info Box Decorativo */}
-            <div className="mt-4 p-5 bg-gradient-to-br from-[#00355f] to-[#0f4c81] rounded-2xl text-white flex gap-4 items-center">
-              <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center shrink-0 border border-white/20">
-                <CheckCircle className="w-6 h-6 text-[#7efba4] fill-[#7efba4]" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-white">Tu cuenta de cliente está verificada</p>
-                <p className="text-xs text-blue-100 mt-0.5 leading-relaxed">
-                  Disfrutás de contacto directo ilimitado con profesionales calificados y soporte local prioritario las 24 horas.
+                <h1 className="text-2xl md:text-3xl font-black text-white">{authProfile?.nombre || 'Gonzalo Humacata'}</h1>
+                <p className="text-xs text-slate-400 flex items-center justify-center sm:justify-start gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-[#fc8127]" /> {authProfile?.ciudad ? `${authProfile.ciudad}, ${authProfile.provincia}` : 'Argentina'}
+                </p>
+                <p className="text-[11px] text-slate-500 pt-1">
+                  Miembro activo desde {authProfile?.created_at ? new Date(authProfile.created_at).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' }) : 'recientemente'}
                 </p>
               </div>
             </div>
 
+            {/* Right: Real Metrics */}
+            <div className="md:col-span-5 grid grid-cols-3 gap-3">
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 text-center">
+                <p className="text-2xl font-black text-white">{propiedades.length}</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5">Propiedades</p>
+              </div>
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 text-center">
+                <p className="text-2xl font-black text-[#fc8127]">{expedientes.length}</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5">Expedientes</p>
+              </div>
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 text-center">
+                <p className="text-2xl font-black text-emerald-400">{conversaciones.length}</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5">Mensajes</p>
+              </div>
+            </div>
           </div>
+        </section>
 
+        {/* Navigation Tabs */}
+        <div className="bg-[#001529] border border-slate-800 rounded-2xl p-1.5 flex overflow-x-auto gap-1">
+          {[
+            { id: 'resumen', label: 'Resumen General', icon: <User className="w-4 h-4" /> },
+            { id: 'hogar', label: `Mi Hogar (${propiedades.length})`, icon: <Building className="w-4 h-4" /> },
+            { id: 'expedientes', label: `Expedientes (${expedientes.length})`, icon: <Folder className="w-4 h-4" /> },
+            { id: 'mensajes', label: `Mensajes (${conversaciones.length})`, icon: <MessageSquare className="w-4 h-4" /> },
+            { id: 'soporte', label: `Soporte & Resolución`, icon: <ShieldAlert className="w-4 h-4" /> },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as TabType)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all shrink-0 ${
+                activeTab === tab.id
+                  ? 'bg-[#fc8127] text-white shadow-lg'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              {tab.icon} {tab.label}
+            </button>
+          ))}
         </div>
+
+        {/* TAB 1: RESUMEN GENERAL */}
+        {activeTab === 'resumen' && (
+          <div className="space-y-6">
+            {/* Acceso Rápido Mi Hogar */}
+            <div
+              onClick={() => router.push('/mi-hogar')}
+              className="bg-gradient-to-r from-amber-950/30 via-[#001529] to-[#001529] border-2 border-amber-500/40 rounded-3xl p-6 hover:border-amber-400 transition-all cursor-pointer group flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl"
+            >
+              <div className="flex items-center gap-4 text-center sm:text-left">
+                <div className="w-14 h-14 bg-gradient-to-br from-amber-500 to-orange-500 rounded-2xl flex items-center justify-center text-white text-2xl shadow-lg shrink-0 group-hover:scale-105 transition-transform">
+                  🏠
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 justify-center sm:justify-start">
+                    <h3 className="font-black text-lg text-white">Mi Hogar Digital</h3>
+                    <span className="bg-amber-500/20 text-amber-400 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-amber-500/30 uppercase">
+                      {propiedades.length} Propiedades
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-1">
+                    Gestioná comprobantes, facturas, garantias y mantenimientos de tu casa o departamento.
+                  </p>
+                </div>
+              </div>
+              <button className="bg-gradient-to-r from-amber-500 to-orange-500 text-white font-black text-xs px-5 py-3 rounded-xl shadow-md group-hover:opacity-90 transition-opacity shrink-0">
+                Ir a Mi Hogar →
+              </button>
+            </div>
+
+            {/* Accesos Rápidos de Contratación */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div
+                onClick={() => router.push('/publicar-trabajo')}
+                className="bg-[#001529] border border-slate-800 hover:border-[#fc8127]/50 rounded-3xl p-6 transition-all cursor-pointer group space-y-3"
+              >
+                <div className="w-12 h-12 bg-orange-500/10 border border-orange-500/30 rounded-2xl flex items-center justify-center text-[#fc8127] group-hover:scale-110 transition-transform">
+                  <FilePlus className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-black text-base text-white">Modo Publicar Trabajo</h4>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Publicá lo que necesitás reparar y recibí presupuestos comparables de profesionales en tu zona.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 text-xs font-bold text-[#fc8127] pt-2">
+                  <span>Publicar Ahora</span>
+                  <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              <div
+                onClick={() => router.push('/cliente')}
+                className="bg-[#001529] border border-slate-800 hover:border-blue-500/50 rounded-3xl p-6 transition-all cursor-pointer group space-y-3"
+              >
+                <div className="w-12 h-12 bg-blue-500/10 border border-blue-500/30 rounded-2xl flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                  <Search className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-black text-base text-white">Modo Búsqueda Directa</h4>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Encontrá al profesional verificado que más te guste y enviale una consulta directa por chat.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 text-xs font-bold text-blue-400 pt-2">
+                  <span>Buscar Especialista</span>
+                  <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+            </div>
+
+            {/* Resumen de Expedientes Recientes */}
+            <div className="bg-[#001529] border border-slate-800 rounded-3xl p-6 space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="font-black text-base text-white flex items-center gap-2">
+                  <Folder className="w-5 h-5 text-[#fc8127]" /> Expedientes Digitales Recientes
+                </h3>
+                <button onClick={() => setActiveTab('expedientes')} className="text-xs font-bold text-[#fc8127] hover:underline">
+                  Ver todos
+                </button>
+              </div>
+
+              {expedientes.length === 0 ? (
+                <div className="bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl p-8 text-center space-y-2">
+                  <Folder className="w-10 h-10 text-slate-700 mx-auto" />
+                  <p className="text-xs font-bold text-slate-400">No tenés expedientes de trabajo aún</p>
+                  <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+                    Cuando aceptes un presupuesto con un profesional, se creará su carpeta digital con contrato, chat y factura.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {expedientes.slice(0, 3).map(exp => (
+                    <div
+                      key={exp.id}
+                      onClick={() => router.push(`/expediente/${exp.id}`)}
+                      className="bg-slate-900/60 border border-slate-800 hover:border-slate-700 rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all group"
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-10 h-10 bg-[#fc8127]/10 border border-[#fc8127]/30 rounded-xl flex items-center justify-center text-[#fc8127]">
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-black text-sm text-white group-hover:text-[#fc8127] transition-colors">{exp.titulo}</h4>
+                          <p className="text-xs text-slate-400">{exp.profesional?.nombre || 'Profesional'}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-black text-emerald-400">
+                          ${parseFloat(exp.costo_total || 0).toLocaleString('es-AR')}
+                        </span>
+                        <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-[#fc8127] transition-colors" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: MI HOGAR */}
+        {activeTab === 'hogar' && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="font-black text-lg text-white">Mi Hogar — Mis Propiedades</h3>
+                <p className="text-xs text-slate-400">Centro digital de documentación de tus inmuebles</p>
+              </div>
+              <button
+                onClick={() => router.push('/mi-hogar')}
+                className="bg-[#fc8127] hover:bg-[#e06d19] text-white font-black text-xs px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" /> Administrar Propiedades
+              </button>
+            </div>
+
+            {propiedades.length === 0 ? (
+              <div className="bg-[#001529] border border-slate-800 rounded-3xl p-12 text-center space-y-4">
+                <div className="w-16 h-16 bg-slate-800 rounded-3xl flex items-center justify-center text-3xl mx-auto">🏠</div>
+                <h4 className="font-black text-lg text-white">Todavía no registraste ninguna propiedad</h4>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Agregá tu casa o departamento para organizar facturas, comprobantes, garantías y mantenimientos.
+                </p>
+                <button
+                  onClick={() => router.push('/mi-hogar')}
+                  className="bg-[#fc8127] text-white font-black text-xs px-6 py-3 rounded-xl shadow-lg"
+                >
+                  Registrar mi primera propiedad
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {propiedades.map(prop => (
+                  <div
+                    key={prop.id}
+                    onClick={() => router.push(`/mi-hogar/${prop.id}`)}
+                    className="bg-[#001529] border border-slate-800 hover:border-[#fc8127]/50 rounded-3xl p-5 cursor-pointer transition-all space-y-3 group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-center text-2xl">
+                        {prop.tipo === 'departamento' ? '🏢' : prop.tipo === 'oficina' ? '🏗️' : '🏠'}
+                      </div>
+                      <div>
+                        <h4 className="font-black text-base text-white group-hover:text-[#fc8127] transition-colors">{prop.nombre}</h4>
+                        <p className="text-xs text-slate-400 capitalize">{prop.tipo}</p>
+                      </div>
+                    </div>
+                    {prop.direccion && (
+                      <p className="text-xs text-slate-400 flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-[#fc8127]" /> {prop.direccion}
+                      </p>
+                    )}
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-800 text-xs font-bold text-[#fc8127]">
+                      <span>Ver Expediente del Inmueble</span>
+                      <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: EXPEDIENTES DEL TRABAJO */}
+        {activeTab === 'expedientes' && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="font-black text-lg text-white">📁 Expedientes Digitales del Trabajo</h3>
+              <p className="text-xs text-slate-400">Carpetas únicas de tus contrataciones (presupuesto, chat, garantía y factura)</p>
+            </div>
+
+            {expedientes.length === 0 ? (
+              <div className="bg-[#001529] border border-slate-800 rounded-3xl p-12 text-center space-y-3">
+                <Folder className="w-12 h-12 text-slate-700 mx-auto" />
+                <h4 className="font-black text-base text-white">No tenés expedientes guardados</h4>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Cada vez que aceptás un presupuesto, se genera automáticamente un expediente digital con el historial garantizado.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {expedientes.map(exp => (
+                  <div
+                    key={exp.id}
+                    onClick={() => router.push(`/expediente/${exp.id}`)}
+                    className="bg-[#001529] border border-slate-800 hover:border-slate-700 rounded-3xl p-6 cursor-pointer transition-all space-y-4 group"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-center text-emerald-400">
+                          <FileText className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h4 className="font-black text-base text-white group-hover:text-[#fc8127] transition-colors">{exp.titulo}</h4>
+                          <p className="text-xs text-slate-400">Profesional: {exp.profesional?.nombre || 'Asignado'}</p>
+                        </div>
+                      </div>
+                      <span className="text-sm font-black text-emerald-400">
+                        ${parseFloat(exp.costo_total || 0).toLocaleString('es-AR')}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400 pt-2 border-t border-slate-800/80">
+                      <span className="flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-emerald-400" /> Garantía: {exp.garantia || '30 días'}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4 text-[#fc8127]" /> {new Date(exp.created_at).toLocaleDateString('es-AR')}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 4: MIS MENSAJES & PRESUPUESTOS (3 ESTADOS) */}
+        {activeTab === 'mensajes' && (
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div>
+                <h3 className="font-black text-lg text-white">💬 Mis Conversaciones & Presupuestos</h3>
+                <p className="text-xs text-slate-400">Filtrá tus chats en 3 estados unificados</p>
+              </div>
+
+              {/* Filtro 3 Estados */}
+              <div className="bg-slate-900 border border-slate-800 p-1 rounded-xl flex gap-1 text-xs">
+                {[
+                  { id: 'todos', label: 'Todos' },
+                  { id: 'consulta', label: 'Consulta' },
+                  { id: 'trabajo', label: 'Trabajo' },
+                  { id: 'finalizado', label: 'Finalizado' },
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => setFilterChatState(f.id as any)}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                      filterChatState === f.id
+                        ? 'bg-[#fc8127] text-white shadow'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {filteredConversaciones.length === 0 ? (
+              <div className="bg-[#001529] border border-slate-800 rounded-3xl p-12 text-center space-y-3">
+                <MessageSquare className="w-12 h-12 text-slate-700 mx-auto" />
+                <h4 className="font-black text-base text-white">No tenés mensajes en este filtro</h4>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Iniciá una consulta con cualquier profesional desde el buscador para negociar un presupuesto.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredConversaciones.map(conv => {
+                  const estadoChat = conv.estado_chat || 'consulta';
+                  return (
+                    <div
+                      key={conv.id}
+                      onClick={() => router.push(`/chat/${conv.id}`)}
+                      className="bg-[#001529] border border-slate-800 hover:border-slate-700 rounded-3xl p-5 cursor-pointer transition-all flex items-center justify-between group"
+                    >
+                      <div className="flex items-center gap-4">
+                        <img
+                          src={conv.interlocutor?.avatar || conv.interlocutor?.foto_perfil || 'https://i.pravatar.cc/150'}
+                          alt={conv.interlocutor?.nombre || 'Profesional'}
+                          className="w-12 h-12 rounded-2xl object-cover border border-slate-700"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-black text-sm text-white group-hover:text-[#fc8127] transition-colors">
+                              {conv.interlocutor?.nombre || 'Profesional'}
+                            </h4>
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
+                              estadoChat === 'trabajo' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                              estadoChat === 'finalizado' ? 'bg-slate-800 text-slate-400' :
+                              'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                            }`}>
+                              Chat {estadoChat}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-1 truncate max-w-xs">
+                            {conv.ultimo_mensaje || 'Consultá sobre disponibilidad y presupuestos...'}
+                          </p>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-slate-600 group-hover:text-[#fc8127] transition-colors shrink-0" />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 5: CENTRO DE SOPORTE (#SO-XXXXXX) & RESOLUCIÓN */}
+        {activeTab === 'soporte' && (
+          <div className="space-y-6">
+            {/* Header Soporte */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h3 className="font-black text-lg text-white">🛡️ Centro de Soporte & Resolución</h3>
+                <p className="text-xs text-slate-400">Atención directa conectada con los Administradores (#SO-XXXXXX)</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowFormDisputa(true)}
+                  className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/40 font-black text-xs px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5"
+                >
+                  <ShieldAlert className="w-4 h-4" /> Mediación
+                </button>
+                <button
+                  onClick={() => setShowFormTicket(true)}
+                  className="bg-[#fc8127] hover:bg-[#e06d19] text-white font-black text-xs px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" /> Nueva Consulta #SO
+                </button>
+              </div>
+            </div>
+
+            {/* Modal / Formulario Nueva Consulta / Ticket Soporte */}
+            {showFormTicket && (
+              <form onSubmit={handleCrearTicket} className="bg-[#001529] border border-slate-700 rounded-3xl p-6 space-y-4 shadow-2xl">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-black text-base text-white flex items-center gap-2">
+                    <MessageCircle className="w-5 h-5 text-[#fc8127]" /> Nueva Consulta o Sugerencia a Soporte
+                  </h4>
+                  <button type="button" onClick={() => setShowFormTicket(false)} className="text-slate-500 hover:text-white">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 block mb-1.5">Categoría *</label>
+                    <select
+                      value={ticketForm.categoria}
+                      onChange={e => setTicketForm(f => ({ ...f, categoria: e.target.value }))}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-[#fc8127]"
+                    >
+                      <option value="Ayuda">Ayuda / Preguntas Frecuentes</option>
+                      <option value="Reportar problema">Reportar problema en la app</option>
+                      <option value="Reclamo">Reclamo administrativo</option>
+                      <option value="Denunciar usuario">Denunciar usuario</option>
+                      <option value="Sugerencias">Sugerencia de mejora</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 block mb-1.5">Asunto principal</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Inconveniente al pagar presupuesto..."
+                      value={ticketForm.asunto}
+                      onChange={e => setTicketForm(f => ({ ...f, asunto: e.target.value }))}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#fc8127]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-400 block mb-1.5">Mensaje detallado *</label>
+                  <textarea
+                    required
+                    rows={4}
+                    placeholder="Describí con detalle tu sugerencia o consulta. El equipo de administración te responderá directamente aquí."
+                    value={ticketForm.mensaje}
+                    onChange={e => setTicketForm(f => ({ ...f, mensaje: e.target.value }))}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#fc8127] resize-none leading-relaxed"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowFormTicket(false)}
+                    className="px-5 py-2.5 rounded-xl border border-slate-700 text-slate-300 text-xs font-bold hover:bg-slate-800"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={enviandoTicket}
+                    className="px-6 py-2.5 rounded-xl bg-[#fc8127] hover:bg-[#e06d19] text-white text-xs font-black flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {enviandoTicket ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-4 h-4" /> Enviar a Administración</>}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Modal / Formulario Centro de Resolución */}
+            {showFormDisputa && (
+              <form onSubmit={handleCrearDisputa} className="bg-[#001529] border border-amber-500/40 rounded-3xl p-6 space-y-4 shadow-2xl">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-black text-base text-amber-400 flex items-center gap-2">
+                    <ShieldAlert className="w-5 h-5" /> Centro de Resolución (Mediación Pre-Reseña)
+                  </h4>
+                  <button type="button" onClick={() => setShowFormDisputa(false)} className="text-slate-500 hover:text-white">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 block mb-1.5">Tipo de solución deseada *</label>
+                    <select
+                      value={disputaForm.tipo_solucion}
+                      onChange={e => setDisputaForm(f => ({ ...f, tipo_solucion: e.target.value }))}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="Hablar con profesional">Hablar con el profesional</option>
+                      <option value="Solicitar corrección">Solicitar corrección del trabajo</option>
+                      <option value="Solicitar devolución parcial">Solicitar devolución parcial</option>
+                      <option value="Cancelar garantía">Cancelar garantía</option>
+                      <option value="Intervención SuperOficios">Pedir intervención urgente de SuperOficios Admin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 block mb-1.5">Monto reclamado ($)</label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={disputaForm.monto_reclamado}
+                      onChange={e => setDisputaForm(f => ({ ...f, monto_reclamado: e.target.value }))}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-400 block mb-1.5">Explicación del caso *</label>
+                  <textarea
+                    required
+                    rows={4}
+                    placeholder="Describí qué ocurrió para buscar un acuerdo justo antes de calificar..."
+                    value={disputaForm.descripcion}
+                    onChange={e => setDisputaForm(f => ({ ...f, descripcion: e.target.value }))}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 resize-none leading-relaxed"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowFormDisputa(false)}
+                    className="px-5 py-2.5 rounded-xl border border-slate-700 text-slate-300 text-xs font-bold hover:bg-slate-800"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={enviandoDisputa}
+                    className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {enviandoDisputa ? <Loader2 className="w-4 h-4 animate-spin" /> : <><ShieldCheck className="w-4 h-4" /> Iniciar Mediación</>}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Listado de Tickets (#SO-XXXXXX) */}
+            <div className="bg-[#001529] border border-slate-800 rounded-3xl p-6 space-y-4">
+              <h4 className="font-black text-base text-white flex items-center gap-2">
+                <FileText className="w-5 h-5 text-[#fc8127]" /> Mis Consultas y Sugerencias (#SO-XXXXXX)
+              </h4>
+
+              {tickets.length === 0 ? (
+                <div className="bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl p-8 text-center space-y-2">
+                  <HelpCircle className="w-10 h-10 text-slate-700 mx-auto" />
+                  <p className="text-xs font-bold text-slate-400">No tenés tickets generados aún</p>
+                  <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+                    Hacé clic en "+ Nueva Consulta #SO" para enviarle una duda o sugerencia directamente a la administración.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {tickets.map(t => (
+                    <div key={t.id} className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-3">
+                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 border-b border-slate-800 pb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-[#fc8127] font-mono">{t.codigo_ticket}</span>
+                          <span className="text-xs font-bold text-white">— {t.categoria}</span>
+                        </div>
+                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border uppercase self-start sm:self-auto ${getTicketStatusBadge(t.estado)}`}>
+                          {t.estado}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-slate-300 leading-relaxed">{t.mensaje}</p>
+
+                      {/* Respuesta del Administrador */}
+                      {t.respuesta_admin ? (
+                        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3.5 space-y-1 mt-2">
+                          <p className="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Respuesta de la Administración SuperOficios:
+                          </p>
+                          <p className="text-xs text-slate-200 leading-relaxed">{t.respuesta_admin}</p>
+                          {t.fecha_respuesta && (
+                            <p className="text-[9px] text-slate-400 pt-1">
+                              {new Date(t.fecha_respuesta).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-slate-500 italic">
+                          Esperando respuesta de la administración...
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Listado de Mediaciones Activas */}
+            {disputas.length > 0 && (
+              <div className="bg-[#001529] border border-amber-500/30 rounded-3xl p-6 space-y-4">
+                <h4 className="font-black text-base text-amber-400 flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5" /> Mediaciones y Casos de Resolución
+                </h4>
+                <div className="space-y-3">
+                  {disputas.map(d => (
+                    <div key={d.id} className="bg-amber-950/20 border border-amber-500/20 rounded-2xl p-4 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-amber-400">{d.tipo_solucion}</span>
+                        <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold uppercase">
+                          {d.estado?.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300">{d.descripcion}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
-
-      {/* Bottom Nav */}
-      <nav className="fixed bottom-0 w-full bg-white border-t border-gray-200 flex justify-around p-3 z-50 md:hidden shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
-        <NavButton icon={Search} label="Explorar" onClick={() => router.push('/cliente')} />
-        <NavButton icon={Building} label="Mi Hogar" onClick={() => router.push('/mi-hogar')} />
-        <NavButton icon={Plus} label="Publicar" onClick={() => router.push('/publicar-trabajo')} />
-        <NavButton icon={MessageSquare} label="Mensajes" onClick={() => router.push('/chat')} />
-        <NavButton icon={User} label="Perfil" active />
-      </nav>
-    </main>
-  );
-}
-
-function ConfigItem({ icon: Icon, label, onClick, color = "text-[#00355f]" }: any) {
-  return (
-    <button onClick={onClick} className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors text-left group">
-      <div className={`flex items-center gap-3 ${color}`}>
-        <Icon className="w-5 h-5" />
-        <span className="font-bold text-xs text-gray-700 group-hover:text-gray-900 transition-colors">{label}</span>
-      </div>
-      <ChevronRight className="w-4 h-4 text-gray-300 group-hover:translate-x-0.5 transition-transform" />
-    </button>
-  );
-}
-
-function NavButton({ icon: Icon, label, active, onClick }: any) {
-  return (
-    <button 
-      onClick={onClick} 
-      className={`flex flex-col items-center gap-1 ${active ? 'text-[#fc8127]' : 'text-gray-400 hover:text-gray-600'}`}
-    >
-      <Icon className={`w-6 h-6 ${active ? 'fill-current' : ''}`} />
-      <span className="text-[10px] font-bold">{label}</span>
-    </button>
+    </div>
   );
 }

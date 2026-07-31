@@ -1525,5 +1525,276 @@ export const dbHelper = {
     return { success: errors.length === 0, errors };
   },
 
+  // ============================================================
+  // PRESUPUESTOS ESTRUCTURADOS & CONTRATACIÓN
+  // ============================================================
+
+  async crearPresupuestoEstructurado(payload: {
+    conversacion_id: string;
+    profesional_id: string;
+    cliente_id: string;
+    monto: number;
+    tiempo_estimado?: string;
+    garantia?: string;
+    detalle?: string;
+    materiales_incluidos?: boolean;
+    observaciones?: string;
+  }) {
+    const { data, error } = await supabase
+      .from('presupuestos_estructurados')
+      .insert({ ...payload, estado: 'pendiente' })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Enviar mensaje especial de notificación en la conversación
+    await supabase.from('mensajes').insert({
+      conversacion_id: payload.conversacion_id,
+      emisor_id: payload.profesional_id,
+      receptor_id: payload.cliente_id,
+      texto: `📄 PRESUPUESTO_ENVIADO:${data.id}`
+    });
+
+    return data;
+  },
+
+  async aceptarPresupuestoEstructurado(presupuestoId: string, clienteId: string) {
+    // 1. Obtener datos del presupuesto
+    const { data: pres, error: presErr } = await supabase
+      .from('presupuestos_estructurados')
+      .select('*')
+      .eq('id', presupuestoId)
+      .single();
+
+    if (presErr || !pres) throw new Error('Presupuesto no encontrado');
+
+    // 2. Marcar presupuesto como aceptado
+    await supabase
+      .from('presupuestos_estructurados')
+      .update({ estado: 'aceptado' })
+      .eq('id', presupuestoId);
+
+    // 3. Crear automáticamente la Orden de Trabajo
+    const { data: orden, error: ordenErr } = await supabase
+      .from('ordenes_trabajo')
+      .insert({
+        profesional_id: pres.profesional_id,
+        cliente_id: clienteId,
+        titulo: pres.detalle || 'Trabajo Contratado',
+        descripcion: pres.observaciones || '',
+        monto: pres.monto,
+        garantia: pres.garantia || '30_dias',
+        estado: 'en_progreso',
+        fecha_inicio: new Date().toISOString().split('T')[0]
+      })
+      .select()
+      .single();
+
+    if (ordenErr) console.warn('Error al crear orden automatica:', ordenErr);
+
+    // 4. Crear el Expediente del Trabajo (Carpeta Digital)
+    const { data: expediente } = await supabase
+      .from('expedientes_trabajo')
+      .insert({
+        orden_trabajo_id: orden?.id,
+        presupuesto_id: presupuestoId,
+        conversacion_id: pres.conversacion_id,
+        cliente_id: clienteId,
+        profesional_id: pres.profesional_id,
+        titulo: pres.detalle || 'Trabajo Contratado',
+        costo_total: pres.monto,
+        garantia: pres.garantia || '30_dias'
+      })
+      .select()
+      .single();
+
+    // 5. Cambiar el estado de la conversación a 'trabajo'
+    if (pres.conversacion_id) {
+      await supabase
+        .from('conversaciones')
+        .update({ estado_chat: 'trabajo', orden_trabajo_id: orden?.id })
+        .eq('id', pres.conversacion_id);
+
+      // Enviar mensaje de confirmación
+      await supabase.from('mensajes').insert({
+        conversacion_id: pres.conversacion_id,
+        emisor_id: clienteId,
+        receptor_id: pres.profesional_id,
+        texto: `✅ PRESUPUESTO_ACEPTADO:${expediente?.id || ''}`
+      });
+    }
+
+    return { orden, expediente };
+  },
+
+  async rechazarPresupuestoEstructurado(presupuestoId: string, clienteId: string, motivo?: string) {
+    const { data: pres } = await supabase
+      .from('presupuestos_estructurados')
+      .select('*')
+      .eq('id', presupuestoId)
+      .single();
+
+    await supabase
+      .from('presupuestos_estructurados')
+      .update({ estado: 'rechazado', motivo_rechazo: motivo || 'Elegí otra opción' })
+      .eq('id', presupuestoId);
+
+    if (pres?.conversacion_id) {
+      await supabase.from('mensajes').insert({
+        conversacion_id: pres.conversacion_id,
+        emisor_id: clienteId,
+        receptor_id: pres.profesional_id,
+        texto: `❌ PRESUPUESTO_RECHAZADO:${motivo || 'No especificado'}`
+      });
+    }
+  },
+
+  // ============================================================
+  // EXPEDIENTES DEL TRABAJO
+  // ============================================================
+
+  async getExpedienteTrabajo(expedienteId: string) {
+    const { data, error } = await supabase
+      .from('expedientes_trabajo')
+      .select(`
+        *,
+        ordenes_trabajo(*),
+        presupuestos_estructurados(*),
+        profesional:perfiles!profesional_id(*),
+        cliente:perfiles!cliente_id(*)
+      `)
+      .eq('id', expedienteId)
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async getExpedientesCliente(clienteId: string) {
+    const { data, error } = await supabase
+      .from('expedientes_trabajo')
+      .select(`
+        *,
+        profesional:perfiles!profesional_id(nombre, foto_perfil, oficio_principal)
+      `)
+      .eq('cliente_id', clienteId)
+      .order('created_at', { ascending: false });
+
+    if (error) return [];
+    return data || [];
+  },
+
+  // ============================================================
+  // TICKETS DE SOPORTE (#SO-XXXXXX)
+  // ============================================================
+
+  async crearTicketSoporte(payload: {
+    usuario_id: string;
+    categoria: string;
+    asunto?: string;
+    mensaje: string;
+    adjuntos?: string[];
+  }) {
+    const randomNum = Math.floor(100000 + Math.random() * 900000);
+    const codigo_ticket = `#SO-${randomNum}`;
+
+    const { data, error } = await supabase
+      .from('tickets_soporte')
+      .insert({
+        ...payload,
+        codigo_ticket,
+        estado: 'Recibida'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async getTicketsSoporteUsuario(usuarioId: string) {
+    const { data, error } = await supabase
+      .from('tickets_soporte')
+      .select('*')
+      .eq('usuario_id', usuarioId)
+      .order('created_at', { ascending: false });
+
+    if (error) return [];
+    return data || [];
+  },
+
+  async getTodosLosTicketsAdmin() {
+    const { data, error } = await supabase
+      .from('tickets_soporte')
+      .select('*, usuario:perfiles!usuario_id(nombre, email, rol)')
+      .order('created_at', { ascending: false });
+
+    if (error) return [];
+    return data || [];
+  },
+
+  async responderTicketAdmin(ticketId: string, respuesta: string, nuevoEstado: string) {
+    const { data, error } = await supabase
+      .from('tickets_soporte')
+      .update({
+        respuesta_admin: respuesta,
+        fecha_respuesta: new Date().toISOString(),
+        estado: nuevoEstado
+      })
+      .eq('id', ticketId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  // ============================================================
+  // CENTRO DE RESOLUCIÓN DE DISPUTAS
+  // ============================================================
+
+  async crearDisputaResolucion(payload: {
+    orden_trabajo_id?: string;
+    cliente_id: string;
+    profesional_id: string;
+    tipo_solucion: string;
+    descripcion: string;
+    monto_reclamado?: number;
+  }) {
+    const { data, error } = await supabase
+      .from('disputas_resolucion')
+      .insert({
+        ...payload,
+        estado: payload.tipo_solucion === 'Intervención SuperOficios' ? 'escalado_admin' : 'en_proceso'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Si solicita intervención de SuperOficios, auto-genera ticket admin de prioridad alta
+    if (payload.tipo_solucion === 'Intervención SuperOficios') {
+      await dbHelper.crearTicketSoporte({
+        usuario_id: payload.cliente_id,
+        categoria: 'Reclamo',
+        asunto: `Disputa de Mediación en Trabajo #${payload.orden_trabajo_id || ''}`,
+        mensaje: `Solicitud de Intervención urgente: ${payload.descripcion}`
+      });
+    }
+
+    return data;
+  },
+
+  async getDisputasCliente(clienteId: string) {
+    const { data } = await supabase
+      .from('disputas_resolucion')
+      .select('*, profesional:perfiles!profesional_id(nombre)')
+      .eq('cliente_id', clienteId)
+      .order('created_at', { ascending: false });
+
+    return data || [];
+  },
+
   logout,
 };
