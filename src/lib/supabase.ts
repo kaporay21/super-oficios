@@ -1,15 +1,15 @@
-import { createClient } from '@supabase/supabase-js';
+﻿import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
-    'Advertencia: NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY no están configuradas.'
+    'Advertencia: NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY no estÃ¡n configuradas.'
   );
 }
 
-// Inicialización del cliente de Supabase
+// InicializaciÃ³n del cliente de Supabase
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Emails de administradores
@@ -29,7 +29,7 @@ export function isEmailAdmin(email?: string | null): boolean {
 
 /**
  * Obtiene el usuario autenticado actual desde Supabase Auth.
- * Retorna null si no hay sesión activa.
+ * Retorna null si no hay sesiÃ³n activa.
  */
 export async function getCurrentUser() {
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -78,7 +78,7 @@ export async function isAdmin(): Promise<boolean> {
 }
 
 /**
- * Cierra sesión completa en Supabase Auth.
+ * Cierra sesiÃ³n completa en Supabase Auth.
  */
 export async function logout() {
   await supabase.auth.signOut();
@@ -86,7 +86,7 @@ export async function logout() {
 }
 
 /**
- * Limpia la caché local de la app en localStorage.
+ * Limpia la cachÃ© local de la app en localStorage.
  */
 export function clearAllLocalData() {
   if (typeof window === 'undefined') return;
@@ -100,7 +100,7 @@ export function clearAllLocalData() {
 }
 
 // ============================================================
-// DB HELPER — Solo Supabase (100% Real)
+// DB HELPER â€” Solo Supabase (100% Real)
 // ============================================================
 
 export const dbHelper = {
@@ -226,7 +226,7 @@ export const dbHelper = {
     // Autenticar con Supabase Auth REAL
     const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
     if (error || !data?.user) {
-      throw error || new Error('Credenciales inválidas.');
+      throw error || new Error('Credenciales invÃ¡lidas.');
     }
 
     const userId = data.user.id;
@@ -235,7 +235,7 @@ export const dbHelper = {
     // Obtener perfil real de la tabla 'perfiles' de Supabase
     let { data: profile } = await supabase.from('perfiles').select('*').eq('id', userId).maybeSingle();
     
-    // Si es un admin y no existe perfil aún, crearlo en la tabla real de Supabase
+    // Si es un admin y no existe perfil aÃºn, crearlo en la tabla real de Supabase
     if (!profile && isEmailAdmin(userEmail)) {
       const adminProfile = {
         id: userId,
@@ -603,14 +603,14 @@ export const dbHelper = {
   },
 
   // ============================================================
-  // CHAT — Integración Real con Supabase
+  // CHAT â€” IntegraciÃ³n Real con Supabase
   // ============================================================
 
   /**
-   * Obtiene o crea una conversación entre dos usuarios.
+   * Obtiene o crea una conversaciÃ³n entre dos usuarios.
    */
   async getOrCreateConversation(userId1: string, userId2: string): Promise<any> {
-    // Buscar conversación existente entre los dos usuarios
+    // Buscar conversaciÃ³n existente entre los dos usuarios
     const { data: existing, error: searchError } = await supabase
       .from('conversaciones')
       .select('*')
@@ -618,12 +618,12 @@ export const dbHelper = {
       .maybeSingle();
 
     if (searchError) {
-      console.warn('Error buscando conversación:', searchError.message || JSON.stringify(searchError) || searchError);
+      console.warn('Error buscando conversaciÃ³n:', searchError.message || JSON.stringify(searchError) || searchError);
     }
 
     if (existing) return existing;
 
-    // Crear nueva conversación
+    // Crear nueva conversaciÃ³n
     const { data: newConv, error: createError } = await supabase
       .from('conversaciones')
       .insert([{
@@ -691,7 +691,7 @@ export const dbHelper = {
   },
 
   /**
-   * Obtiene los mensajes de una conversación.
+   * Obtiene los mensajes de una conversaciÃ³n.
    */
   async getMensajes(conversacionId: string): Promise<any[]> {
     if (!conversacionId) return [];
@@ -710,7 +710,7 @@ export const dbHelper = {
   },
 
   /**
-   * Envía un mensaje en una conversación.
+   * EnvÃ­a un mensaje en una conversaciÃ³n.
    */
   async enviarMensaje(conversacionId: string, emisorId: string, receptorId: string, texto: string): Promise<any> {
     const { data, error } = await supabase
@@ -740,7 +740,7 @@ export const dbHelper = {
   },
 
   /**
-   * Marca todos los mensajes de una conversación como leídos para un receptor.
+   * Marca todos los mensajes de una conversaciÃ³n como leÃ­dos para un receptor.
    */
   async marcarMensajesLeidos(conversacionId: string, receptorId: string): Promise<void> {
     await supabase
@@ -811,7 +811,7 @@ export const dbHelper = {
   },
 
   // ============================================================
-  // ÓRDENES DE TRABAJO (Informe 7 + 9)
+  // Ã“RDENES DE TRABAJO (Informe 7 + 9)
   // ============================================================
 
   /**
@@ -845,7 +845,7 @@ export const dbHelper = {
   },
 
   /**
-   * Obtiene órdenes de trabajo de un profesional.
+   * Obtiene Ã³rdenes de trabajo de un profesional.
    */
   async getOrdenesTrabajoProfesional(profesionalId: string): Promise<any[]> {
     const { data, error } = await supabase
@@ -854,14 +854,14 @@ export const dbHelper = {
       .eq('profesional_id', profesionalId)
       .order('created_at', { ascending: false });
     if (error) {
-      console.warn('Error cargando órdenes de trabajo:', error.message);
+      console.warn('Error cargando Ã³rdenes de trabajo:', error.message);
       return [];
     }
     return data || [];
   },
 
   /**
-   * Obtiene órdenes de trabajo de un cliente.
+   * Obtiene Ã³rdenes de trabajo de un cliente.
    */
   async getOrdenesTrabajoCliente(clienteId: string): Promise<any[]> {
     const { data, error } = await supabase
@@ -870,7 +870,7 @@ export const dbHelper = {
       .eq('cliente_id', clienteId)
       .order('created_at', { ascending: false });
     if (error) {
-      console.warn('Error cargando órdenes de trabajo del cliente:', error.message);
+      console.warn('Error cargando Ã³rdenes de trabajo del cliente:', error.message);
       return [];
     }
     return data || [];
@@ -887,11 +887,11 @@ export const dbHelper = {
   },
 
   // ============================================================
-  // RESEÑAS INTELIGENTES (Informe 7)
+  // RESEÃ‘AS INTELIGENTES (Informe 7)
   // ============================================================
 
   /**
-   * Crea una reseña inteligente con preguntas estructuradas.
+   * Crea una reseÃ±a inteligente con preguntas estructuradas.
    * Solo se puede crear si existe una Orden de Trabajo registrada.
    */
   async createResenaInteligente(resena: {
@@ -915,7 +915,7 @@ export const dbHelper = {
   },
 
   /**
-   * Obtiene todas las reseñas inteligentes de un profesional.
+   * Obtiene todas las reseÃ±as inteligentes de un profesional.
    */
   async getResenasProfesional(profesionalId: string): Promise<any[]> {
     const { data, error } = await supabase
@@ -924,14 +924,14 @@ export const dbHelper = {
       .eq('profesional_id', profesionalId)
       .order('created_at', { ascending: false });
     if (error) {
-      console.warn('Error cargando reseñas inteligentes:', error.message);
+      console.warn('Error cargando reseÃ±as inteligentes:', error.message);
       return [];
     }
     return data || [];
   },
 
   /**
-   * Verifica si un cliente puede dejar reseña (tiene orden de trabajo finalizada).
+   * Verifica si un cliente puede dejar reseÃ±a (tiene orden de trabajo finalizada).
    */
   async puedeDejarResena(profesionalId: string, clienteId: string): Promise<boolean> {
     const { data } = await supabase
@@ -945,16 +945,16 @@ export const dbHelper = {
   },
 
   // ============================================================
-  // ÍNDICE DE CONFIANZA (Informe 7)
+  // ÃNDICE DE CONFIANZA (Informe 7)
   // ============================================================
 
   /**
-   * Calcula el Índice de Confianza de un profesional (0-100).
-   * Ponderación:
+   * Calcula el Ãndice de Confianza de un profesional (0-100).
+   * PonderaciÃ³n:
    *   - Identidad verificada: 20 pts
    *   - Perfil completo (foto, bio, oficios, zona): 15 pts
-   *   - Trabajos completados (máx 20 pts escalonado): 20 pts
-   *   - Rating promedio de reseñas: 20 pts
+   *   - Trabajos completados (mÃ¡x 20 pts escalonado): 20 pts
+   *   - Rating promedio de reseÃ±as: 20 pts
    *   - Tiempo de respuesta: 15 pts
    *   - Sin reclamos activos: 10 pts
    */
@@ -976,7 +976,7 @@ export const dbHelper = {
 
       // 1. Identidad verificada (20 pts)
       desglose.identidad = p?.verificado ? 20 : 0;
-      if (!p?.verificado) sugerencias.push('Verificá tu identidad para ganar 20 puntos');
+      if (!p?.verificado) sugerencias.push('VerificÃ¡ tu identidad para ganar 20 puntos');
 
       // 2. Perfil completo (15 pts)
       let perfilPts = 0;
@@ -985,7 +985,7 @@ export const dbHelper = {
       if (p?.oficios?.length > 0) perfilPts += 4;
       if (p?.provincia && p?.ciudad) perfilPts += 3;
       desglose.perfilCompleto = perfilPts;
-      if (perfilPts < 15) sugerencias.push('Completá tu perfil (foto, descripción, zona)');
+      if (perfilPts < 15) sugerencias.push('CompletÃ¡ tu perfil (foto, descripciÃ³n, zona)');
 
       // 3. Trabajos completados (20 pts, escalonado)
       const totalTrab = ordenes.data?.length || 0;
@@ -995,14 +995,14 @@ export const dbHelper = {
       if (totalTrab >= 10) trabajoPts = 15;
       if (totalTrab >= 25) trabajoPts = 20;
       desglose.trabajos = trabajoPts;
-      if (trabajoPts < 20) sugerencias.push(`Completá más trabajos (tenés ${totalTrab}, necesitás 25 para el máximo)`);
+      if (trabajoPts < 20) sugerencias.push(`CompletÃ¡ mÃ¡s trabajos (tenÃ©s ${totalTrab}, necesitÃ¡s 25 para el mÃ¡ximo)`);
 
       // 4. Rating promedio (20 pts)
       const ratings = resenas.data?.map((r: any) => r.rating_promedio) || [];
       const avgRating = ratings.length > 0 ? ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length : 0;
       const ratingPts = ratings.length === 0 ? 0 : Math.round((avgRating / 5) * 20);
       desglose.rating = ratingPts;
-      if (ratings.length === 0) sugerencias.push('Conseguí tus primeras reseñas verificadas');
+      if (ratings.length === 0) sugerencias.push('ConseguÃ­ tus primeras reseÃ±as verificadas');
 
       // 5. Tiempo de respuesta (15 pts)
       const tiempoRespuesta = p?.tiempo_respuesta_minutos || 999;
@@ -1011,7 +1011,7 @@ export const dbHelper = {
       else if (tiempoRespuesta <= 30) tiempoPts = 10;
       else if (tiempoRespuesta <= 60) tiempoPts = 5;
       desglose.tiempoRespuesta = tiempoPts;
-      if (tiempoPts < 15) sugerencias.push('Respondé más rápido a los mensajes');
+      if (tiempoPts < 15) sugerencias.push('RespondÃ© mÃ¡s rÃ¡pido a los mensajes');
 
       // 6. Sin reclamos (10 pts)
       const { count: reclamos } = await supabase
@@ -1024,13 +1024,13 @@ export const dbHelper = {
       const total = Object.values(desglose).reduce((a, b) => a + b, 0);
       return { total: Math.min(100, total), desglose, sugerencias: sugerencias.slice(0, 3) };
     } catch (e) {
-      console.warn('Error calculando índice de confianza:', e);
+      console.warn('Error calculando Ã­ndice de confianza:', e);
       return { total: 0, desglose: {}, sugerencias: [] };
     }
   },
 
   // ============================================================
-  // MI HOGAR — Centro Digital del Hogar (Informe 8-9)
+  // MI HOGAR â€” Centro Digital del Hogar (Informe 8-9)
   // ============================================================
 
   /**
@@ -1197,7 +1197,7 @@ export const dbHelper = {
   },
 
   // ============================================================
-  // LOGROS Y MISIONES / GAMIFICACIÓN (Informe 8)
+  // LOGROS Y MISIONES / GAMIFICACIÃ“N (Informe 8)
   // ============================================================
 
   /**
@@ -1236,23 +1236,23 @@ export const dbHelper = {
   },
 
   /**
-   * Calcula el nivel de plataforma según trabajos completados.
+   * Calcula el nivel de plataforma segÃºn trabajos completados.
    * Bronce: 0-9, Plata: 10-49, Oro: 50-99, Platino: 100+
    */
   getNivelPlataforma(totalTrabajos: number): { nivel: string; emoji: string; siguiente: number } {
-    if (totalTrabajos >= 100) return { nivel: 'Platino', emoji: '💎', siguiente: 0 };
-    if (totalTrabajos >= 50) return { nivel: 'Oro', emoji: '🥇', siguiente: 100 };
-    if (totalTrabajos >= 10) return { nivel: 'Plata', emoji: '🥈', siguiente: 50 };
-    return { nivel: 'Bronce', emoji: '🥉', siguiente: 10 };
+    if (totalTrabajos >= 100) return { nivel: 'Platino', emoji: 'ðŸ’Ž', siguiente: 0 };
+    if (totalTrabajos >= 50) return { nivel: 'Oro', emoji: 'ðŸ¥‡', siguiente: 100 };
+    if (totalTrabajos >= 10) return { nivel: 'Plata', emoji: 'ðŸ¥ˆ', siguiente: 50 };
+    return { nivel: 'Bronce', emoji: 'ðŸ¥‰', siguiente: 10 };
   },
 
   // ============================================================
-  // PANEL FINANCIERO (Informe 9) — Solo estadísticas, sin pagos
+  // PANEL FINANCIERO (Informe 9) â€” Solo estadÃ­sticas, sin pagos
   // ============================================================
 
   /**
-   * Obtiene estadísticas financieras del profesional.
-   * No maneja pagos reales, solo organiza información registrada.
+   * Obtiene estadÃ­sticas financieras del profesional.
+   * No maneja pagos reales, solo organiza informaciÃ³n registrada.
    */
   async getEstadisticasFinancieras(profesionalId: string): Promise<{
     totalPresupuestado: number;
@@ -1278,7 +1278,7 @@ export const dbHelper = {
         return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
       }).length;
 
-      // Servicios más frecuentes
+      // Servicios mÃ¡s frecuentes
       const conteo: Record<string, number> = {};
       items.forEach((o: any) => {
         const key = o.titulo?.split(' ')[0] || 'Otro';
@@ -1289,7 +1289,7 @@ export const dbHelper = {
         .sort((a, b) => b.cantidad - a.cantidad)
         .slice(0, 5);
 
-      // Evolución últimos 6 meses
+      // EvoluciÃ³n Ãºltimos 6 meses
       const evolucionMensual: Array<{ mes: string; total: number }> = [];
       for (let i = 5; i >= 0; i--) {
         const d = new Date();
@@ -1306,7 +1306,7 @@ export const dbHelper = {
 
       return { totalPresupuestado, ticketPromedio, trabajosEstesMes, serviciosMasVendidos, evolucionMensual };
     } catch (e) {
-      console.warn('Error cargando estadísticas financieras:', e);
+      console.warn('Error cargando estadÃ­sticas financieras:', e);
       return { totalPresupuestado: 0, ticketPromedio: 0, trabajosEstesMes: 0, serviciosMasVendidos: [], evolucionMensual: [] };
     }
   },
@@ -1357,7 +1357,7 @@ export const dbHelper = {
   },
 
   // ============================================================
-  // RESUMEN DIARIO DEL PROFESIONAL (Informe 9) — Sin IA
+  // RESUMEN DIARIO DEL PROFESIONAL (Informe 9) â€” Sin IA
   // ============================================================
 
   /**
@@ -1392,7 +1392,7 @@ export const dbHelper = {
 
       // Alertas inteligentes basadas en reglas (sin IA)
       const alertas: string[] = [];
-      if ((mensajes.count || 0) > 3) alertas.push(`Tenés ${mensajes.count} mensajes sin leer`);
+      if ((mensajes.count || 0) > 3) alertas.push(`TenÃ©s ${mensajes.count} mensajes sin leer`);
       if ((presupuestos.count || 0) > 2) alertas.push(`${presupuestos.count} presupuestos esperan tu respuesta`);
 
       return {
@@ -1409,11 +1409,11 @@ export const dbHelper = {
   },
 
   // ============================================================
-  // ESTADÍSTICAS DE PERFIL / MI MARCA (Informe 8)
+  // ESTADÃSTICAS DE PERFIL / MI MARCA (Informe 8)
   // ============================================================
 
   /**
-   * Obtiene estadísticas de visitas al perfil del profesional.
+   * Obtiene estadÃ­sticas de visitas al perfil del profesional.
    * Usa tabla profile_views si existe, fallback a 0.
    */
   async getEstadisticasPerfil(profesionalId: string): Promise<{
@@ -1437,31 +1437,31 @@ export const dbHelper = {
           .in('estado', ['finalizado', 'con_garantia']),
       ]);
 
-      // Contar clientes únicos con más de 1 trabajo
+      // Contar clientes Ãºnicos con mÃ¡s de 1 trabajo
       const clientesIds = (clientesRecurrentes.data || []).map((o: any) => o.cliente_id);
       const conteo: Record<string, number> = {};
       clientesIds.forEach((id: string) => { conteo[id] = (conteo[id] || 0) + 1; });
       const recurrentes = Object.values(conteo).filter(v => v > 1).length;
 
       return {
-        visitasTotal: 0, // Requiere función RPC especial en Supabase
+        visitasTotal: 0, // Requiere funciÃ³n RPC especial en Supabase
         visitasSemana: visitasSemana.count || 0,
         contactosSemana: contactosSemana.count || 0,
         clientesRecurrentes: recurrentes,
       };
     } catch (e) {
-      console.warn('Error cargando estadísticas de perfil:', e);
+      console.warn('Error cargando estadÃ­sticas de perfil:', e);
       return { visitasTotal: 0, visitasSemana: 0, contactosSemana: 0, clientesRecurrentes: 0 };
     }
   },
 
   // ============================================================
-  // DATA CLEANUP — Limpieza total de datos
+  // DATA CLEANUP â€” Limpieza total de datos
   // ============================================================
 
   /**
    * Borra TODOS los datos de todas las tablas de Supabase.
-   * ¡Usar con precaución! Solo para resetear la plataforma.
+   * Â¡Usar con precauciÃ³n! Solo para resetear la plataforma.
    */
   async cleanAllData(): Promise<{ success: boolean; errors: string[] }> {
     const errors: string[] = [];
@@ -1490,7 +1490,7 @@ export const dbHelper = {
 
     for (const table of tables) {
       try {
-        // Usar uuid válido o .not('id', 'is', null) para evitar error de sintaxis 'invalid input syntax for type uuid'
+        // Usar uuid vÃ¡lido o .not('id', 'is', null) para evitar error de sintaxis 'invalid input syntax for type uuid'
         const { error } = await supabase.from(table).delete().neq('id', '00000000-0000-0000-0000-000000000000');
         if (error) {
           // Reintentar con sintaxis IS NOT NULL si la columna o la tabla requiere otra consulta
@@ -1526,7 +1526,7 @@ export const dbHelper = {
   },
 
   // ============================================================
-  // PRESUPUESTOS ESTRUCTURADOS & CONTRATACIÓN
+  // PRESUPUESTOS ESTRUCTURADOS & CONTRATACIÃ“N
   // ============================================================
 
   async crearPresupuestoEstructurado(payload: {
@@ -1548,12 +1548,12 @@ export const dbHelper = {
 
     if (error) throw error;
 
-    // Enviar mensaje especial de notificación en la conversación
+    // Enviar mensaje especial de notificaciÃ³n en la conversaciÃ³n
     await supabase.from('mensajes').insert({
       conversacion_id: payload.conversacion_id,
       emisor_id: payload.profesional_id,
       receptor_id: payload.cliente_id,
-      texto: `📄 PRESUPUESTO_ENVIADO:${data.id}`
+      texto: `ðŸ“„ PRESUPUESTO_ENVIADO:${data.id}`
     });
 
     return data;
@@ -1575,7 +1575,7 @@ export const dbHelper = {
       .update({ estado: 'aceptado' })
       .eq('id', presupuestoId);
 
-    // 3. Crear automáticamente la Orden de Trabajo
+    // 3. Crear automÃ¡ticamente la Orden de Trabajo
     const { data: orden, error: ordenErr } = await supabase
       .from('ordenes_trabajo')
       .insert({
@@ -1609,19 +1609,19 @@ export const dbHelper = {
       .select()
       .single();
 
-    // 5. Cambiar el estado de la conversación a 'trabajo'
+    // 5. Cambiar el estado de la conversaciÃ³n a 'trabajo'
     if (pres.conversacion_id) {
       await supabase
         .from('conversaciones')
         .update({ estado_chat: 'trabajo', orden_trabajo_id: orden?.id })
         .eq('id', pres.conversacion_id);
 
-      // Enviar mensaje de confirmación
+      // Enviar mensaje de confirmaciÃ³n
       await supabase.from('mensajes').insert({
         conversacion_id: pres.conversacion_id,
         emisor_id: clienteId,
         receptor_id: pres.profesional_id,
-        texto: `✅ PRESUPUESTO_ACEPTADO:${expediente?.id || ''}`
+        texto: `âœ… PRESUPUESTO_ACEPTADO:${expediente?.id || ''}`
       });
     }
 
@@ -1637,7 +1637,7 @@ export const dbHelper = {
 
     await supabase
       .from('presupuestos_estructurados')
-      .update({ estado: 'rechazado', motivo_rechazo: motivo || 'Elegí otra opción' })
+      .update({ estado: 'rechazado', motivo_rechazo: motivo || 'ElegÃ­ otra opciÃ³n' })
       .eq('id', presupuestoId);
 
     if (pres?.conversacion_id) {
@@ -1645,7 +1645,7 @@ export const dbHelper = {
         conversacion_id: pres.conversacion_id,
         emisor_id: clienteId,
         receptor_id: pres.profesional_id,
-        texto: `❌ PRESUPUESTO_RECHAZADO:${motivo || 'No especificado'}`
+        texto: `âŒ PRESUPUESTO_RECHAZADO:${motivo || 'No especificado'}`
       });
     }
   },
@@ -1751,7 +1751,7 @@ export const dbHelper = {
   },
 
   // ============================================================
-  // CENTRO DE RESOLUCIÓN DE DISPUTAS
+  // CENTRO DE RESOLUCIÃ“N DE DISPUTAS
   // ============================================================
 
   async crearDisputaResolucion(payload: {
@@ -1766,20 +1766,20 @@ export const dbHelper = {
       .from('disputas_resolucion')
       .insert({
         ...payload,
-        estado: payload.tipo_solucion === 'Intervención SuperOficios' ? 'escalado_admin' : 'en_proceso'
+        estado: payload.tipo_solucion === 'IntervenciÃ³n SuperOficios' ? 'escalado_admin' : 'en_proceso'
       })
       .select()
       .single();
 
     if (error) throw error;
 
-    // Si solicita intervención de SuperOficios, auto-genera ticket admin de prioridad alta
-    if (payload.tipo_solucion === 'Intervención SuperOficios') {
+    // Si solicita intervenciÃ³n de SuperOficios, auto-genera ticket admin de prioridad alta
+    if (payload.tipo_solucion === 'IntervenciÃ³n SuperOficios') {
       await dbHelper.crearTicketSoporte({
         usuario_id: payload.cliente_id,
         categoria: 'Reclamo',
-        asunto: `Disputa de Mediación en Trabajo #${payload.orden_trabajo_id || ''}`,
-        mensaje: `Solicitud de Intervención urgente: ${payload.descripcion}`
+        asunto: `Disputa de MediaciÃ³n en Trabajo #${payload.orden_trabajo_id || ''}`,
+        mensaje: `Solicitud de IntervenciÃ³n urgente: ${payload.descripcion}`
       });
     }
 
@@ -1796,5 +1796,207 @@ export const dbHelper = {
     return data || [];
   },
 
+
+  // ============================================================
+  // URLS SEMANTICAS SEO - Perfil por Slug (desde Supabase)
+  // ============================================================
+
+  async getProfileBySlug(slug: string): Promise<any> {
+    const { data, error } = await supabase
+      .from('perfiles')
+      .select('*')
+      .eq('slug', slug)
+      .eq('rol', 'profesional')
+      .maybeSingle();
+    if (error || !data) return null;
+    return data;
+  },
+
+  // ============================================================
+  // HISTORIAL DE CLIENTES (mini-CRM del Profesional)
+  // ============================================================
+
+  async getHistorialClientes(profesionalId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('ordenes_trabajo')
+      .select('id, titulo, estado, monto, created_at, cliente:perfiles!ordenes_trabajo_cliente_id_fkey(id, nombre, foto_perfil, telefono)')
+      .eq('profesional_id', profesionalId)
+      .order('created_at', { ascending: false });
+
+    if (error || !data) return [];
+
+    const byCliente: Record<string, any> = {};
+    for (const orden of data) {
+      const cId = (orden.cliente as any)?.id;
+      if (!cId) continue;
+      if (!byCliente[cId]) {
+        byCliente[cId] = {
+          clienteId: cId,
+          nombre: (orden.cliente as any)?.nombre || 'Cliente',
+          fotoPerfil: (orden.cliente as any)?.foto_perfil || '',
+          telefono: (orden.cliente as any)?.telefono || '',
+          totalTrabajos: 0,
+          ultimoTrabajo: orden.titulo,
+          ultimaFecha: orden.created_at,
+          montoTotal: 0,
+        };
+      }
+      byCliente[cId].totalTrabajos++;
+      byCliente[cId].montoTotal += parseFloat(orden.monto || 0);
+      if (orden.created_at > byCliente[cId].ultimaFecha) {
+        byCliente[cId].ultimaFecha = orden.created_at;
+        byCliente[cId].ultimoTrabajo = orden.titulo;
+      }
+    }
+    return Object.values(byCliente).slice(0, 8);
+  },
+
+  // ============================================================
+  // ACTIVIDAD RECIENTE (Perfil Vivo)
+  // ============================================================
+
+  async getActividadReciente(profesionalId: string): Promise<any[]> {
+    const ahora = new Date();
+    const actividades = [];
+    try {
+      const { data: msgs } = await supabase
+        .from('mensajes')
+        .select('created_at')
+        .or('emisor_id.eq.' + profesionalId + ',receptor_id.eq.' + profesionalId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (msgs?.[0]) {
+        const mins = Math.floor((ahora.getTime() - new Date(msgs[0].created_at).getTime()) / 60000);
+        actividades.push({
+          tipo: 'mensaje', icono: '💬',
+          texto: mins < 60 ? 'Respondiste hace ' + mins + ' min' : 'Ultimo mensaje hace ' + Math.floor(mins / 60) + 'h',
+        });
+      }
+
+      const { data: ordenes } = await supabase
+        .from('ordenes_trabajo')
+        .select('titulo, updated_at')
+        .eq('profesional_id', profesionalId)
+        .eq('estado', 'finalizado')
+        .order('updated_at', { ascending: false })
+        .limit(1);
+
+      if (ordenes?.[0]) {
+        const dias = Math.floor((ahora.getTime() - new Date(ordenes[0].updated_at).getTime()) / 86400000);
+        actividades.push({
+          tipo: 'trabajo', icono: '✅',
+          texto: dias === 0 ? 'Terminaste un trabajo hoy' : 'Finalizaste un trabajo hace ' + dias + ' dia(s)',
+        });
+      }
+
+      const { count: numResenas } = await supabase
+        .from('resenas_inteligentes')
+        .select('*', { count: 'exact', head: true })
+        .eq('profesional_id', profesionalId)
+        .gte('created_at', new Date(ahora.getTime() - 7 * 86400000).toISOString());
+
+      if ((numResenas || 0) > 0) {
+        actividades.push({ tipo: 'resena', icono: '⭐', texto: 'Recibiste ' + numResenas + ' resena(s) esta semana' });
+      }
+
+      const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+      const { count: visitas } = await supabase
+        .from('profile_views')
+        .select('*', { count: 'exact', head: true })
+        .eq('profesional_id', profesionalId)
+        .gte('created_at', hoy.toISOString());
+
+      if ((visitas || 0) > 0) {
+        actividades.push({ tipo: 'visita', icono: '👁️', texto: visitas + ' cliente(s) vieron tu perfil hoy' });
+      }
+    } catch (err) {
+      console.warn('getActividadReciente error:', err);
+    }
+    return actividades.slice(0, 4);
+  },
+
+  // ============================================================
+  // SISTEMA DE PUNTOS Y RECOMPENSAS
+  // ============================================================
+
+  async getOrCreatePuntosProfesional(profesionalId: string): Promise<any> {
+    let { data } = await supabase
+      .from('puntos_profesional')
+      .select('*')
+      .eq('profesional_id', profesionalId)
+      .maybeSingle();
+
+    if (!data) {
+      const { data: newData } = await supabase
+        .from('puntos_profesional')
+        .insert({ profesional_id: profesionalId, puntos_totales: 0, puntos_canjeados: 0, nivel: 'Bronce' })
+        .select()
+        .single();
+      data = newData;
+    }
+    return data;
+  },
+
+  async registrarPuntos(profesionalId: string, accion: string, puntos: number, descripcion?: string): Promise<void> {
+    try {
+      await supabase.from('transacciones_puntos').insert({
+        profesional_id: profesionalId, tipo: 'ganado', accion, puntos,
+        descripcion: descripcion || accion,
+      });
+      const actual = await dbHelper.getOrCreatePuntosProfesional(profesionalId);
+      const nuevosTotal = (actual?.puntos_totales || 0) + puntos;
+      let nivel = 'Bronce';
+      if (nuevosTotal >= 1000) nivel = 'Platino';
+      else if (nuevosTotal >= 500) nivel = 'Oro';
+      else if (nuevosTotal >= 200) nivel = 'Plata';
+      await supabase.from('puntos_profesional')
+        .update({ puntos_totales: nuevosTotal, nivel })
+        .eq('profesional_id', profesionalId);
+    } catch (err) { console.warn('registrarPuntos error:', err); }
+  },
+
+  // ============================================================
+  // CONVERSACIONES RECIENTES - Para Panel Profesional
+  // ============================================================
+
+  async getConversacionesRecientes(userId: string, limit = 5): Promise<any[]> {
+    if (!userId) return [];
+    try {
+      const { data, error } = await supabase
+        .from('conversaciones')
+        .select('*')
+        .or('usuario1_id.eq.' + userId + ',usuario2_id.eq.' + userId)
+        .order('ultimo_mensaje_fecha', { ascending: false })
+        .limit(limit);
+
+      if (error || !data?.length) return [];
+
+      const enriched = await Promise.all(data.map(async (conv) => {
+        const partnerId = conv.usuario1_id === userId ? conv.usuario2_id : conv.usuario1_id;
+        const { data: partner } = await supabase
+          .from('perfiles')
+          .select('id, nombre, foto_perfil, rol')
+          .eq('id', partnerId)
+          .maybeSingle();
+
+        return {
+          id: conv.id,
+          partnerId,
+          partnerNombre: partner?.nombre || 'Usuario',
+          partnerAvatar: partner?.foto_perfil || 'https://i.pravatar.cc/150?u=' + partnerId,
+          partnerRol: partner?.rol || 'cliente',
+          ultimoMensaje: conv.ultimo_mensaje || '',
+          ultimoMensajeFecha: conv.ultimo_mensaje_fecha,
+          estadoChat: conv.estado_chat || 'consulta',
+        };
+      }));
+      return enriched;
+    } catch (err) { return []; }
+  },
   logout,
 };
+
+
+
+
