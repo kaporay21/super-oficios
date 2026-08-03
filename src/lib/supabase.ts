@@ -1,4 +1,4 @@
-﻿import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -15,7 +15,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 // Emails de administradores
 export const ADMIN_EMAILS = [
   'gonzalohumacata1992@gmail.com',
-  'gonzalo@gmail.com'
+  'gonzalo@gmail.com',
+  'pedro@gmail.com'
 ];
 
 export function isEmailAdmin(email?: string | null): boolean {
@@ -44,8 +45,34 @@ export async function getCurrentProfile() {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const { data: profile } = await supabase.from('perfiles').select('*').eq('id', user.id).maybeSingle();
+  let { data: profile } = await supabase.from('perfiles').select('*').eq('id', user.id).maybeSingle();
   
+  if (!profile && !isEmailAdmin(user.email)) {
+    try {
+      let stored: any = null;
+      if (typeof window !== 'undefined') {
+        const local = localStorage.getItem('oficiosya_profesional_perfil') || localStorage.getItem('oficiosya_cliente_perfil') || localStorage.getItem('oficiosya_session');
+        if (local) stored = JSON.parse(local);
+      }
+
+      const fallbackProfile = {
+        id: user.id,
+        email: user.email,
+        nombre: stored?.nombre || user.email?.split('@')[0] || 'Usuario',
+        telefono: stored?.telefono || '',
+        oficios: stored?.oficios || [],
+        rol: stored?.rol || (stored?.oficios && stored.oficios.length > 0 ? 'profesional' : 'profesional'),
+        provincia: stored?.provincia || '',
+        ciudad: stored?.ciudad || ''
+      };
+
+      await supabase.from('perfiles').upsert(fallbackProfile);
+      profile = fallbackProfile;
+    } catch (e) {
+      console.error('Error auto-healing profile:', e);
+    }
+  }
+
   if (!profile && isEmailAdmin(user.email)) {
     const adminProfile = {
       id: user.id,
@@ -196,27 +223,15 @@ export const dbHelper = {
   async updateProfile(id: string, updates: any): Promise<void> {
     const dbUpdates: any = {};
     if (updates.nombre !== undefined) dbUpdates.nombre = updates.nombre;
-    if (updates.apellido !== undefined) dbUpdates.apellido = updates.apellido;
     if (updates.telefono !== undefined) dbUpdates.telefono = updates.telefono;
     if (updates.provincia !== undefined) dbUpdates.provincia = updates.provincia;
     if (updates.ciudad !== undefined) dbUpdates.ciudad = updates.ciudad;
-    if (updates.biografia !== undefined) dbUpdates.biografia = updates.biografia;
-    if (updates.experiencia !== undefined) dbUpdates.experiencia = updates.experiencia;
     if (updates.foto_perfil !== undefined) dbUpdates.foto_perfil = updates.foto_perfil;
     if (updates.oficios !== undefined) dbUpdates.oficios = updates.oficios;
-    if (updates.monto_minimo !== undefined) dbUpdates.monto_minimo = updates.monto_minimo;
-    if (updates.fecha_nacimiento !== undefined || updates.fechaNacimiento !== undefined) {
-      dbUpdates.fecha_nacimiento = updates.fecha_nacimiento || updates.fechaNacimiento;
-    }
-    if (updates.pais !== undefined) dbUpdates.pais = updates.pais;
-    if (updates.nro_matricula !== undefined || updates.nroMatricula !== undefined) {
-      dbUpdates.nro_matricula = updates.nro_matricula || updates.nroMatricula;
-    }
-    if (updates.certificados !== undefined) dbUpdates.certificados = updates.certificados;
-    if (updates.portafolio !== undefined) dbUpdates.portafolio = updates.portafolio;
+    if (updates.biografia !== undefined) dbUpdates.biografia = updates.biografia;
     
     const { error } = await supabase.from('perfiles').update(dbUpdates).eq('id', id);
-    if (error) throw error;
+    if (error) console.error('Error updateProfile:', error);
   },
 
   // --- AUTHENTICATION REAL ---
@@ -296,26 +311,26 @@ export const dbHelper = {
     if (error) throw error;
     
     if (data.user) {
-      const profileInsert: any = {
+      const baseProfile: any = {
         id: data.user.id,
         nombre: fullName,
-        apellido: extraData?.apellido || '',
         email,
         telefono: phone,
-        oficios,
+        oficios: oficios || [],
         rol: 'profesional',
         provincia: provincia || '',
-        ciudad: ciudad || '',
-        fecha_nacimiento: extraData?.fechaNacimiento || '',
-        pais: extraData?.pais || 'Argentina',
-        experiencia: extraData?.experiencia || ''
+        ciudad: ciudad || ''
       };
 
-      const { error: profileError } = await supabase.from('perfiles').insert([profileInsert]);
+      const { error: profileError } = await supabase.from('perfiles').insert([baseProfile]);
       if (profileError) throw profileError;
 
       const profileData = {
-        ...profileInsert,
+        ...baseProfile,
+        apellido: extraData?.apellido || '',
+        experiencia: extraData?.experiencia || '',
+        fechaNacimiento: extraData?.fechaNacimiento || '',
+        pais: extraData?.pais || 'Argentina',
         fotoPerfil: '',
       };
       localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(profileData));
@@ -363,14 +378,12 @@ export const dbHelper = {
   },
 
   async createJob(job: any): Promise<any> {
-    const dbJob = {
+    const dbJob: any = {
       ...job,
-      empleadoravatar: job.empleadorAvatar
+      empleadoravatar: job.empleadorAvatar || job.empleadoravatar
     };
     delete dbJob.empleadorAvatar;
-    if (!dbJob.id) {
-      dbJob.id = Date.now();
-    }
+    delete dbJob.imagen;
 
     const { data, error } = await supabase.from('trabajos').insert([dbJob]).select().single();
     if (error) throw error;
@@ -1994,9 +2007,93 @@ export const dbHelper = {
       return enriched;
     } catch (err) { return []; }
   },
+
+  // ============================================================
+  // NOTIFICACIONES
+  // ============================================================
+
+  async getNotificaciones(userId: string): Promise<any[]> {
+    if (!userId) return [];
+    try {
+      const { data, error } = await supabase
+        .from('notificaciones')
+        .select('*')
+        .eq('usuario_id', userId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } catch (e) {
+      console.error('Error getNotificaciones:', e);
+      return [];
+    }
+  },
+
+  async marcarNotificacionLeida(notificacionId: string): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('notificaciones')
+        .update({ leida: true })
+        .eq('id', notificacionId);
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      console.error('Error marcarNotificacionLeida:', e);
+      return false;
+    }
+  },
+
+  async crearNotificacion(notificacion: {
+    usuario_id: string;
+    tipo: 'trabajo' | 'mensaje' | 'sistema' | 'alerta';
+    titulo: string;
+    descripcion: string;
+    referencia_id?: string;
+  }): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('notificaciones')
+        .insert(notificacion);
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      console.error('Error crearNotificacion:', e);
+      return false;
+    }
+  },
+
+  async getAuditLogs(): Promise<any[]> {
+    try {
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) return [];
+      return data || [];
+    } catch (e) {
+      console.error('Error getAuditLogs:', e);
+      return [];
+    }
+  },
+
+  async registrarAuditoria(log: {
+    admin_email: string;
+    accion: string;
+    riesgo: 'Bajo' | 'Medio' | 'Alto';
+  }): Promise<boolean> {
+    try {
+      const { error } = await supabase.from('audit_logs').insert([{
+        admin_email: log.admin_email,
+        accion: log.accion,
+        riesgo: log.riesgo
+      }]);
+      if (error) console.error('Error registrarAuditoria:', error);
+      return !error;
+    } catch (e) {
+      console.error('Error registrarAuditoria:', e);
+      return false;
+    }
+  },
+
   logout,
 };
-
-
-
-

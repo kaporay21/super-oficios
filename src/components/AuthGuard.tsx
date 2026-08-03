@@ -34,15 +34,17 @@ export default function AuthGuard({ children, requiredRole }: AuthGuardProps) {
       return;
     }
 
+    const effectiveRole = profile?.rol || (user.user_metadata?.rol) || 'profesional';
+
     // Check role-based access
     if (requiredRole === 'admin') {
       if (!checkIsAdmin(user, profile)) {
         router.replace('/');
         return;
       }
-    } else if (requiredRole && profile) {
-      if (profile.rol !== requiredRole && !checkIsAdmin(user, profile)) {
-        if (profile.rol === 'profesional') {
+    } else if (requiredRole) {
+      if (effectiveRole !== requiredRole && !checkIsAdmin(user, profile)) {
+        if (effectiveRole === 'profesional') {
           router.replace('/panel-profesional');
         } else {
           router.replace('/cliente');
@@ -76,18 +78,8 @@ export default function AuthGuard({ children, requiredRole }: AuthGuardProps) {
 
   // Role check for client/professional (if user is not admin)
   if (requiredRole && requiredRole !== 'admin' && !checkIsAdmin(user, profile)) {
-    if (!profile) {
-      return (
-        <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="w-10 h-10 text-[#fc8127] animate-spin" />
-            <p className="text-sm font-bold text-gray-500">Verificando permisos...</p>
-          </div>
-        </div>
-      );
-    }
-
-    if (profile.rol !== requiredRole) {
+    const effectiveRole = profile?.rol || (user.user_metadata?.rol) || 'profesional';
+    if (effectiveRole !== requiredRole) {
       return null;
     }
   }

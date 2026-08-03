@@ -8,7 +8,7 @@ import {
   ClipboardList, User, Bell, Award 
 } from 'lucide-react';
 import { PROFESSIONALS } from '@/data';
-import { dbHelper } from '@/lib/supabase';
+import { dbHelper, getCurrentProfile } from '@/lib/supabase';
 import Tooltip from '@/components/Tooltip';
 import Logo from '@/components/Logo';
 
@@ -24,11 +24,25 @@ export default function PerfilProfesional() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const dbProfile = await dbHelper.getUserProfile(proId);
+        let dbProfile = await dbHelper.getUserProfile(proId).catch(() => null);
+        
+        // Fallback si proId es '1', 'me' o el id no devolvió un perfil en Supabase
+        if (!dbProfile) {
+          const currentP = await getCurrentProfile().catch(() => null);
+          if (currentP) {
+            dbProfile = currentP;
+          } else {
+            const stored = localStorage.getItem('oficiosya_profesional_perfil');
+            if (stored) dbProfile = JSON.parse(stored);
+          }
+        }
+
         setPro(dbProfile);
 
-        const dbReviews = await dbHelper.getReviewsForProfessional(proId);
-        setResenasReales(dbReviews);
+        if (dbProfile?.id) {
+          const dbReviews = await dbHelper.getReviewsForProfessional(dbProfile.id).catch(() => []);
+          setResenasReales(dbReviews);
+        }
       } catch (err) {
         console.error("Error al cargar datos en perfil profesional:", err);
       } finally {
@@ -73,15 +87,19 @@ export default function PerfilProfesional() {
     ? resenasReales.reduce((acc, curr) => acc + curr.rating, 0) / resenasReales.length 
     : 5.0;
 
-  // Datos extendidos del profesional (combinados con mock para la demo)
+  // Datos extendidos del profesional
   const perfilCompleto = {
     ...pro,
     rating: avgRating,
     experiencia: pro.experiencia || '5+ años',
     trabajosRealizados: 30 + resenasReales.length,
-    zona: pro.location,
+    zona: pro.location || pro.ciudad || 'Argentina',
     whatsapp: '5493811234567',
-    descripcion: pro.biografia || `Profesional especializado en ${pro.trade}. Trabajo con seriedad, puntualidad y garantía en cada tarea. Atiendo toda la zona de ${pro.location}.`,
+    descripcion: (pro.biografia || pro.bio) 
+      ? (pro.biografia || pro.bio) 
+      : (pro.trade || (pro.oficios && pro.oficios.length > 0)
+        ? `Profesional especializado en ${pro.trade || pro.oficios.join(', ')}. Trabajo con seriedad, puntualidad y garantía en cada tarea.` 
+        : `Profesional verificado registrado en la plataforma.`),
   };
 
   // Calcular las fechas relativas
@@ -213,36 +231,35 @@ export default function PerfilProfesional() {
               </div>
             </div>
 
-            {/* Sección Galería Bento */}
+            {/* Sección Galería */}
             <div className="flex flex-col gap-4">
               <div className="flex justify-between items-end px-1">
                 <h2 className="text-xl font-bold text-[#00355f]">Galería de trabajos</h2>
-                <button className="text-[#00355f] text-sm font-bold hover:underline">Ver todo</button>
+                {(perfilCompleto.portafolio && perfilCompleto.portafolio.length > 0) && (
+                  <span className="text-gray-400 text-xs font-bold">{perfilCompleto.portafolio.length} foto{perfilCompleto.portafolio.length > 1 ? 's' : ''}</span>
+                )}
               </div>
               
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="col-span-2 row-span-2 relative group overflow-hidden rounded-2xl h-64 md:h-auto border border-gray-100 shadow-sm">
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent z-10"></div>
-                  <img 
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
-                    alt="Trabajo realizado" 
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuA0lRHfSHITKHttZBmEZDQNs2_VEsKjOPwJ2LJwrm1p8phhvgv0Odvw2RFR2bnl_SCgi6qA-TT96rEupvC3_rc8574TtEr3lCyFcork9t24aLLquXMRyIsgROrlwwd7Lv8E0z1_IMe-TcLBOI4BQJDxnEdkxO8pGdySRa99LB3XhIY9oo-qRITd2Qpp6b0xIsilRvYx5EuiIkSEQWp5zL90LXtpmOjevzMmQ7WvfRDoTK_Bjds8sfd1K_0EwSitJZeXIXlkMcJvFAwN"
-                  />
-                  <span className="absolute bottom-4 left-4 z-20 text-white font-bold text-sm">Trabajo destacado</span>
+              {(!perfilCompleto.portafolio || perfilCompleto.portafolio.length === 0) ? (
+                <div className="bg-white border border-gray-100 rounded-2xl p-8 text-center text-gray-400 text-sm font-medium">
+                  📷 Este profesional aún no ha subido fotos a su galería de trabajos.
                 </div>
-                <div className="relative group overflow-hidden rounded-2xl aspect-square border border-gray-100 shadow-sm">
-                  <img className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="Trabajo 2" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBnyVVnQONVJ8PZ8gnbQKGIYn2AHQfQ49zRB76NjAEwDjOCBKI6R3hCKHVjX-ddmL2so9oojEdXtJpiuR495QyGuPFo9j5IDhQqHtPeVv5g3Amp78OXl0xK_1iOT6fJ_uZyCqFnQJek5Gk9zrQCb6j8oYIk_xCGQc7QscqK1rk8ouFHPJpVamKR6XCxBDvfnPqc8wmbLSfESOCGsx_n0C9iOvLND5Nxjqwo7B8unMKjN0NuLrSXe7I3R9xfbQzEmhgHEqxAMyBlX6i3"/>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {perfilCompleto.portafolio.map((item: any, idx: number) => {
+                    const imgUrl = typeof item === 'string' ? item : item.url;
+                    return (
+                      <div key={item.id || idx} className="aspect-square relative group overflow-hidden rounded-2xl border border-gray-100 shadow-sm">
+                        <img 
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                          alt={`Trabajo ${idx + 1}`} 
+                          src={imgUrl}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="relative group overflow-hidden rounded-2xl aspect-square border border-gray-100 shadow-sm">
-                  <img className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="Trabajo 3" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAV3oeUMtvr-62lv2Y7V8pDDLGqViqkXUSExnL9Yfo0ub1BDzCktdL77TZIFRTlnwsPZaRl4idiREt7c3sI-pNMl-BtbuSJ_2kS_20f7zqOPFxDmbINB2P33vsgyFUNwAunfIROZqBHnVlO8JcVkGpFg7py-zlFczeZKLpkQw0Fm4t3CJ2izc1_QKnqKiwh1LQGXUgQpeqThJKHVKVnW7EUWN2weL8PXf-_r8hZtjwdqfRA67EGwAFDe34tvaVrVWVHTYvUfv0cdLFV"/>
-                </div>
-                <div className="col-span-2 relative group overflow-hidden rounded-2xl h-40 border border-gray-100 cursor-pointer shadow-sm">
-                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center transition-opacity z-20 hover:bg-black/40">
-                    <span className="text-white font-bold">+12 fotos más</span>
-                  </div>
-                  <img className="w-full h-full object-cover" alt="Más trabajos" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBHKmtQWygapwtMOi2pQ03eElhxHjNH1m-hrcU7df0gmkXUGP4dBQjF6pca6fNSToaza_zVXSlAPM9973jtn_fQtCDs5zFBf6tVyAEE92R0D0BvJKolUuE_43Fr5dVqUsFUCJh7WzLP0MVnR1h3qgZHbnIeF2PrE5ta1EIw_06o7cNHHVOqdaMRDTXJHvrCTu8sENMU126OSxtU1g7d6rNhalLElfeML20hWhrFG5LKx1FEj_dayskTn6tkNpuypjx2gexBoAm60ng6"/>
-                </div>
-              </div>
+              )}
             </div>
           </div>
 

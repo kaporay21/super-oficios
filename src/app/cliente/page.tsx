@@ -26,6 +26,7 @@ function HomePageContent() {
   const [clientProfile, setClientProfile] = useState<any>(null);
   const [myJobs, setMyJobs] = useState<any[]>([]);
   const [professionals, setProfessionals] = useState<any[]>([]);
+  const [unreadNotifsCount, setUnreadNotifsCount] = useState<number>(0);
 
   React.useEffect(() => {
     // Check if we should show confetti
@@ -46,14 +47,38 @@ function HomePageContent() {
 
   React.useEffect(() => {
     const loadClientData = async () => {
-      const clientName = clientProfile?.nombre || '';
+      const clientName = clientProfile?.nombre || authProfile?.nombre || '';
+      const userId = authProfile?.id;
       
       try {
-        const allJobs = await dbHelper.getJobs();
-        const clientJobs = clientName ? allJobs.filter((j: any) => j.empleador === clientName) : [];
+        const [allJobs, allPostulaciones] = await Promise.all([
+          dbHelper.getJobs().catch(() => []),
+          dbHelper.getAllPostulaciones().catch(() => [])
+        ]);
+
+        const clientJobs = (clientName || userId
+          ? allJobs.filter((j: any) => j.empleador === clientName || j.user_id === userId)
+          : allJobs
+        ).map((j: any) => {
+          const count = allPostulaciones.filter((p: any) => String(p.empleoId) === String(j.id) || String(p.trabajoId) === String(j.id)).length;
+          return {
+            ...j,
+            presupuestosCount: count
+          };
+        });
         setMyJobs(clientJobs);
       } catch (error) {
         console.error("Error al cargar trabajos:", error);
+      }
+
+      if (userId) {
+        try {
+          const notifs = await dbHelper.getNotificaciones(userId);
+          const unread = notifs.filter((n: any) => !n.leida).length;
+          setUnreadNotifsCount(unread);
+        } catch (e) {
+          setUnreadNotifsCount(0);
+        }
       }
 
       try {
@@ -65,7 +90,7 @@ function HomePageContent() {
       }
     };
     loadClientData();
-  }, [clientProfile]);
+  }, [clientProfile, authProfile]);
 
   // Función actualizada para manejar la navegación
   const handleNavigate = (screen: Screen | 'publish_job') => {
@@ -94,9 +119,11 @@ function HomePageContent() {
           {/* Iconos derechos y Usuario */}
           <div className="flex items-center gap-5">
             <Search className="text-[#00355f] w-5 h-5 cursor-pointer hidden md:block" />
-            <div className="relative cursor-pointer">
+            <div className="relative cursor-pointer" onClick={() => router.push('/notificaciones')}>
               <Bell className="text-[#00355f] w-5 h-5" />
-              <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+              {unreadNotifsCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+              )}
             </div>
             <div 
               className="hidden md:flex items-center gap-2 cursor-pointer"
@@ -160,9 +187,11 @@ function HomePageContent() {
               onClick={() => router.push('/notificaciones')}
               className="flex flex-col items-center gap-1 text-gray-400 hover:text-gray-600 cursor-pointer relative"
             >
-              <div className="p-1.5">
+              <div className="p-1.5 relative">
                 <Bell className="w-6 h-6" />
-                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
+                {unreadNotifsCount > 0 && (
+                  <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
+                )}
               </div>
               <span className="text-[11px] font-medium">Notificaciones</span>
             </div>
@@ -500,10 +529,10 @@ const HomeClient: React.FC<HomeClientProps> = ({
               onClick={() => onNavigate('job_detail')}
               className="bg-white border border-gray-100 p-5 rounded-2xl shadow-sm hover:shadow-md hover:border-[#fc8127]/50 transition-all cursor-pointer flex flex-col justify-between relative"
             >
-              {/* NUEVO: Globo de notificaciones de presupuestos simulado en la primera tarjeta */}
-              {index === 0 && (
+              {/* Globo de notificaciones de presupuestos reales desde Supabase */}
+              {job.presupuestosCount > 0 && (
                 <div className="absolute -top-2 -right-2 bg-[#fc8127] text-white text-[11px] font-black px-3 py-1 rounded-full shadow-md border-2 border-white z-10 animate-pulse">
-                  3 Presupuestos
+                  {job.presupuestosCount} {job.presupuestosCount === 1 ? 'Presupuesto' : 'Presupuestos'}
                 </div>
               )}
 

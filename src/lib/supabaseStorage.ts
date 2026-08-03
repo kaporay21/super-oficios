@@ -71,7 +71,7 @@ export async function uploadImageToSupabase(
       return { publicUrl: mockUrl, error: null };
     }
 
-    // Subida real a Supabase Storage
+    // Subida a Supabase Storage
     const { data, error } = await supabase.storage
       .from(bucket)
       .upload(path, compressedFile, {
@@ -79,8 +79,21 @@ export async function uploadImageToSupabase(
       });
 
     if (error) {
-      console.error('[Storage] Error al subir el archivo:', error);
-      return { publicUrl: null, error };
+      console.warn('[Storage] Error al subir a Supabase Storage (se aplicará fallback base64 seguro):', error);
+      
+      // Fallback transparente si el bucket no fue creado en Supabase o da error de permisos
+      try {
+        const reader = new FileReader();
+        const base64Url = await new Promise<string>((resolve, reject) => {
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error('Error al leer el archivo en base64'));
+          reader.readAsDataURL(compressedFile);
+        });
+
+        return { publicUrl: base64Url, error: null };
+      } catch (fallbackErr) {
+        return { publicUrl: null, error };
+      }
     }
 
     // Obtener la URL pública del archivo subido
@@ -91,6 +104,17 @@ export async function uploadImageToSupabase(
     return { publicUrl: urlData.publicUrl, error: null };
   } catch (err: any) {
     console.error('[Storage] Error crítico en uploadImageToSupabase:', err);
-    return { publicUrl: null, error: err };
+    try {
+      const compressedFile = await compressImage(file);
+      const reader = new FileReader();
+      const base64Url = await new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Error al leer el archivo en base64'));
+        reader.readAsDataURL(compressedFile);
+      });
+      return { publicUrl: base64Url, error: null };
+    } catch {
+      return { publicUrl: null, error: err };
+    }
   }
 }

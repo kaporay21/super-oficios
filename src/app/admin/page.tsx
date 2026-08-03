@@ -6,7 +6,10 @@ import {
   Users, BarChart3, Send, MessageSquare, Check, Trash2,
   Settings, LogOut, Search, Filter, ShieldCheck, CheckCircle2,
   TrendingUp, AlertCircle, Crown, Info, RefreshCw, X, ShieldAlert,
-  Edit2, Eye, Shield, UserX, UserCheck, Award, FileText, CheckCircle
+  Edit2, Eye, Shield, UserX, UserCheck, Award, FileText, CheckCircle,
+  Activity, Zap, Ban, Clock, TriangleAlert, CreditCard, DollarSign, Wallet,
+  Sliders, ListPlus, Target, History, Star, Megaphone, Image, CalendarDays,
+  ToggleLeft, ToggleRight, ChevronRight, Lightbulb, Sparkles
 } from 'lucide-react';
 import Logo from '@/components/Logo';
 import AuthGuard from '@/components/AuthGuard';
@@ -42,7 +45,11 @@ function AdminContent() {
   };
   
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<'resumen' | 'analiticas' | 'usuarios' | 'verificaciones' | 'trabajos' | 'marketing' | 'soporte'>('resumen');
+  const [activeTab, setActiveTab] = useState<
+    'resumen' | 'analiticas' | 'usuarios' | 'verificaciones' | 'trabajos' |
+    'marketing' | 'soporte' | 'seguridad' | 'financiero' | 'configuracion' |
+    'feedback' | 'campanas'
+  >('resumen');
 
   // Search & Filter state
   const [userSearch, setUserSearch] = useState('');
@@ -55,6 +62,7 @@ function AdminContent() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [postulaciones, setPostulaciones] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [denuncias, setDenuncias] = useState<any[]>([]);
 
   // Sub-tabs and selectors for Bolsa de Empleo
   const [jobSubTab, setJobSubTab] = useState<'muro' | 'bolsa'>('muro');
@@ -71,6 +79,23 @@ function AdminContent() {
   const [marketingTitle, setMarketingTitle] = useState('');
   const [marketingBody, setMarketingBody] = useState('');
   const [marketingSuccess, setMarketingSuccess] = useState(false);
+  const [marketingSending, setMarketingSending] = useState(false);
+  const [marketingError, setMarketingError] = useState('');
+
+  // Marketing sub-tabs
+  const [marketingSubTab, setMarketingSubTab] = useState<'notificaciones' | 'campanas'>('notificaciones');
+
+  // Campaign form state
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [campaignForm, setCampaignForm] = useState({
+    nombre: '', banner: '', fechaInicio: '', fechaFin: '',
+    categoria: 'Todos', beneficio: '', botonTexto: '', botonUrl: '',
+    tipo: 'Campaña', activa: true
+  });
+
+  // Feedbacks state
+  const [feedbacks, setFeedbacks] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
   // Initialize data
   useEffect(() => {
@@ -129,22 +154,76 @@ function AdminContent() {
     };
     loadPostulaciones();
 
-    // 5. Load announcements
-    const storedAnnouncements = localStorage.getItem('oficiosya_global_notifications');
-    if (storedAnnouncements) {
-      setAnnouncements(JSON.parse(storedAnnouncements));
-    }
+    // 5. Load announcements from Supabase (stored as sistema notifications with no user filter)
+    // We'll track sent campaigns in state from users' notifications.
+    // For now: load from admin's own notification list as reference
+    setAnnouncements([]);
+
+    // 6. Load denuncias/reportes (tickets of type Denuncia)
+    const loadDenuncias = async () => {
+      try {
+        const allTickets = await dbHelper.getTodosLosTicketsAdmin();
+        const soloReportes = allTickets
+          .filter((t: any) => t.categoria === 'Denuncia' || t.categoria === 'Reporte')
+          .map((t: any) => ({
+            id: t.id,
+            codigo: t.codigo_ticket || `#D-${t.id.slice(0, 6).toUpperCase()}`,
+            tipo: t.categoria || 'Denuncia',
+            mensaje: t.mensaje,
+            nombre: t.usuario?.nombre || 'Usuario',
+            email: t.usuario?.email || '',
+            fecha: t.created_at ? new Date(t.created_at).toLocaleDateString('es-AR') : 'Reciente',
+            estado: t.estado || 'Recibida',
+          }));
+        setDenuncias(soloReportes);
+      } catch (err) {
+        console.error('Error al cargar denuncias:', err);
+      }
+    };
+    loadDenuncias();
+
+    // 7. Load feedbacks (sugerencias)
+    const loadFeedbacks = async () => {
+      try {
+        const allTickets = await dbHelper.getTodosLosTicketsAdmin();
+        const soloSugerencias = allTickets
+          .filter((t: any) => t.categoria === 'Sugerencia' || t.categoria === 'Feedback')
+          .map((t: any) => ({
+            id: t.id,
+            titulo: t.asunto || t.mensaje?.slice(0, 60) || 'Sugerencia',
+            mensaje: t.mensaje,
+            nombre: t.usuario?.nombre || 'Usuario',
+            email: t.usuario?.email || '',
+            fecha: t.created_at ? new Date(t.created_at).toLocaleDateString('es-AR') : 'Reciente',
+            estado: t.estado || 'Recibida',
+            rol: t.usuario?.role || 'cliente',
+          }));
+        setFeedbacks(soloSugerencias);
+      } catch (err) {
+        console.error('Error al cargar feedbacks:', err);
+      }
+    };
+    loadFeedbacks();
+
+    // 8. Load audit logs from Supabase
+    const loadAuditLogs = async () => {
+      try {
+        const logs = await dbHelper.getAuditLogs();
+        setAuditLogs(logs);
+      } catch (err) {
+        console.error('Error al cargar logs de auditoría:', err);
+      }
+    };
+    loadAuditLogs();
   }, []);
 
   // Update lists
   const saveUsers = async (updatedList: any[]) => {
     setUsers(updatedList);
-    localStorage.setItem('oficiosya_admin_users', JSON.stringify(updatedList));
   };
 
   const saveTickets = (updatedList: any[]) => {
     setTickets(updatedList);
-    localStorage.setItem('oficiosya_tickets', JSON.stringify(updatedList));
   };
 
   const saveJobs = (updatedList: any[]) => {
@@ -202,6 +281,13 @@ function AdminContent() {
 
     try {
       await dbHelper.updateUserVerification(id, true, 'Validado');
+      // Notificar al profesional que su identidad fue verificada
+      await dbHelper.crearNotificacion({
+        usuario_id: id,
+        tipo: 'sistema',
+        titulo: '✅ Identidad Verificada',
+        descripcion: '¡Felicitaciones! Tu identidad (DNI) fue revisada y aprobada por el equipo de OficiosYa. Ahora tenés el sello de profesional verificado.',
+      });
       alert('✅ Insignia de Identidad Verificada (DNI) otorgada con éxito.');
     } catch (e) {
       console.error("Error al validar DNI en BD:", e);
@@ -217,6 +303,13 @@ function AdminContent() {
 
     try {
       await dbHelper.updateUserVerification(id, true, undefined, true, 'Validado');
+      // Notificar al profesional que sus certificados fueron aprobados
+      await dbHelper.crearNotificacion({
+        usuario_id: id,
+        tipo: 'sistema',
+        titulo: '🏆 Certificados Aprobados',
+        descripcion: '¡Tu expediente y certificados fueron aprobados! Ya contás con el sello de Profesional Matriculado / Certificado en tu perfil.',
+      });
       alert('🏆 Insignia de Profesional Matriculado / Certificado otorgada con éxito.');
     } catch (e) {
       console.error("Error al validar certificados en BD:", e);
@@ -249,30 +342,64 @@ function AdminContent() {
     }
   };
 
-  // Marketing submit
-  const handleSendMarketing = (e: React.FormEvent) => {
+  // Marketing submit — sends real notifications to Supabase for all target users
+  const handleSendMarketing = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!marketingTitle || !marketingBody) return;
 
-    const newAnnouncement = {
-      id: Date.now().toString(),
-      titulo: marketingTitle,
-      mensaje: marketingBody,
-      destinatarios: marketingTarget,
-      fecha: new Date().toLocaleDateString('es-AR'),
-      tipo: 'Promo'
-    };
+    setMarketingSending(true);
+    setMarketingError('');
 
-    // Save in global notifications
-    const storedAnnouncements = JSON.parse(localStorage.getItem('oficiosya_global_notifications') || '[]');
-    storedAnnouncements.unshift(newAnnouncement);
-    localStorage.setItem('oficiosya_global_notifications', JSON.stringify(storedAnnouncements));
-    setAnnouncements(storedAnnouncements);
+    try {
+      // Determine which users should receive the notification
+      let targetUsers: any[] = [];
+      if (marketingTarget === 'Todos') {
+        targetUsers = users;
+      } else if (marketingTarget === 'Cliente') {
+        targetUsers = users.filter(u => u.role === 'Cliente');
+      } else if (marketingTarget === 'Profesional') {
+        targetUsers = users.filter(u => u.role === 'Profesional');
+      }
 
-    setMarketingSuccess(true);
-    setMarketingTitle('');
-    setMarketingBody('');
-    setTimeout(() => setMarketingSuccess(false), 3000);
+      if (targetUsers.length === 0) {
+        setMarketingError('No hay usuarios en el segmento seleccionado.');
+        setMarketingSending(false);
+        return;
+      }
+
+      // Send a real notification to each target user in Supabase
+      const promises = targetUsers.map(u =>
+        dbHelper.crearNotificacion({
+          usuario_id: u.id,
+          tipo: 'sistema',
+          titulo: `📢 ${marketingTitle}`,
+          descripcion: marketingBody,
+        })
+      );
+      await Promise.all(promises);
+
+      // Track in local state for the history panel
+      const newAnnouncement = {
+        id: Date.now().toString(),
+        titulo: marketingTitle,
+        mensaje: marketingBody,
+        destinatarios: marketingTarget,
+        fecha: new Date().toLocaleDateString('es-AR'),
+        tipo: 'Promo',
+        enviados: targetUsers.length,
+      };
+      setAnnouncements(prev => [newAnnouncement, ...prev]);
+
+      setMarketingSuccess(true);
+      setMarketingTitle('');
+      setMarketingBody('');
+      setTimeout(() => setMarketingSuccess(false), 4000);
+    } catch (err: any) {
+      console.error('Error enviando campaña:', err);
+      setMarketingError('Ocurrió un error al enviar la campaña. Intenta nuevamente.');
+    } finally {
+      setMarketingSending(false);
+    }
   };
 
   // Support ticket actions
@@ -320,100 +447,120 @@ function AdminContent() {
     router.push('/login');
   };
 
+  // Feedback status update
+  const handleFeedbackStatus = async (id: string, nuevoEstado: string) => {
+    setFeedbacks(prev => prev.map(f => f.id === id ? { ...f, estado: nuevoEstado } : f));
+    try {
+      await dbHelper.responderTicketAdmin(id, '', nuevoEstado);
+    } catch (e) {
+      console.error('Error al actualizar estado del feedback:', e);
+    }
+  };
+
+  // Campaign actions
+  const handleCreateCampaign = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!campaignForm.nombre) return;
+    const newCampaign = {
+      id: Date.now().toString(),
+      ...campaignForm,
+      fechaCreacion: new Date().toLocaleDateString('es-AR'),
+    };
+    setCampaigns(prev => [newCampaign, ...prev]);
+    setCampaignForm({ nombre: '', banner: '', fechaInicio: '', fechaFin: '', categoria: 'Todos', beneficio: '', botonTexto: '', botonUrl: '', tipo: 'Campaña', activa: true });
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex font-sans selection:bg-[#0f4c81] selection:text-white">
       
-      {/* Sidebar Admin */}
+      {/* Sidebar Admin — Rediseño con secciones agrupadas */}
       <aside className="w-64 bg-[#00355f] text-white hidden md:flex flex-col shadow-xl z-20 shrink-0">
-        <div className="p-6 border-b border-white/10 flex flex-col gap-3">
+        {/* Logo y badge admin */}
+        <div className="p-5 border-b border-white/10 flex flex-col gap-2">
           <Logo theme="dark" size="md" />
-          <span className="text-[10px] w-fit font-bold bg-[#fc8127] text-white px-2 py-0.5 rounded uppercase tracking-wider">
-            Super Administrador
-          </span>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-[9px] font-black bg-[#fc8127] text-white px-2 py-0.5 rounded-full uppercase tracking-widest">Super Admin</span>
+            <span className="text-[10px] text-blue-300 font-medium truncate">{profile?.nombre || user?.email}</span>
+          </div>
         </div>
 
-        <nav className="flex-1 py-6 space-y-2 px-3">
-          <button 
-            onClick={() => setActiveTab('resumen')} 
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'resumen' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}
-          >
-            <BarChart3 className="w-5 h-5" /> Resumen General
-          </button>
+        <nav className="flex-1 py-4 overflow-y-auto px-3 space-y-1 scrollbar-thin">
 
-          <button 
-            onClick={() => setActiveTab('analiticas')} 
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'analiticas' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}
-          >
-            <TrendingUp className="w-5 h-5" /> Métricas Analíticas
-          </button>
+          {/* SECCIÓN: OPERACIONES */}
+          <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest px-3 pt-3 pb-1">Operaciones</p>
           
-          <button 
-            onClick={() => setActiveTab('usuarios')} 
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'usuarios' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}
-          >
-            <Users className="w-5 h-5" /> Gestión de Usuarios
+          <button onClick={() => setActiveTab('resumen')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'resumen' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
+            <BarChart3 className="w-4 h-4 shrink-0" /> Resumen General
           </button>
 
-          <button 
-            onClick={() => setActiveTab('verificaciones')} 
-            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'verificaciones' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}
-          >
-            <div className="flex items-center gap-3">
-              <ShieldCheck className="w-5 h-5" /> Verificaciones
-            </div>
-            {pendingVerificationsCount > 0 && (
-              <span className="bg-orange-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
-                {pendingVerificationsCount}
-              </span>
-            )}
+          <button onClick={() => setActiveTab('analiticas')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'analiticas' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
+            <TrendingUp className="w-4 h-4 shrink-0" /> Métricas y Analíticas
           </button>
 
-          <button 
-            onClick={() => setActiveTab('trabajos')} 
-            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'trabajos' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}
-          >
-            <div className="flex items-center gap-3">
-              <Settings className="w-5 h-5" /> Moderar Trabajos
-            </div>
-            {jobs.filter(j => j.reportes > 0).length > 0 && (
-              <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse">
-                {jobs.filter(j => j.reportes > 0).length}
-              </span>
-            )}
+          {/* SECCIÓN: COMUNIDAD */}
+          <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest px-3 pt-4 pb-1">Comunidad</p>
+
+          <button onClick={() => setActiveTab('usuarios')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'usuarios' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
+            <Users className="w-4 h-4 shrink-0" /> Gestión de Usuarios
           </button>
 
-          <button 
-            onClick={() => setActiveTab('marketing')} 
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'marketing' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}
-          >
-            <Send className="w-5 h-5" /> Campañas de Marketing
+          <button onClick={() => setActiveTab('verificaciones')} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'verificaciones' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
+            <div className="flex items-center gap-3"><ShieldCheck className="w-4 h-4 shrink-0" /> Verificaciones</div>
+            {pendingVerificationsCount > 0 && <span className="bg-orange-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">{pendingVerificationsCount}</span>}
           </button>
 
-          <button 
-            onClick={() => setActiveTab('soporte')} 
-            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'soporte' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}
-          >
-            <div className="flex items-center gap-3">
-              <MessageSquare className="w-5 h-5" /> Buzón de Soporte
-            </div>
-            {tickets.filter(t => t.estado === 'Pendiente').length > 0 && (
-              <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
-                {tickets.filter(t => t.estado === 'Pendiente').length}
-              </span>
-            )}
+          <button onClick={() => setActiveTab('trabajos')} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'trabajos' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
+            <div className="flex items-center gap-3"><Settings className="w-4 h-4 shrink-0" /> Moderar Trabajos</div>
+            {jobs.filter(j => j.reportes > 0).length > 0 && <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse">{jobs.filter(j => j.reportes > 0).length}</span>}
           </button>
+
+          {/* SECCIÓN: COMUNICACIÓN */}
+          <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest px-3 pt-4 pb-1">Comunicación</p>
+
+          <button onClick={() => { setActiveTab('marketing'); setMarketingSubTab('notificaciones'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'marketing' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
+            <Megaphone className="w-4 h-4 shrink-0" /> Notificaciones
+          </button>
+
+          <button onClick={() => { setActiveTab('campanas'); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'campanas' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
+            <Sparkles className="w-4 h-4 shrink-0" /> Campañas y Banners
+            {campaigns.filter(c => c.activa).length > 0 && <span className="ml-auto bg-green-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">{campaigns.filter(c => c.activa).length}</span>}
+          </button>
+
+          <button onClick={() => setActiveTab('soporte')} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'soporte' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
+            <div className="flex items-center gap-3"><MessageSquare className="w-4 h-4 shrink-0" /> Buzón de Soporte</div>
+            {tickets.filter(t => t.estado === 'Pendiente' || t.estado === 'Recibida').length > 0 && <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">{tickets.filter(t => t.estado === 'Pendiente' || t.estado === 'Recibida').length}</span>}
+          </button>
+
+          <button onClick={() => setActiveTab('feedback')} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'feedback' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
+            <div className="flex items-center gap-3"><Star className="w-4 h-4 shrink-0" /> Centro de Feedback</div>
+            {feedbacks.filter(f => f.estado === 'Recibida').length > 0 && <span className="bg-yellow-400 text-gray-900 text-[9px] font-black px-1.5 py-0.5 rounded-full">{feedbacks.filter(f => f.estado === 'Recibida').length}</span>}
+          </button>
+
+          {/* SECCIÓN: PLATAFORMA */}
+          <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest px-3 pt-4 pb-1">Plataforma</p>
+
+          <button onClick={() => setActiveTab('seguridad')} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'seguridad' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
+            <div className="flex items-center gap-3"><Shield className="w-4 h-4 shrink-0" /> Centro de Seguridad</div>
+            {denuncias.filter(d => d.estado === 'Recibida').length > 0 && <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse">{denuncias.filter(d => d.estado === 'Recibida').length}</span>}
+          </button>
+
+          <button onClick={() => setActiveTab('financiero')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'financiero' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
+            <Wallet className="w-4 h-4 shrink-0" /> Finanzas y Planes
+          </button>
+
+          <button onClick={() => setActiveTab('configuracion')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'configuracion' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
+            <Sliders className="w-4 h-4 shrink-0" /> Ajustes y Reglas
+          </button>
+
         </nav>
 
-        <div className="p-4 border-t border-white/10 space-y-2">
-          <button 
-            onClick={handlePurgeAllData}
-            disabled={clearing}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-600/80 hover:bg-red-600 text-white rounded-xl text-xs font-bold transition-colors"
-          >
-            <Trash2 className="w-4 h-4" /> {clearing ? 'Borrando...' : 'Vaciar DB (Plataforma en 0)'}
+        {/* Footer del sidebar */}
+        <div className="p-3 border-t border-white/10 space-y-1.5">
+          <button onClick={handlePurgeAllData} disabled={clearing} className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-600/80 hover:bg-red-600 text-white rounded-xl text-xs font-bold transition-colors">
+            <Trash2 className="w-3.5 h-3.5" /> {clearing ? 'Borrando...' : 'Vaciar DB'}
           </button>
-          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-blue-200 hover:bg-white/10 transition-colors text-sm font-bold">
-            <LogOut className="w-5 h-5" /> Cerrar Sesión
+          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-blue-200 hover:bg-white/10 transition-colors text-xs font-bold">
+            <LogOut className="w-4 h-4" /> Cerrar Sesión
           </button>
         </div>
       </aside>
@@ -423,7 +570,19 @@ function AdminContent() {
         {/* Header Admin */}
         <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 shadow-sm shrink-0">
           <h2 className="text-xl font-extrabold text-[#00355f] capitalize">
-            {activeTab === 'analiticas' ? 'Métricas Analíticas y Tráfico' : activeTab === 'trabajos' ? 'Moderación de Solicitudes' : activeTab === 'usuarios' ? 'Gestión de Usuarios' : activeTab}
+            {activeTab === 'resumen' ? 'Resumen General' : 
+           activeTab === 'analiticas' ? 'Métricas Analíticas y Tráfico' : 
+           activeTab === 'trabajos' ? 'Moderación de Solicitudes' : 
+           activeTab === 'usuarios' ? 'Gestión de Usuarios' : 
+           activeTab === 'seguridad' ? 'Centro de Seguridad y Denuncias' :
+           activeTab === 'financiero' ? 'Panel Financiero y Suscripciones' :
+           activeTab === 'configuracion' ? 'Configuración Global de la App' :
+           activeTab === 'feedback' ? 'Centro de Feedback ⭐' :
+           activeTab === 'campanas' ? 'Campañas y Banners ✨' :
+           activeTab === 'marketing' ? 'Notificaciones Masivas 📢' :
+           activeTab === 'soporte' ? 'Buzón de Soporte 💬' :
+           activeTab === 'verificaciones' ? 'Verificaciones de Identidad' :
+           activeTab}
           </h2>
           <div className="flex items-center gap-4">
             <button 
@@ -1076,7 +1235,13 @@ function AdminContent() {
 
                   {marketingSuccess && (
                     <div className="p-3 bg-green-50 border border-green-200 text-green-700 text-xs font-bold rounded-xl flex items-center gap-2 animate-in fade-in">
-                      <CheckCircle2 className="w-4 h-4" /> ¡Notificación masiva inyectada con éxito!
+                      <CheckCircle2 className="w-4 h-4" /> ¡Notificación masiva enviada a Supabase con éxito! Los usuarios ya la pueden ver.
+                    </div>
+                  )}
+
+                  {marketingError && (
+                    <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-xl flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4" /> {marketingError}
                     </div>
                   )}
 
@@ -1120,9 +1285,14 @@ function AdminContent() {
 
                     <button 
                       type="submit"
-                      className="w-full py-3.5 bg-[#fc8127] hover:bg-[#e67320] text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-95"
+                      disabled={marketingSending}
+                      className="w-full py-3.5 bg-[#fc8127] hover:bg-[#e67320] disabled:opacity-60 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-95"
                     >
-                      <Send className="w-4 h-4" /> Enviar Notificación Masiva
+                      {marketingSending ? (
+                        <><RefreshCw className="w-4 h-4 animate-spin" /> Enviando a usuarios...</>
+                      ) : (
+                        <><Send className="w-4 h-4" /> Enviar Notificación Masiva</>
+                      )}
                     </button>
                   </form>
                 </div>
@@ -1132,7 +1302,7 @@ function AdminContent() {
                   <h3 className="text-base font-bold text-[#00355f]">Historial de Campañas</h3>
                   <div className="divide-y divide-gray-100 space-y-3 max-h-[450px] overflow-y-auto">
                     {announcements.length === 0 ? (
-                      <p className="text-xs text-gray-400 py-4 text-center">No se han realizado campañas masivas.</p>
+                      <p className="text-xs text-gray-400 py-4 text-center">Aún no se han enviado campañas en esta sesión.</p>
                     ) : (
                       announcements.map(ann => (
                         <div key={ann.id} className="pt-3 space-y-1">
@@ -1142,6 +1312,9 @@ function AdminContent() {
                           </div>
                           <p className="text-xs font-extrabold text-gray-900 mt-1">{ann.titulo}</p>
                           <p className="text-[10px] text-gray-500 line-clamp-2 leading-relaxed">{ann.mensaje}</p>
+                          {ann.enviados && (
+                            <p className="text-[10px] text-green-600 font-bold">✅ Enviado a {ann.enviados} usuario(s) en Supabase</p>
+                          )}
                         </div>
                       ))
                     )}
@@ -1161,9 +1334,22 @@ function AdminContent() {
                   <p className="text-xs text-gray-500">Administra los mensajes recibidos desde el formulario de soporte.</p>
                 </div>
                 <button 
-                  onClick={() => {
-                    const localData = localStorage.getItem('oficiosya_tickets');
-                    if (localData) setTickets(JSON.parse(localData));
+                  onClick={async () => {
+                    try {
+                      const allTickets = await dbHelper.getTodosLosTicketsAdmin();
+                      const formatted = allTickets.map((t: any) => ({
+                        id: t.id,
+                        codigo: t.codigo_ticket || `#SO-${t.id.slice(0, 6)}`,
+                        tipo: t.categoria || 'Consulta',
+                        mensaje: t.mensaje,
+                        nombre: t.usuario?.nombre || 'Usuario',
+                        email: t.usuario?.email || '',
+                        fecha: t.created_at ? new Date(t.created_at).toLocaleDateString('es-AR') : 'Reciente',
+                        estado: t.estado || 'Recibida',
+                        respuesta: t.respuesta_admin || ''
+                      }));
+                      setTickets(formatted);
+                    } catch (e) { console.error(e); }
                   }}
                   className="p-2 border border-gray-200 hover:bg-gray-100 rounded-xl transition-all active:scale-95"
                   title="Actualizar consultas"
@@ -1293,6 +1479,627 @@ function AdminContent() {
                     </div>
                   ))
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 7: CENTRO DE SEGURIDAD Y DENUNCIAS */}
+          {activeTab === 'seguridad' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              
+              {/* Alertas de seguridad automáticas */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className={`p-5 rounded-3xl border flex items-center gap-4 ${
+                  users.filter(u => u.status === 'Suspendido').length > 0
+                    ? 'bg-red-50 border-red-200'
+                    : 'bg-green-50 border-green-200'
+                }`}>
+                  <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                    <Ban className="w-6 h-6 text-red-500" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-gray-500 uppercase">Cuentas Suspendidas</p>
+                    <p className="text-2xl font-black text-gray-900">{users.filter(u => u.status === 'Suspendido').length}</p>
+                  </div>
+                </div>
+
+                <div className={`p-5 rounded-3xl border flex items-center gap-4 ${
+                  denuncias.filter(d => d.estado === 'Recibida').length > 0
+                    ? 'bg-orange-50 border-orange-200'
+                    : 'bg-green-50 border-green-200'
+                }`}>
+                  <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                    <TriangleAlert className="w-6 h-6 text-orange-500" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-gray-500 uppercase">Denuncias Abiertas</p>
+                    <p className="text-2xl font-black text-gray-900">{denuncias.filter(d => d.estado === 'Recibida').length}</p>
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-3xl border bg-blue-50 border-blue-200 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                    <Shield className="w-6 h-6 text-[#00355f]" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-gray-500 uppercase">Total Denuncias</p>
+                    <p className="text-2xl font-black text-gray-900">{denuncias.length}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Reglas de alerta automática */}
+              <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 space-y-4">
+                <div className="flex items-center gap-3">
+                  <Zap className="w-5 h-5 text-[#fc8127]" />
+                  <h3 className="text-base font-bold text-[#00355f]">Alertas Automáticas del Sistema</h3>
+                </div>
+                <div className="space-y-3">
+                  {[
+                    {
+                      icono: <Clock className="w-4 h-4 text-yellow-500" />,
+                      color: 'bg-yellow-50 border-yellow-200',
+                      titulo: 'Profesionales con múltiples cancelaciones',
+                      detalle: `${users.filter(u => u.role === 'Profesional' && u.status === 'Suspendido').length} profesional(es) suspendidos en la plataforma.`,
+                      accion: () => setActiveTab('usuarios'),
+                      textoAccion: 'Ver usuarios',
+                    },
+                    {
+                      icono: <AlertCircle className="w-4 h-4 text-red-500" />,
+                      color: 'bg-red-50 border-red-200',
+                      titulo: 'Denuncias sin responder',
+                      detalle: `${denuncias.filter(d => d.estado === 'Recibida').length} denuncia(s) esperando revisión del equipo.`,
+                      accion: null,
+                      textoAccion: null,
+                    },
+                    {
+                      icono: <ShieldCheck className="w-4 h-4 text-orange-500" />,
+                      color: 'bg-orange-50 border-orange-200',
+                      titulo: 'Verificaciones de identidad pendientes',
+                      detalle: `${pendingVerificationsCount} profesional(es) esperan aprobación de DNI o certificados.`,
+                      accion: () => setActiveTab('verificaciones'),
+                      textoAccion: 'Ir a Verificaciones',
+                    },
+                  ].map((alerta, i) => (
+                    <div key={i} className={`flex items-center justify-between p-4 rounded-2xl border ${alerta.color}`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center shadow-sm">{alerta.icono}</div>
+                        <div>
+                          <p className="text-xs font-bold text-gray-900">{alerta.titulo}</p>
+                          <p className="text-[11px] text-gray-500">{alerta.detalle}</p>
+                        </div>
+                      </div>
+                      {alerta.accion && (
+                        <button
+                          onClick={alerta.accion}
+                          className="text-[11px] text-[#00355f] font-bold hover:underline shrink-0 ml-4"
+                        >
+                          {alerta.textoAccion} →
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Lista de Denuncias */}
+              <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-gray-200 bg-gray-50/50 flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-bold text-[#00355f]">Denuncias y Reportes</h3>
+                    <p className="text-xs text-gray-500">Reportes categorizados como 'Denuncia' o 'Reporte' en el buzón de soporte.</p>
+                  </div>
+                  <span className="text-xs font-bold bg-red-100 text-red-700 px-3 py-1.5 rounded-full">
+                    {denuncias.length} total
+                  </span>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {denuncias.length === 0 ? (
+                    <div className="text-center py-16">
+                      <Shield className="w-10 h-10 text-green-400 mx-auto mb-3" />
+                      <p className="text-sm font-bold text-gray-500">Sin denuncias activas</p>
+                      <p className="text-xs text-gray-400 mt-1">La plataforma está en orden. No hay reportes pendientes.</p>
+                    </div>
+                  ) : (
+                    denuncias.map(d => (
+                      <div key={d.id} className="p-5 flex items-start justify-between gap-4 hover:bg-gray-50 transition-colors">
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 bg-red-100 rounded-xl flex items-center justify-center shrink-0">
+                            <TriangleAlert className="w-4 h-4 text-red-600" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{d.tipo}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                d.estado === 'Resuelto' ? 'bg-green-100 text-green-700' : 
+                                d.estado === 'Recibida' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'
+                              }`}>{d.estado}</span>
+                              <span className="text-[10px] text-gray-400">{d.codigo}</span>
+                            </div>
+                            <p className="text-sm font-bold text-gray-900">{d.nombre} <span className="font-normal text-xs text-gray-400">({d.email})</span></p>
+                            <p className="text-xs text-gray-600 mt-1 line-clamp-2">{d.mensaje}</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                          <span className="text-[10px] text-gray-400">{d.fecha}</span>
+                          <button
+                            onClick={() => {
+                              const target = users.find(u => u.email === d.email);
+                              if (target) {
+                                setSelectedUser(target);
+                              } else {
+                                alert('No se encontró el usuario en la base de datos.');
+                              }
+                            }}
+                            className="text-[11px] bg-[#00355f] text-white font-bold px-3 py-1.5 rounded-lg hover:bg-[#0f4c81] transition-colors"
+                          >
+                            Ver usuario
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Centro de Salud de la Plataforma */}
+              <div className="bg-gradient-to-br from-[#00355f] to-[#0f4c81] p-6 rounded-3xl shadow-md space-y-4 text-white">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/10 rounded-2xl flex items-center justify-center">
+                    <Activity className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold">Centro de Salud de la Plataforma</h3>
+                    <p className="text-xs text-blue-200">Indicadores críticos en tiempo real</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex items-center justify-between bg-white/10 rounded-2xl px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-orange-300" />
+                      <span className="text-xs font-bold text-blue-100">Verificaciones pendientes</span>
+                    </div>
+                    <span className={`text-sm font-black ${pendingVerificationsCount > 0 ? 'text-orange-300' : 'text-green-300'}`}>
+                      {pendingVerificationsCount > 0 ? `⚠️ ${pendingVerificationsCount}` : '✅ 0'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between bg-white/10 rounded-2xl px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-yellow-300" />
+                      <span className="text-xs font-bold text-blue-100">Tickets sin responder</span>
+                    </div>
+                    <span className={`text-sm font-black ${tickets.filter(t => t.estado === 'Pendiente').length > 0 ? 'text-yellow-300' : 'text-green-300'}`}>
+                      {tickets.filter(t => t.estado === 'Pendiente').length > 0 ? `⚠️ ${tickets.filter(t => t.estado === 'Pendiente').length}` : '✅ 0'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between bg-white/10 rounded-2xl px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <TriangleAlert className="w-4 h-4 text-red-300" />
+                      <span className="text-xs font-bold text-blue-100">Denuncias abiertas</span>
+                    </div>
+                    <span className={`text-sm font-black ${denuncias.filter(d => d.estado === 'Recibida').length > 0 ? 'text-red-300' : 'text-green-300'}`}>
+                      {denuncias.filter(d => d.estado === 'Recibida').length > 0 ? `🚨 ${denuncias.filter(d => d.estado === 'Recibida').length}` : '✅ 0'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between bg-white/10 rounded-2xl px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <Ban className="w-4 h-4 text-red-300" />
+                      <span className="text-xs font-bold text-blue-100">Cuentas suspendidas</span>
+                    </div>
+                    <span className={`text-sm font-black ${users.filter(u => u.status === 'Suspendido').length > 0 ? 'text-red-300' : 'text-green-300'}`}>
+                      {users.filter(u => u.status === 'Suspendido').length > 0 ? users.filter(u => u.status === 'Suspendido').length : '✅ 0'}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveTab('seguridad')}
+                  className="w-full py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl transition-all"
+                >
+                  Ver Centro de Seguridad →
+                </button>
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB 8: PANEL FINANCIERO Y PLANES */}
+          {activeTab === 'financiero' && (() => {
+            const profesionales = users.filter(u => u.role === 'Profesional');
+            const totalPro = profesionales.filter(u => u.plan === 'Pro').length;
+            const totalMaster = profesionales.filter(u => u.plan === 'Master').length;
+            const ingresosEstimados = (totalPro * 5000) + (totalMaster * 10000);
+
+            return (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                
+                {/* Resumen Financiero */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-5 rounded-3xl border bg-green-50 border-green-200 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-gray-500 uppercase">Ingresos Mensuales</p>
+                      <p className="text-2xl font-black text-gray-900">${ingresosEstimados.toLocaleString()}</p>
+                    </div>
+                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                      <DollarSign className="w-6 h-6 text-green-600" />
+                    </div>
+                  </div>
+
+                  <div className="p-5 rounded-3xl border bg-blue-50 border-blue-200 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-gray-500 uppercase">Suscripciones Pro</p>
+                      <p className="text-2xl font-black text-gray-900">{totalPro}</p>
+                    </div>
+                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                      <CreditCard className="w-6 h-6 text-[#00355f]" />
+                    </div>
+                  </div>
+
+                  <div className="p-5 rounded-3xl border bg-orange-50 border-orange-200 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-gray-500 uppercase">Suscripciones Master</p>
+                      <p className="text-2xl font-black text-gray-900">{totalMaster}</p>
+                    </div>
+                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                      <Crown className="w-6 h-6 text-[#fc8127]" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Profesionales Premium */}
+                <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[500px]">
+                  <div className="p-6 border-b border-gray-200 bg-gray-50/50">
+                    <h3 className="text-lg font-bold text-[#00355f]">Gestión de Suscripciones Premium</h3>
+                    <p className="text-xs text-gray-500">Administra los planes de los profesionales desde aquí. Puedes mejorar o degradar sus cuentas.</p>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-0">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-gray-50 sticky top-0 border-b border-gray-200">
+                        <tr>
+                          <th className="p-4 font-bold text-gray-600">Profesional</th>
+                          <th className="p-4 font-bold text-gray-600">Plan Actual</th>
+                          <th className="p-4 font-bold text-gray-600">Estado</th>
+                          <th className="p-4 font-bold text-gray-600 text-right">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {profesionales.length === 0 ? (
+                          <tr><td colSpan={4} className="text-center py-8 text-gray-400 font-medium">No hay profesionales registrados.</td></tr>
+                        ) : (
+                          profesionales.map(pro => (
+                            <tr key={pro.id} className="hover:bg-gray-50 transition-colors">
+                              <td className="p-4">
+                                <p className="font-bold text-gray-900">{pro.name}</p>
+                                <p className="text-xs text-gray-500">{pro.email}</p>
+                              </td>
+                              <td className="p-4">
+                                <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider ${
+                                  pro.plan === 'Master' ? 'bg-[#fc8127]/10 text-[#fc8127]' :
+                                  pro.plan === 'Pro' ? 'bg-[#00355f]/10 text-[#00355f]' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}>
+                                  {pro.plan || 'Gratis'}
+                                </span>
+                              </td>
+                              <td className="p-4">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  pro.status === 'Activo' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                }`}>{pro.status}</span>
+                              </td>
+                              <td className="p-4 text-right">
+                                <button 
+                                  onClick={() => setSelectedUser(pro)}
+                                  className="text-xs bg-gray-100 text-gray-800 font-bold px-3 py-1.5 rounded-lg hover:bg-gray-200 transition-colors inline-flex items-center gap-1"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" /> Cambiar plan
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+            );
+          })()}
+
+          {/* TAB 9: CONFIGURACIÓN GLOBAL */}
+          {activeTab === 'configuracion' && (
+            <div className="space-y-6 animate-in fade-in duration-200 h-full overflow-y-auto pb-8 pr-2">
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Gestión de Categorías */}
+                <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-4">
+                  <div className="flex items-center gap-3 border-b border-gray-100 pb-3">
+                    <ListPlus className="w-5 h-5 text-[#00355f]" />
+                    <div>
+                      <h3 className="text-base font-bold text-[#00355f]">Gestión de Oficios</h3>
+                      <p className="text-xs text-gray-500">Administra las categorías disponibles</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="Nuevo oficio (ej: Jardinero)" className="flex-1 p-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#fc8127]" />
+                    <button className="bg-[#fc8127] text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-[#e67320]">Añadir</button>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {['Electricista', 'Plomero', 'Albañil', 'Pintor', 'Gasista', 'Carpintero', 'Técnico PC'].map(cat => (
+                      <span key={cat} className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-700 text-[11px] font-bold rounded-full">
+                        {cat}
+                        <button className="text-gray-400 hover:text-red-500"><X className="w-3 h-3" /></button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sistema de Puntos y Gamificación */}
+                <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-4">
+                  <div className="flex items-center gap-3 border-b border-gray-100 pb-3">
+                    <Target className="w-5 h-5 text-[#fc8127]" />
+                    <div>
+                      <h3 className="text-base font-bold text-[#00355f]">Reglas de Puntos y Fidelización</h3>
+                      <p className="text-xs text-gray-500">¿Cuántos puntos otorga cada acción?</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {[
+                      { accion: 'Completar perfil al 100%', puntos: 50 },
+                      { accion: 'Publicar un trabajo (Cliente)', puntos: 10 },
+                      { accion: 'Recibir reseña 5 estrellas', puntos: 25 },
+                      { accion: 'Denuncia confirmada (Penalización)', puntos: -100 }
+                    ].map((regla, i) => (
+                      <div key={i} className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-gray-700">{regla.accion}</span>
+                        <div className="flex items-center gap-2">
+                          <input type="number" defaultValue={regla.puntos} className="w-16 p-1.5 text-center text-xs font-bold bg-gray-50 border border-gray-200 rounded-lg" />
+                          <span className="text-[10px] font-bold text-gray-400">pts</span>
+                        </div>
+                      </div>
+                    ))}
+                    <button className="w-full mt-2 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-colors">Guardar Reglas</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Registro de Auditoría */}
+              <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b border-gray-100 pb-3">
+                  <History className="w-5 h-5 text-gray-500" />
+                  <div>
+                    <h3 className="text-base font-bold text-[#00355f]">Log de Auditoría</h3>
+                    <p className="text-xs text-gray-500">Registro inmutable de las acciones críticas de los administradores.</p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="p-3 font-bold text-gray-600 text-xs">Fecha y Hora</th>
+                        <th className="p-3 font-bold text-gray-600 text-xs">Admin</th>
+                        <th className="p-3 font-bold text-gray-600 text-xs">Acción Realizada</th>
+                        <th className="p-3 font-bold text-gray-600 text-xs">Nivel Riesgo</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {auditLogs.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="p-8 text-center text-xs font-medium text-gray-400">
+                            No hay registros de auditoría registrados en la plataforma.
+                          </td>
+                        </tr>
+                      ) : (
+                        auditLogs.map((log, i) => {
+                          const riesgoColor = log.riesgo === 'Alto' ? 'bg-red-100 text-red-700' :
+                            log.riesgo === 'Medio' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-green-100 text-green-700';
+                          return (
+                            <tr key={log.id || i} className="hover:bg-gray-50">
+                              <td className="p-3 text-[11px] font-bold text-gray-500">
+                                {log.created_at ? new Date(log.created_at).toLocaleString('es-AR') : 'Reciente'}
+                              </td>
+                              <td className="p-3 text-xs text-[#00355f] font-bold">{log.admin_email || 'Admin'}</td>
+                              <td className="p-3 text-xs text-gray-700">{log.accion}</td>
+                              <td className="p-3">
+                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${riesgoColor}`}>{log.riesgo || 'Bajo'}</span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB: CENTRO DE FEEDBACK */}
+          {activeTab === 'feedback' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { label: 'Recibidas', count: feedbacks.filter(f => f.estado === 'Recibida').length, color: 'bg-gray-50 border-gray-200', tc: 'text-gray-700' },
+                  { label: 'En análisis', count: feedbacks.filter(f => f.estado === 'En análisis').length, color: 'bg-blue-50 border-blue-200', tc: 'text-blue-700' },
+                  { label: 'Aprobadas', count: feedbacks.filter(f => f.estado === 'Aprobada').length, color: 'bg-green-50 border-green-200', tc: 'text-green-700' },
+                  { label: 'Implementadas', count: feedbacks.filter(f => f.estado === 'Implementada').length, color: 'bg-purple-50 border-purple-200', tc: 'text-purple-700' },
+                ].map((stat, i) => (
+                  <div key={i} className={`p-4 rounded-3xl border ${stat.color} flex items-center justify-between`}>
+                    <p className={`text-xs font-bold ${stat.tc}`}>{stat.label}</p>
+                    <p className={`text-2xl font-black ${stat.tc}`}>{stat.count}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-[#00355f]">Sugerencias y Propuestas</h3>
+                    <p className="text-xs text-gray-500">Tickets con categoría "Sugerencia". Actualizá el estado para mantener a los usuarios informados.</p>
+                  </div>
+                  <span className="text-xs font-bold bg-yellow-100 text-yellow-700 px-3 py-1.5 rounded-full">{feedbacks.length} total</span>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {feedbacks.length === 0 ? (
+                    <div className="text-center py-16">
+                      <Lightbulb className="w-10 h-10 text-yellow-300 mx-auto mb-3" />
+                      <p className="text-sm font-bold text-gray-500">Sin sugerencias todavía</p>
+                      <p className="text-xs text-gray-400 mt-1">Cuando los usuarios envíen sugerencias aparecerán aquí.</p>
+                    </div>
+                  ) : (
+                    feedbacks.map(fb => {
+                      const estadoConfig: Record<string, { bg: string; text: string }> = {
+                        'Recibida':      { bg: 'bg-gray-100',    text: 'text-gray-600' },
+                        'En análisis':   { bg: 'bg-blue-100',    text: 'text-blue-700' },
+                        'Aprobada':      { bg: 'bg-green-100',   text: 'text-green-700' },
+                        'Planificada':   { bg: 'bg-indigo-100',  text: 'text-indigo-700' },
+                        'En desarrollo': { bg: 'bg-orange-100',  text: 'text-orange-700' },
+                        'Implementada':  { bg: 'bg-purple-100',  text: 'text-purple-700' },
+                        'Rechazada':     { bg: 'bg-red-100',     text: 'text-red-700' },
+                      };
+                      const cfg = estadoConfig[fb.estado] || estadoConfig['Recibida'];
+                      return (
+                        <div key={fb.id} className="p-5 hover:bg-gray-50 transition-colors">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex items-start gap-3 flex-1">
+                              <div className="w-9 h-9 bg-yellow-100 rounded-xl flex items-center justify-center shrink-0">
+                                <Lightbulb className="w-4 h-4 text-yellow-600" />
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 flex-wrap mb-1">
+                                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.text}`}>{fb.estado}</span>
+                                  <span className="text-[10px] font-bold text-blue-600 capitalize">{fb.rol}</span>
+                                  <span className="text-[10px] text-gray-400">{fb.fecha}</span>
+                                </div>
+                                <p className="text-sm font-bold text-gray-900">{fb.nombre} <span className="font-normal text-xs text-gray-400">({fb.email})</span></p>
+                                <p className="text-xs text-gray-600 mt-1 leading-relaxed">{fb.mensaje}</p>
+                              </div>
+                            </div>
+                            <select
+                              value={fb.estado}
+                              onChange={e => handleFeedbackStatus(fb.id, e.target.value)}
+                              className="text-[11px] border border-gray-200 rounded-lg px-2 py-1.5 bg-white font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#fc8127] shrink-0"
+                            >
+                              {['Recibida','En análisis','Aprobada','Planificada','En desarrollo','Implementada','Rechazada'].map(s => (
+                                <option key={s} value={s}>{s}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: CAMPAÑAS Y BANNERS */}
+          {activeTab === 'campanas' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Crear Campaña */}
+                <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-[#fc8127]/10 rounded-2xl flex items-center justify-center">
+                      <Sparkles className="w-5 h-5 text-[#fc8127]" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-[#00355f]">Nueva Campaña / Banner</h3>
+                      <p className="text-xs text-gray-500">Crea campañas, popups, banners y anuncios.</p>
+                    </div>
+                  </div>
+                  <form onSubmit={handleCreateCampaign} className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Nombre de la Campaña *</label>
+                        <input value={campaignForm.nombre} onChange={e => setCampaignForm(p => ({ ...p, nombre: e.target.value }))} placeholder="ej: 🔥 Semana del Plomero" required className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#fc8127]" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Tipo</label>
+                        <select value={campaignForm.tipo} onChange={e => setCampaignForm(p => ({ ...p, tipo: e.target.value }))} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#fc8127]">
+                          {['Campaña','Popup','Banner','Anuncio','Noticia'].map(t => <option key={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Público Objetivo</label>
+                        <select value={campaignForm.categoria} onChange={e => setCampaignForm(p => ({ ...p, categoria: e.target.value }))} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#fc8127]">
+                          {['Todos','Clientes','Profesionales','Premium','Por oficio','Por ciudad'].map(t => <option key={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Fecha Inicio</label>
+                        <input type="date" value={campaignForm.fechaInicio} onChange={e => setCampaignForm(p => ({ ...p, fechaInicio: e.target.value }))} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#fc8127]" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Fecha Fin</label>
+                        <input type="date" value={campaignForm.fechaFin} onChange={e => setCampaignForm(p => ({ ...p, fechaFin: e.target.value }))} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#fc8127]" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">URL del Banner / Imagen</label>
+                        <input value={campaignForm.banner} onChange={e => setCampaignForm(p => ({ ...p, banner: e.target.value }))} placeholder="https://..." className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#fc8127]" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Descripción / Beneficio</label>
+                        <textarea rows={2} value={campaignForm.beneficio} onChange={e => setCampaignForm(p => ({ ...p, beneficio: e.target.value }))} placeholder="ej: 20% OFF en trabajos de plomería" className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#fc8127] resize-none" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Texto del Botón</label>
+                        <input value={campaignForm.botonTexto} onChange={e => setCampaignForm(p => ({ ...p, botonTexto: e.target.value }))} placeholder="ej: Ver plomeros" className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#fc8127]" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">URL del Botón</label>
+                        <input value={campaignForm.botonUrl} onChange={e => setCampaignForm(p => ({ ...p, botonUrl: e.target.value }))} placeholder="/buscar?oficio=plomero" className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#fc8127]" />
+                      </div>
+                    </div>
+                    <button type="submit" className="w-full py-3 bg-[#fc8127] hover:bg-[#e67320] text-white font-bold rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
+                      <Sparkles className="w-4 h-4" /> Crear Campaña
+                    </button>
+                  </form>
+                </div>
+
+                {/* Lista de Campañas */}
+                <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden flex flex-col max-h-[700px]">
+                  <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+                    <h3 className="text-base font-bold text-[#00355f]">Campañas Creadas</h3>
+                    <span className="text-[10px] font-black bg-[#fc8127]/10 text-[#fc8127] px-2 py-1 rounded-full">{campaigns.filter(c => c.activa).length} activas</span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
+                    {campaigns.length === 0 ? (
+                      <div className="text-center py-16">
+                        <Image className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                        <p className="text-sm font-bold text-gray-400">No hay campañas creadas</p>
+                        <p className="text-xs text-gray-400 mt-1">Creá tu primera campaña con el formulario.</p>
+                      </div>
+                    ) : (
+                      campaigns.map(camp => (
+                        <div key={camp.id} className="p-4 flex items-start justify-between gap-3 hover:bg-gray-50">
+                          <div className="flex items-start gap-3">
+                            {camp.banner ? (
+                              <img src={camp.banner} alt="banner" className="w-14 h-14 rounded-xl object-cover border border-gray-200 shrink-0" />
+                            ) : (
+                              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#fc8127] to-[#00355f] flex items-center justify-center shrink-0">
+                                <Sparkles className="w-6 h-6 text-white" />
+                              </div>
+                            )}
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-[9px] font-black bg-[#00355f]/10 text-[#00355f] px-2 py-0.5 rounded-full">{camp.tipo}</span>
+                                <span className="text-[9px] font-bold text-gray-500">{camp.categoria}</span>
+                              </div>
+                              <p className="text-xs font-bold text-gray-900">{camp.nombre}</p>
+                              {camp.beneficio && <p className="text-[10px] text-gray-500 line-clamp-1 mt-0.5">{camp.beneficio}</p>}
+                              {camp.fechaInicio && <p className="text-[9px] text-gray-400 mt-0.5">📅 {camp.fechaInicio} → {camp.fechaFin}</p>}
+                            </div>
+                          </div>
+                          <button onClick={() => setCampaigns(prev => prev.map(c => c.id === camp.id ? { ...c, activa: !c.activa } : c))} className={`shrink-0 p-1 rounded-lg transition-colors ${camp.activa ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100'}`}>
+                            {camp.activa ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6" />}
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           )}

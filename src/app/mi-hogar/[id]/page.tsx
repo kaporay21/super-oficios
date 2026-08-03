@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
-import { dbHelper } from '@/lib/supabase';
+import { dbHelper, supabase } from '@/lib/supabase';
 
 export default function PropiedadDetallePage() {
   return (
@@ -37,6 +37,8 @@ function PropiedadDetalleContent() {
   const [showFormComp, setShowFormComp] = useState(false);
   const [showFormMant, setShowFormMant] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [archivo, setArchivo] = useState<File | null>(null);
+  const [subiendoArchivo, setSubiendoArchivo] = useState(false);
 
   const [formComp, setFormComp] = useState({ tipo: '', descripcion: '', monto: '', fecha_documento: '', fecha_vencimiento: '' });
   const [formMant, setFormMant] = useState({ titulo: '', descripcion: '', frecuencia: '', proxima_fecha: '' });
@@ -74,17 +76,41 @@ function PropiedadDetalleContent() {
     e.preventDefault();
     if (!user?.id || !formComp.tipo) return;
     setGuardando(true);
+    let url_archivo = '';
+
     try {
+      if (archivo) {
+        setSubiendoArchivo(true);
+        const fileExt = archivo.name.split('.').pop();
+        const fileName = `${user.id}_${Date.now()}.${fileExt}`;
+        
+        const { data, error: uploadError } = await supabase.storage
+          .from('comprobantes')
+          .upload(fileName, archivo);
+        
+        if (uploadError) {
+          throw new Error('Error al subir el archivo: ' + uploadError.message);
+        }
+        
+        const { data: publicUrlData } = supabase.storage
+          .from('comprobantes')
+          .getPublicUrl(fileName);
+          
+        url_archivo = publicUrlData.publicUrl;
+      }
+
       await dbHelper.createComprobante({
         propiedad_id: propiedadId,
         cliente_id: user.id,
         tipo: formComp.tipo,
         descripcion: formComp.descripcion,
+        url_archivo: url_archivo || undefined,
         monto: formComp.monto ? parseFloat(formComp.monto) : undefined,
         fecha_documento: formComp.fecha_documento || undefined,
         fecha_vencimiento: formComp.fecha_vencimiento || undefined,
       });
       setFormComp({ tipo: '', descripcion: '', monto: '', fecha_documento: '', fecha_vencimiento: '' });
+      setArchivo(null);
       setShowFormComp(false);
       const data = await dbHelper.getComprobantes(propiedadId);
       setComprobantes(data);
@@ -92,6 +118,7 @@ function PropiedadDetalleContent() {
       setError(err?.message || 'Error al guardar el comprobante.');
     } finally {
       setGuardando(false);
+      setSubiendoArchivo(false);
     }
   };
 
@@ -297,9 +324,17 @@ function PropiedadDetalleContent() {
                     placeholder="Detalles del comprobante..." rows={2}
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#fc8127] resize-none" />
                 </div>
-                <button type="submit" disabled={guardando}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Adjuntar foto/archivo</label>
+                  <input 
+                    type="file" 
+                    onChange={e => setArchivo(e.target.files ? e.target.files[0] : null)}
+                    className="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#fc8127]/10 file:text-[#fc8127] hover:file:bg-[#fc8127]/20" 
+                  />
+                </div>
+                <button type="submit" disabled={guardando || subiendoArchivo}
                   className="w-full py-2.5 rounded-xl bg-[#fc8127] text-white text-xs font-black flex items-center justify-center gap-2 disabled:opacity-50">
-                  {guardando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Save className="w-3.5 h-3.5" /> Guardar</>}
+                  {guardando || subiendoArchivo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Save className="w-3.5 h-3.5" /> Guardar</>}
                 </button>
               </form>
             )}
@@ -335,6 +370,13 @@ function PropiedadDetalleContent() {
                       {comp.fecha_documento && <span>{new Date(comp.fecha_documento).toLocaleDateString('es-AR')}</span>}
                       {comp.fecha_vencimiento && <span>Vence: {new Date(comp.fecha_vencimiento).toLocaleDateString('es-AR')}</span>}
                     </div>
+                    {comp.url_archivo && (
+                      <div className="mt-2">
+                        <a href={comp.url_archivo} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[10px] text-[#fc8127] hover:underline font-bold bg-[#fc8127]/10 px-2 py-1 rounded">
+                          <Upload className="w-3 h-3" /> Ver adjunto
+                        </a>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

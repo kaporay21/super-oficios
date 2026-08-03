@@ -6,7 +6,7 @@ import {
   Home, Plus, Trash2, ChevronRight, FileText, Wrench, Bell,
   Building, Building2, MapPin, Calendar, ArrowLeft, Loader2,
   AlertCircle, Package, ShieldCheck, Clock, CheckCircle2,
-  Edit3, X, Save
+  Edit3, X, Save, Search
 } from 'lucide-react';
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
@@ -349,9 +349,9 @@ function MiHogarContent() {
           <Building className="w-5 h-5" />
           <span className="text-[9px] font-bold">Mi Hogar</span>
         </button>
-        <button onClick={() => router.push('/mis-trabajos')} className="flex flex-col items-center gap-1 text-slate-500 hover:text-white transition-colors">
-          <Wrench className="w-5 h-5" />
-          <span className="text-[9px] font-bold">Trabajos</span>
+        <button onClick={() => router.push('/buscar-profesionales')} className="flex flex-col items-center gap-1 text-slate-500 hover:text-white transition-colors">
+          <Search className="w-5 h-5" />
+          <span className="text-[9px] font-bold">Buscar</span>
         </button>
         <button onClick={() => router.push('/configuracion-cliente')} className="flex flex-col items-center gap-1 text-slate-500 hover:text-white transition-colors">
           <Bell className="w-5 h-5" />

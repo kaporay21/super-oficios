@@ -102,7 +102,6 @@ function PublicarTrabajoContent() {
         tipo: urgency === 'urgent' ? 'Temporal' : 'Por obra',
         tiempo: 'Hace unos instantes',
         urgente: urgency === 'urgent',
-        cliente_id: user?.id,
         empleador: profile?.nombre || profile?.name || 'Cliente',
         empleadorAvatar: profile?.avatar || profile?.fotoPerfil || 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?q=80&w=1000&auto=format&fit=crop',
         imagen: fotos.length > 0 ? fotos[0].url : null
@@ -138,11 +137,38 @@ function PublicarTrabajoContent() {
       setIsSubmitting(false);
       alert('¡Trabajo publicado con éxito!');
       router.push('/cliente');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error al publicar trabajo:', error);
-      alert('Hubo un error al guardar el trabajo. Intentá de nuevo.');
+      alert('Hubo un error al guardar el trabajo: ' + (error?.message || JSON.stringify(error)));
       setIsSubmitting(false);
     }
+  };
+
+
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Tu navegador no soporta geolocalización');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const { latitude, longitude } = position.coords;
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+        const data = await response.json();
+        const city = data.address.city || data.address.town || data.address.village || data.address.state || data.address.county;
+        if (city) {
+          setUbicacion(city);
+        } else {
+          setUbicacion(`${latitude}, ${longitude}`);
+        }
+      } catch (error) {
+        console.error('Error getting location:', error);
+        alert('No se pudo obtener el nombre de tu ubicación. Revisá tu conexión.');
+      }
+    }, () => {
+      alert('No se pudo obtener tu ubicación. Asegurate de dar permisos al navegador.');
+    });
   };
 
   // Validación básica para habilitar el botón de envío
@@ -298,7 +324,10 @@ function PublicarTrabajoContent() {
                     className="w-full h-12 pl-10 pr-4 rounded-xl bg-[#f7fafc] border border-gray-300 focus:ring-2 focus:ring-[#00355f] focus:border-[#00355f] outline-none transition-all"
                   />
                 </div>
-                <button className="h-12 px-6 rounded-xl border-2 border-[#00355f] text-[#00355f] font-bold text-sm flex items-center justify-center gap-2 hover:bg-blue-50 transition-colors active:scale-95">
+                <button 
+                  onClick={handleGetLocation}
+                  className="h-12 px-6 rounded-xl border-2 border-[#00355f] text-[#00355f] font-bold text-sm flex items-center justify-center gap-2 hover:bg-blue-50 transition-colors active:scale-95"
+                >
                   <Crosshair className="w-5 h-5" />
                   Usar mi ubicación
                 </button>
