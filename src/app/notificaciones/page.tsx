@@ -128,7 +128,9 @@ function NotificacionesContent() {
           <Tooltip title="Notificaciones" text="Revisá avisos importantes, alertas de empleo y actualizaciones sobre tu cuenta al instante." position="bottom">
             <button className="p-2 rounded-full bg-blue-50 text-[#00355f] transition-colors relative">
               <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+              {notificaciones.some(n => !n.leida) && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+              )}
             </button>
           </Tooltip>
           <Tooltip title="Mi Perfil" text="Actualizá tus datos personales, especialidades, coberturas y subí certificados profesionales." position="bottom">
@@ -310,7 +312,6 @@ function NotificacionesContent() {
           <button onClick={() => router.push('/mis-trabajos')} className="flex flex-col items-center text-gray-400 hover:text-[#00355f]"><Briefcase className="w-5 h-5" /><span className="text-[10px] mt-1 font-medium">Trabajos</span></button>
           <button onClick={() => router.push('/chat')} className="flex flex-col items-center text-gray-400 hover:text-[#00355f] relative">
             <MessageSquare className="w-5 h-5" />
-            <span className="absolute top-0 right-1 w-1.5 h-1.5 bg-red-500 rounded-full"></span>
             <span className="text-[10px] mt-1 font-medium">Mensajes</span>
           </button>
           <button onClick={() => router.push('/configuracion-profesional')} className="flex flex-col items-center text-[#fc8127]"><User className="w-5 h-5 fill-current" /><span className="text-[10px] font-bold mt-1">Perfil</span></button>

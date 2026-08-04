@@ -385,9 +385,116 @@ export const dbHelper = {
     delete dbJob.empleadorAvatar;
     delete dbJob.imagen;
 
+    // Guardar cliente_id del usuario autenticado para poder notificarlo después
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.id) dbJob.cliente_id = user.id;
+
     const { data, error } = await supabase.from('trabajos').insert([dbJob]).select().single();
     if (error) throw error;
     return data;
+  },
+
+  // --- PREGUNTAS PRE-PRESUPUESTO ---
+  async getPreguntasTrabajo(trabajoId: number | string): Promise<any[]> {
+    try {
+      const { data, error } = await supabase
+        .from('preguntas_trabajo')
+        .select('*, profesional:perfiles!profesional_id(nombre, foto_perfil)')
+        .eq('trabajo_id', String(trabajoId))
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return (data || []).map(p => ({
+        id: p.id,
+        pregunta: p.pregunta,
+        respuesta: p.respuesta || null,
+        fecha: p.created_at,
+        profesionalNombre: p.profesional?.nombre || 'Profesional',
+        profesionalAvatar: p.profesional?.foto_perfil || '',
+        profesional_id: p.profesional_id,
+      }));
+    } catch (e) {
+      console.error('Error getPreguntasTrabajo:', e);
+      return [];
+    }
+  },
+
+  async addPreguntaTrabajo(trabajoId: number | string, texto: string): Promise<boolean> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return false;
+
+      // Insertar la pregunta
+      const { error } = await supabase
+        .from('preguntas_trabajo')
+        .insert([{
+          trabajo_id: String(trabajoId),
+          profesional_id: user.id,
+          pregunta: texto,
+        }]);
+      if (error) throw error;
+
+      // Obtener el trabajo para saber a quién notificar
+      const { data: trabajo } = await supabase
+        .from('trabajos')
+        .select('titulo, cliente_id')
+        .eq('id', trabajoId)
+        .maybeSingle();
+
+      // Crear notificación para el cliente dueño del trabajo
+      if (trabajo?.cliente_id) {
+        const { data: profesionalPerfil } = await supabase
+          .from('perfiles')
+          .select('nombre')
+          .eq('id', user.id)
+          .maybeSingle();
+        const nombrePro = profesionalPerfil?.nombre || 'Un profesional';
+        await supabase.from('notificaciones').insert([{
+          usuario_id: trabajo.cliente_id,
+          tipo: 'trabajo',
+          titulo: '💬 Nueva pregunta en tu trabajo',
+          descripcion: `${nombrePro} preguntó sobre "${trabajo.titulo}": ${texto.substring(0, 80)}${texto.length > 80 ? '...' : ''}`,
+          leida: false,
+          referencia_id: String(trabajoId),
+        }]);
+      }
+
+      return true;
+    } catch (e) {
+      console.error('Error addPreguntaTrabajo:', e);
+      return false;
+    }
+  },
+
+  async responderPreguntaTrabajo(preguntaId: string, respuesta: string): Promise<boolean> {
+    try {
+      // 1. Actualizar la pregunta
+      const { data: pregActualizada, error } = await supabase
+        .from('preguntas_trabajo')
+        .update({ respuesta })
+        .eq('id', preguntaId)
+        .select('trabajo_id, profesional_id, pregunta, trabajos(titulo)')
+        .single();
+        
+      if (error) throw error;
+      
+      // 2. Notificar al profesional
+      if (pregActualizada?.profesional_id && pregActualizada?.trabajo_id) {
+        const tituloTrabajo = pregActualizada.trabajos?.[0]?.titulo || pregActualizada.trabajos?.titulo || 'un trabajo';
+        await supabase.from('notificaciones').insert([{
+          usuario_id: pregActualizada.profesional_id,
+          tipo: 'mensaje',
+          titulo: 'Respuesta del cliente',
+          descripcion: `El cliente respondió a tu consulta sobre "${tituloTrabajo}": ${respuesta.substring(0, 80)}${respuesta.length > 80 ? '...' : ''}`,
+          leida: false,
+          referencia_id: String(pregActualizada.trabajo_id),
+        }]);
+      }
+
+      return true;
+    } catch (e) {
+      console.error('Error responderPreguntaTrabajo:', e);
+      return false;
+    }
   },
 
   // --- POSTULACIONES ---
@@ -1566,7 +1673,7 @@ export const dbHelper = {
       conversacion_id: payload.conversacion_id,
       emisor_id: payload.profesional_id,
       receptor_id: payload.cliente_id,
-      texto: `ðŸ“„ PRESUPUESTO_ENVIADO:${data.id}`
+      texto: `📄 PRESUPUESTO_ENVIADO:${data.id}`
     });
 
     return data;
@@ -1634,7 +1741,7 @@ export const dbHelper = {
         conversacion_id: pres.conversacion_id,
         emisor_id: clienteId,
         receptor_id: pres.profesional_id,
-        texto: `âœ… PRESUPUESTO_ACEPTADO:${expediente?.id || ''}`
+        texto: `✅ PRESUPUESTO_ACEPTADO:${expediente?.id || ''}`
       });
     }
 
@@ -1658,7 +1765,7 @@ export const dbHelper = {
         conversacion_id: pres.conversacion_id,
         emisor_id: clienteId,
         receptor_id: pres.profesional_id,
-        texto: `âŒ PRESUPUESTO_RECHAZADO:${motivo || 'No especificado'}`
+        texto: `❌ PRESUPUESTO_RECHAZADO:${motivo || 'No especificado'}`
       });
     }
   },
@@ -2011,6 +2118,21 @@ export const dbHelper = {
   // ============================================================
   // NOTIFICACIONES
   // ============================================================
+
+  async getUnreadNotificationsCount(userId: string): Promise<number> {
+    if (!userId) return 0;
+    try {
+      const { count, error } = await supabase
+        .from('notificaciones')
+        .select('*', { count: 'exact', head: true })
+        .eq('usuario_id', userId)
+        .eq('leida', false);
+      if (error) return 0;
+      return count || 0;
+    } catch (e) {
+      return 0;
+    }
+  },
 
   async getNotificaciones(userId: string): Promise<any[]> {
     if (!userId) return [];

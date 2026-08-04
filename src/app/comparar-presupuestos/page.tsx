@@ -19,6 +19,13 @@ export default function CompararPresupuestosPage() {
   const [aceptandoId, setAceptandoId] = useState<string | number | null>(null);
   const [presupuestos, setPresupuestos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (user?.id) {
+      dbHelper.getUnreadNotificationsCount(user.id).then(setUnreadCount).catch(() => {});
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     const loadRealPresupuestos = async () => {
@@ -95,7 +102,9 @@ export default function CompararPresupuestosPage() {
 
         <button onClick={() => router.push('/notificaciones')} className="text-gray-500 hover:bg-gray-100 p-2 rounded-full relative z-10 transition-colors">
           <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+          {unreadCount > 0 && (
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white animate-pulse"></span>
+          )}
         </button>
       </header>
 
@@ -289,7 +298,7 @@ export default function CompararPresupuestosPage() {
         <button onClick={() => router.push('/chat')} className="flex flex-col items-center justify-center text-gray-400 hover:text-[#00355f] relative">
           <MessageSquare className="w-5 h-5" />
           <span className="text-[10px] font-medium mt-1">Mensajes</span>
-          <span className="absolute top-0 right-1 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+          {unreadCount > 0 && <span className="absolute top-0 right-1 w-2 h-2 bg-red-500 rounded-full border border-white"></span>}
         </button>
         <button onClick={() => router.push('/perfil-cliente')} className="flex flex-col items-center justify-center text-gray-400 hover:text-[#00355f]">
           <User className="w-5 h-5" />

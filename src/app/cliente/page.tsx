@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { Search, MapPin, Star, MessageSquare, Plus, Bell, Menu, Home, ClipboardList, User, Sparkles, Wrench, Zap, Paintbrush, Building, ChevronRight, ShieldAlert } from 'lucide-react';
+import { Search, MapPin, Star, MessageSquare, Plus, Bell, Menu, Home, ClipboardList, User, Sparkles, Wrench, Zap, Paintbrush, Building, ChevronRight, ShieldAlert, HelpCircle, ChevronDown, ChevronUp, Send, Loader2 } from 'lucide-react';
 import { Screen, Professional, Job } from '@/types';
 import { useRouter } from 'next/navigation';
 import Tooltip from '@/components/Tooltip';
@@ -247,6 +247,44 @@ const HomeClient: React.FC<HomeClientProps> = ({
   const router = useRouter();
   const [selectedCategory, setSelectedScreen] = useState<string>('todos');
   const [selectedProvince, setSelectedProvince] = useState<string>('');
+
+  // Estado para el panel de preguntas por trabajo
+  const [expandedJobId, setExpandedJobId] = useState<string | number | null>(null);
+  const [preguntasMap, setPreguntasMap] = useState<{ [jobId: string]: any[] }>({});
+  const [respuestasMap, setRespuestasMap] = useState<{ [pregId: string]: string }>({});
+  const [respondingMap, setRespondingMap] = useState<{ [pregId: string]: boolean }>({});
+
+  const defaultImages: Record<string, string> = {
+    'Plomería': '/images/oficio_plomeria_m_1784427462868.png',
+    'Electricidad': '/images/oficio_electricidad_m_1784427470881.png',
+    'Albañilería': '/images/oficio_albanileria_m_1784427479131.png',
+    'Pintura': '/images/oficio_pintura_m_1784427486978.png',
+    'Carpintería': '/images/oficio_carpinteria_1784426158760.png',
+    'Jardinería': '/images/oficio_jardineria_1784426924675.png',
+    'Limpieza': '/images/oficio_limpieza_1784426932346.png',
+  };
+  const getDefaultImage = (cat: string) => defaultImages[cat] || 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?q=80&w=1000&auto=format&fit=crop';
+
+  const handleTogglePreguntas = async (jobId: string | number) => {
+    if (expandedJobId === jobId) {
+      setExpandedJobId(null);
+      return;
+    }
+    setExpandedJobId(jobId);
+    const pregs = await dbHelper.getPreguntasTrabajo(jobId);
+    setPreguntasMap(prev => ({ ...prev, [String(jobId)]: pregs }));
+  };
+
+  const handleResponder = async (preguntaId: string, jobId: string | number) => {
+    const texto = (respuestasMap[preguntaId] || '').trim();
+    if (!texto) return;
+    setRespondingMap(prev => ({ ...prev, [preguntaId]: true }));
+    await dbHelper.responderPreguntaTrabajo(preguntaId, texto);
+    const updatedPregs = await dbHelper.getPreguntasTrabajo(jobId);
+    setPreguntasMap(prev => ({ ...prev, [String(jobId)]: updatedPregs }));
+    setRespuestasMap(prev => ({ ...prev, [preguntaId]: '' }));
+    setRespondingMap(prev => ({ ...prev, [preguntaId]: false }));
+  };
 
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -518,44 +556,148 @@ const HomeClient: React.FC<HomeClientProps> = ({
             Ver todos
           </button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 pt-2">
+        <div className="grid grid-cols-1 gap-4 pt-2">
           {postedJobs.length === 0 ? (
             <div className="col-span-full py-8 text-center bg-white border border-gray-100 rounded-2xl text-gray-500">
               Todavía no has publicado ningún trabajo. ¡Publicá uno para empezar!
             </div>
-          ) : postedJobs.map((job: any, index: number) => (
-            <div 
-              key={job.id}
-              onClick={() => onNavigate('job_detail')}
-              className="bg-white border border-gray-100 p-5 rounded-2xl shadow-sm hover:shadow-md hover:border-[#fc8127]/50 transition-all cursor-pointer flex flex-col justify-between relative"
-            >
-              {/* Globo de notificaciones de presupuestos reales desde Supabase */}
-              {job.presupuestosCount > 0 && (
-                <div className="absolute -top-2 -right-2 bg-[#fc8127] text-white text-[11px] font-black px-3 py-1 rounded-full shadow-md border-2 border-white z-10 animate-pulse">
-                  {job.presupuestosCount} {job.presupuestosCount === 1 ? 'Presupuesto' : 'Presupuestos'}
-                </div>
-              )}
+          ) : postedJobs.map((job: any) => {
+            const jobPregs = preguntasMap[String(job.id)];
+            const pregsSinRespuesta = (jobPregs || []).filter((p: any) => !p.respuesta).length;
+            return (
+              <div key={job.id} className={`bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden transition-all duration-300 ${expandedJobId === job.id ? 'grid grid-cols-1 lg:grid-cols-3' : ''}`}>
+                
+                {/* Cabecera / Info del trabajo (Izquierda cuando está expandido) */}
+                <div
+                  className={`p-5 flex flex-col justify-between cursor-pointer hover:bg-gray-50 transition-colors relative ${expandedJobId === job.id ? 'lg:col-span-1 border-b lg:border-b-0 lg:border-r border-gray-100' : ''}`}
+                  onClick={() => handleTogglePreguntas(job.id)}
+                >
+                  {job.presupuestosCount > 0 && (
+                    <div className="absolute -top-2 -right-2 bg-[#fc8127] text-white text-[11px] font-black px-3 py-1 rounded-full shadow-md border-2 border-white z-10 animate-pulse">
+                      {job.presupuestosCount} {job.presupuestosCount === 1 ? 'Presupuesto' : 'Presupuestos'}
+                    </div>
+                  )}
+                  
+                  {expandedJobId === job.id && (
+                    <div className="w-full h-32 rounded-xl mb-4 overflow-hidden relative">
+                       <img src={job.imagen || getDefaultImage(job.categoria || job.oficio)} alt="Trabajo" className="absolute inset-0 w-full h-full object-cover" />
+                       <div className="absolute inset-0 bg-black/20"></div>
+                    </div>
+                  )}
 
-              <div>
-                <div className="flex justify-between items-start mb-3">
-                   <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-                    <Search className="w-5 h-5 text-[#00355f]" />
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                    {!expandedJobId && (
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                        <Search className="w-5 h-5 text-[#00355f]" />
+                      </div>
+                    )}
+                    <div className="min-w-0 w-full">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                          job.urgente ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-[#00355f]'
+                        }`}>{job.urgente ? 'Urgente' : 'Normal'}</span>
+                        <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{job.categoria || job.oficio || 'General'}</span>
+                      </div>
+                      <h4 className="font-bold text-gray-900 text-sm mt-1">{job.titulo || job.title}</h4>
+                      {expandedJobId === job.id && (
+                         <p className="text-xs text-gray-500 mt-2 line-clamp-4">{job.descripcion}</p>
+                      )}
+                      <p className="text-xs text-gray-400 mt-1">{job.tiempo || 'Hace unos instantes'}</p>
+                    </div>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-                    job.urgente ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-[#00355f]'
-                  }`}>
-                    {job.urgente ? 'Urgente' : 'Normal'}
-                  </span>
+                  
+                  <div className={`flex items-center justify-between shrink-0 mt-4 pt-4 border-t border-gray-100`}>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#00355f] bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+                      <HelpCircle className="w-3.5 h-3.5 text-[#fc8127]" />
+                      <span>
+                        {jobPregs === undefined ? '...' : `${jobPregs.length} consulta${jobPregs.length !== 1 ? 's' : ''}`}
+                      </span>
+                      {pregsSinRespuesta > 0 && (
+                        <span className="bg-[#fc8127] text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-bounce">{pregsSinRespuesta}</span>
+                      )}
+                    </div>
+                    {expandedJobId === job.id
+                      ? <ChevronUp className="w-5 h-5 text-gray-400" />
+                      : <ChevronDown className="w-5 h-5 text-gray-400" />
+                    }
+                  </div>
                 </div>
-                <h4 className="font-bold text-gray-900 text-sm mb-1 line-clamp-1">{job.titulo || job.title}</h4>
-                <p className="text-xs text-gray-500 line-clamp-2">{job.descripcion || job.description}</p>
+
+                {/* Panel de preguntas (Derecha cuando está expandido) */}
+                {expandedJobId === job.id && (
+                  <div className="lg:col-span-2 bg-[#f8fafc] p-5 md:p-6 flex flex-col h-full max-h-[500px]">
+                    <div className="flex items-center justify-between pb-3 border-b border-gray-200 mb-4 shrink-0">
+                      <h5 className="text-sm font-bold text-[#00355f] flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4 text-[#fc8127]" /> 
+                        Bandeja de Consultas
+                      </h5>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto space-y-4 scrollbar-thin scrollbar-thumb-gray-300 pr-2 pb-4">
+                      {!jobPregs || jobPregs.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-center opacity-60">
+                           <MessageSquare className="w-12 h-12 text-gray-300 mb-3" />
+                           <p className="text-sm text-gray-500 max-w-xs">Aún no hay consultas de profesionales para este trabajo.</p>
+                        </div>
+                      ) : (
+                        jobPregs.map((p: any) => (
+                          <div key={p.id} className="bg-white rounded-2xl shadow-sm border border-gray-150 p-4 space-y-3">
+                            {/* Burbuja del Profesional */}
+                            <div className="flex items-start gap-3">
+                              <img src={p.profesionalAvatar || 'https://i.pravatar.cc/150'} className="w-8 h-8 rounded-full border border-gray-200 shrink-0 object-cover" alt="Pro" />
+                              <div className="flex-1 bg-gray-50 rounded-2xl rounded-tl-none p-3 border border-gray-100">
+                                <div className="flex justify-between items-start mb-1">
+                                  <p className="text-xs font-black text-[#00355f]">{p.profesionalNombre}</p>
+                                  <span className="text-[9px] text-gray-400 font-bold">{new Date(p.fecha).toLocaleDateString('es-AR')}</span>
+                                </div>
+                                <p className="text-sm text-gray-700">"{p.pregunta}"</p>
+                              </div>
+                            </div>
+
+                            {/* Burbuja tuya o Input de respuesta */}
+                            {p.respuesta ? (
+                              <div className="flex items-start gap-3 justify-end ml-8">
+                                <div className="flex-1 bg-blue-50/50 rounded-2xl rounded-tr-none p-3 border border-blue-100/50">
+                                  <div className="flex justify-between items-start mb-1">
+                                    <p className="text-[10px] font-black text-[#00355f] uppercase tracking-wide">Tu Respuesta</p>
+                                    <span className="text-[9px] text-blue-300 font-bold">Enviado ✔</span>
+                                  </div>
+                                  <p className="text-sm text-[#00355f]">{p.respuesta}</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="ml-11 flex items-end gap-2 mt-2">
+                                <div className="flex-1 bg-white border border-[#fc8127]/30 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-[#fc8127] focus-within:border-transparent transition-all">
+                                  <textarea
+                                    rows={1}
+                                    value={respuestasMap[p.id] || ''}
+                                    onChange={(e) => setRespuestasMap(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleResponder(p.id, job.id); } }}
+                                    placeholder="Escribí tu respuesta acá..."
+                                    className="w-full px-3 py-2.5 text-xs outline-none resize-none bg-transparent"
+                                  />
+                                </div>
+                                <button
+                                  onClick={() => handleResponder(p.id, job.id)}
+                                  disabled={respondingMap[p.id] || !(respuestasMap[p.id] || '').trim()}
+                                  className="bg-[#00355f] hover:bg-[#0f4c81] disabled:bg-gray-300 disabled:opacity-50 text-white p-2.5 rounded-xl transition-colors shrink-0 shadow-sm"
+                                >
+                                  {respondingMap[p.id]
+                                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                                    : <Send className="w-4 h-4 translate-x-px -translate-y-px" />
+                                  }
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between items-center pt-4 mt-2 border-t border-gray-50">
-                <span className="text-[11px] text-gray-400">{job.tiempo || job.timeAgo || 'Reciente'}</span>
-                <span className="text-[#00355f] font-bold text-xs hover:underline">Detalles</span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
