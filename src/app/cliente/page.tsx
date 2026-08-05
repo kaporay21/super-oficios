@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import Tooltip from '@/components/Tooltip';
 import Logo from '@/components/Logo';
 import { dbHelper } from '@/lib/supabase';
+import { OFICIOS_CORE } from '@/lib/constants';
 import confetti from 'canvas-confetti';
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
@@ -182,6 +183,18 @@ function HomePageContent() {
             </div>
           </Tooltip>
 
+          <Tooltip text="Mensajes" position="top">
+            <div 
+              onClick={() => router.push('/chat')}
+              className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#00355f] cursor-pointer transition-colors active:scale-95"
+            >
+              <div className="p-1.5 relative">
+                <MessageSquare className="w-6 h-6" />
+              </div>
+              <span className="text-[11px] font-medium">Mensajes</span>
+            </div>
+          </Tooltip>
+
           <Tooltip text="Notificaciones" position="top">
             <div 
               onClick={() => router.push('/notificaciones')}
@@ -298,22 +311,18 @@ const HomeClient: React.FC<HomeClientProps> = ({
 
   const categories = [
     { id: 'todos', label: 'Todos' },
-    { id: 'plomeria', label: 'Plomería' },
-    { id: 'electricidad', label: 'Electricidad' },
-    { id: 'albanileria', label: 'Albañilería' },
-    { id: 'pintura', label: 'Pintura' },
-    { id: 'carpinteria', label: 'Carpintería' },
+    ...OFICIOS_CORE.map(oficio => ({
+      id: oficio.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
+      label: oficio
+    }))
   ];
 
-  const CAROUSEL_CARDS = [
-    { id: 'plomeria', label: 'Plomería', img: '/images/oficio_plomeria_m_1784427462868.png', color: 'from-[#00355f]/90' },
-    { id: 'electricidad', label: 'Electricidad', img: '/images/oficio_electricidad_m_1784427470881.png', color: 'from-[#fc8127]/90' },
-    { id: 'albanileria', label: 'Albañilería', img: '/images/oficio_albanileria_m_1784427479131.png', color: 'from-[#00355f]/90' },
-    { id: 'pintura', label: 'Pintura', img: '/images/oficio_pintura_m_1784427486978.png', color: 'from-[#fc8127]/90' },
-    { id: 'carpinteria', label: 'Carpintería', img: '/images/oficio_carpinteria_1784426158760.png', color: 'from-[#00355f]/90' },
-    { id: 'jardineria', label: 'Jardinería', img: '/images/oficio_jardineria_1784426924675.png', color: 'from-[#fc8127]/90' },
-    { id: 'limpieza', label: 'Limpieza', img: '/images/oficio_limpieza_1784426932346.png', color: 'from-[#00355f]/90' },
-  ];
+  const CAROUSEL_CARDS = OFICIOS_CORE.map((oficio, index) => ({
+    id: oficio.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
+    label: oficio,
+    img: getDefaultImage(oficio),
+    color: index % 2 === 0 ? 'from-[#00355f]/90' : 'from-[#fc8127]/90'
+  }));
 
   const filteredProfessionals = useMemo(() => {
     return professionals.filter((pro) => {

@@ -3,15 +3,20 @@
 import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
-  ArrowLeft, Bell, Wrench, Zap, Hammer, PaintRoller, 
-  MoreHorizontal, Camera, Trash2, MapPin, Crosshair, 
-  Calendar, Send, Home, ClipboardList, MessageSquare, User, Loader2, CheckCircle, Lock 
+  ArrowLeft, Briefcase, MapPin, 
+  FileText, AlertCircle, Zap, Loader2,
+  Camera, Trash2, Crosshair,
+  Calendar, ShieldCheck, Hammer
 } from 'lucide-react';
-import Logo from '@/components/Logo';
-import AuthGuard from '@/components/AuthGuard';
-import { useAuth } from '@/components/AuthContext';
 import { dbHelper } from '@/lib/supabase';
 import { compressImage } from '@/lib/supabaseStorage';
+import { OFICIOS_CORE, PROVINCIAS_CORE } from '@/lib/constants';
+import { useAuth } from '@/components/AuthContext';
+import AuthGuard from '@/components/AuthGuard';
+import Logo from '@/components/Logo';
+
+const PROVINCIAS = PROVINCIAS_CORE;
+const OFICIOS = OFICIOS_CORE;
 
 export default function PublicarTrabajoPage() {
   return (
@@ -23,57 +28,52 @@ export default function PublicarTrabajoPage() {
 
 function PublicarTrabajoContent() {
   const router = useRouter();
-  const { user, profile } = useAuth();
+  const { profile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Estados para la interactividad del formulario
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [titulo, setTitulo] = useState('');
-  const [descripcion, setDescripcion] = useState('');
-  const [ubicacion, setUbicacion] = useState('San Miguel de Tucumán'); // Valor por defecto
-  const [urgency, setUrgency] = useState<'normal' | 'urgent'>('normal');
+  const [formData, setFormData] = useState({
+    titulo: '',
+    oficio: 'Plomería',
+    provincia: 'Tucumán',
+    ciudad: '',
+    descripcion: '',
+  });
   
-  // Estado para las fotos y envío
+  const [urgente, setUrgente] = useState(false);
   const [fotos, setFotos] = useState<{id: number, url: string}[]>([]);
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [isLocating, setIsLocating] = useState(false);
 
-  const categories = [
-    { id: 'Plomería', label: 'Plomería', icon: Wrench },
-    { id: 'Electricidad', label: 'Electricidad', icon: Zap },
-    { id: 'Albañilería', label: 'Albañilería', icon: Hammer },
-    { id: 'Pintura', label: 'Pintura', icon: PaintRoller },
-    { id: 'Otros', label: 'Otros', icon: MoreHorizontal },
-  ];
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
 
-  // Manejador para simular la subida de fotos
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setIsSubmitting(true);
+      if (fotos.length >= 3) {
+        alert("Máximo 3 fotos permitidas.");
+        return;
+      }
+      
       try {
         let sourceFile = file;
         try {
           sourceFile = await compressImage(file);
         } catch {
-          // Si falla la compresión, usamos el original
+          // Fallback
         }
-        // Convertir a base64 para poder guardar en localStorage sin problemas
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64 = reader.result as string;
-          setFotos(prev => [...prev, { id: Date.now(), url: base64 }]);
-        };
-        reader.readAsDataURL(sourceFile);
-      } catch (err: any) {
-        console.error('Error al procesar la foto:', err);
-        // Fallback: leer el archivo original como base64
+        
         const reader = new FileReader();
         reader.onload = () => {
           setFotos(prev => [...prev, { id: Date.now(), url: reader.result as string }]);
         };
-        reader.readAsDataURL(file);
-      } finally {
-        setIsSubmitting(false);
+        reader.readAsDataURL(sourceFile);
+      } catch (err: any) {
+        console.error('Error procesando foto:', err);
       }
     }
   };
@@ -82,356 +82,378 @@ function PublicarTrabajoContent() {
     setFotos(fotos.filter(foto => foto.id !== id));
   };
 
-  // Manejador del envío del formulario
-  const handleSubmit = async () => {
-    if (!selectedCategory || !titulo.trim() || !descripcion.trim() || !ubicacion.trim()) {
-      alert('Por favor completá todos los campos requeridos antes de publicar.');
-      return;
-    }
-    setIsSubmitting(true);
-    
-    try {
-      const nuevoTrabajo = {
-        categoria: selectedCategory,
-        oficio: selectedCategory,
-        titulo,
-        descripcion,
-        ubicacion,
-        provincia: ubicacion,
-        ciudad: ubicacion,
-        tipo: urgency === 'urgent' ? 'Temporal' : 'Por obra',
-        tiempo: 'Hace unos instantes',
-        urgente: urgency === 'urgent',
-        empleador: profile?.nombre || profile?.name || 'Cliente',
-        empleadorAvatar: profile?.avatar || profile?.fotoPerfil || 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?q=80&w=1000&auto=format&fit=crop',
-        imagen: fotos.length > 0 ? fotos[0].url : null
-      };
-      
-      const savedJob = await dbHelper.createJob(nuevoTrabajo);
-
-      // Generar notificación local para profesionales que tengan el oficio
-      const storedProfile = localStorage.getItem('oficiosya_profesional_perfil');
-      if (storedProfile) {
-        try {
-          const parsedProfile = JSON.parse(storedProfile);
-          const especialidades = parsedProfile.especialidades || [];
-          if (especialidades.includes(selectedCategory)) {
-            const storedNotif = localStorage.getItem('oficiosya_user_notifications');
-            const notifs = storedNotif ? JSON.parse(storedNotif) : [];
-            notifs.unshift({
-              id: Date.now(),
-              tipo: 'trabajo',
-              titulo: `Nuevo trabajo de ${selectedCategory}: ${titulo}`,
-              descripcion: `Se publicó una nueva solicitud: "${descripcion.substring(0, 60)}..."`,
-              tiempo: 'Hace un momento',
-              leida: false,
-              trabajoId: savedJob?.id
-            });
-            localStorage.setItem('oficiosya_user_notifications', JSON.stringify(notifs));
-          }
-        } catch {
-          // No bloquear el flujo principal si falla la notificación
-        }
-      }
-
-      setIsSubmitting(false);
-      alert('¡Trabajo publicado con éxito!');
-      router.push('/cliente');
-    } catch (error: any) {
-      console.error('Error al publicar trabajo:', error);
-      alert('Hubo un error al guardar el trabajo: ' + (error?.message || JSON.stringify(error)));
-      setIsSubmitting(false);
-    }
-  };
-
-
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
       alert('Tu navegador no soporta geolocalización');
       return;
     }
 
+    setIsLocating(true);
     navigator.geolocation.getCurrentPosition(async (position) => {
       const { latitude, longitude } = position.coords;
       try {
         const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
         const data = await response.json();
         const city = data.address.city || data.address.town || data.address.village || data.address.state || data.address.county;
+        
         if (city) {
-          setUbicacion(city);
-        } else {
-          setUbicacion(`${latitude}, ${longitude}`);
+          setFormData(prev => ({ ...prev, ciudad: city }));
         }
       } catch (error) {
         console.error('Error getting location:', error);
-        alert('No se pudo obtener el nombre de tu ubicación. Revisá tu conexión.');
+      } finally {
+        setIsLocating(false);
       }
     }, () => {
       alert('No se pudo obtener tu ubicación. Asegurate de dar permisos al navegador.');
+      setIsLocating(false);
     });
   };
 
-  // Validación básica para habilitar el botón de envío
-  const isFormValid = selectedCategory && titulo.trim() !== '' && descripcion.trim() !== '' && ubicacion.trim() !== '';
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!formData.titulo.trim() || !formData.ciudad.trim() || !formData.descripcion.trim()) {
+      setError('Por favor completá los campos obligatorios (Título, Ciudad, Descripción).');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const jobData = {
+        categoria: formData.oficio,
+        oficio: formData.oficio,
+        titulo: formData.titulo,
+        descripcion: formData.descripcion,
+        ubicacion: `${formData.ciudad}, ${formData.provincia}`, // Fallback backwards compatibility
+        provincia: formData.provincia,
+        ciudad: formData.ciudad,
+        tipo: urgente ? 'Temporal' : 'Por obra',
+        tiempo: 'Hace unos instantes',
+        urgente: urgente,
+        empleador: profile?.nombre || profile?.name || 'Cliente',
+        empleadorAvatar: profile?.avatar || profile?.foto_perfil || profile?.fotoPerfil || 'https://i.pravatar.cc/150',
+        imagen: fotos.length > 0 ? fotos[0].url : null,
+        esEmpleo: false
+      };
+      
+      const savedJob = await dbHelper.createJob(jobData);
+
+      // Notificación simulada (opcional, como estaba en la base original)
+      const storedProfile = localStorage.getItem('oficiosya_profesional_perfil');
+      if (storedProfile) {
+        try {
+          const parsedProfile = JSON.parse(storedProfile);
+          if ((parsedProfile.especialidades || []).includes(formData.oficio)) {
+            const notifs = JSON.parse(localStorage.getItem('oficiosya_user_notifications') || '[]');
+            notifs.unshift({
+              id: Date.now(),
+              tipo: 'trabajo',
+              titulo: `Nuevo trabajo de ${formData.oficio}: ${formData.titulo}`,
+              descripcion: `Se publicó una nueva solicitud: "${formData.descripcion.substring(0, 60)}..."`,
+              tiempo: 'Hace un momento',
+              leida: false,
+              trabajoId: savedJob?.id
+            });
+            localStorage.setItem('oficiosya_user_notifications', JSON.stringify(notifs));
+          }
+        } catch {}
+      }
+      
+      setTimeout(() => {
+        setIsSubmitting(false);
+        router.push('/cliente');
+      }, 1000);
+    } catch (err: any) {
+      setError(err.message || 'Error al publicar el trabajo.');
+      setIsSubmitting(false);
+    }
+  };
 
   return (
-    <main className="min-h-screen bg-[#f7fafc] text-[#181c1e] font-sans flex flex-col overflow-x-hidden pb-32">
+    <div className="bg-[#f2f6f9] text-[#181c1e] min-h-screen font-sans flex flex-col xl:flex-row relative">
       
-      {/* Input de archivo oculto */}
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        className="hidden" 
-        accept="image/*" 
-        onChange={handlePhotoUpload} 
-      />
+      {/* Input Oculto de Archivos */}
+      <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handlePhotoUpload} />
 
-      {/* TopAppBar */}
-      <header className="bg-white border-b border-gray-200 shadow-sm w-full top-0 sticky z-50 flex justify-between items-center px-4 h-16 md:h-20">
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={() => router.back()}
-            className="transition-colors duration-200 active:scale-95 text-[#00355f] hover:bg-gray-100 p-2 rounded-full"
-          >
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-          <div 
-            className="flex items-center gap-3 cursor-pointer" 
-            onClick={() => router.push('/')}
-          >
-            <Logo size="md" theme="light" />
-          </div>
-        </div>
-        <div className="flex items-center">
-          <button onClick={() => router.push('/notificaciones')} className="transition-colors duration-200 active:scale-95 text-[#00355f] hover:bg-gray-100 p-2 rounded-full relative">
-            <Bell className="w-6 h-6" />
-            <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
-          </button>
-        </div>
-      </header>
-
-      <div className="flex-grow">
-        {/* Hero Section */}
-        <section className="px-4 md:px-12 pt-8 pb-4 max-w-4xl mx-auto">
-          <h2 className="text-3xl font-extrabold text-[#00355f] mb-2">Publicar un Trabajo</h2>
-          <p className="text-gray-500 text-base">
-            Completa los detalles para conectar con profesionales verificados en tu área.
-          </p>
-        </section>
-
-        {/* Form Canvas */}
-        <section className="px-4 md:px-12 max-w-4xl mx-auto">
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 md:p-8 space-y-8">
-            
-            {/* Step 1: Category */}
-            <div>
-              <label className="block text-lg font-bold text-[#00355f] mb-4">
-                ¿Qué servicio necesitas?
-              </label>
-              <div className="flex flex-wrap gap-3">
-                {categories.map((cat) => {
-                  const Icon = cat.icon;
-                  const isSelected = selectedCategory === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      onClick={() => setSelectedCategory(cat.id)}
-                      className={`px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all active:scale-95 flex items-center gap-2 ${
-                        isSelected 
-                          ? 'border-[#fc8127] bg-[#fc8127]/10 text-[#c96218] shadow-sm' 
-                          : 'border-transparent bg-gray-50 text-gray-600 hover:border-gray-200'
-                      }`}
-                    >
-                      <Icon className="w-5 h-5" />
-                      {cat.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Step 2: Title & Description */}
-            <div className="space-y-6">
-              <div className="relative">
-                <label className="block text-xs font-bold text-[#00355f] uppercase tracking-wider mb-2" htmlFor="job-title">
-                  Título del Trabajo
-                </label>
-                <input 
-                  id="job-title"
-                  type="text"
-                  value={titulo}
-                  onChange={(e) => setTitulo(e.target.value)}
-                  placeholder="Ej: Reparación de filtración en cocina" 
-                  className="w-full h-12 px-4 rounded-xl bg-[#f7fafc] border border-gray-300 focus:ring-2 focus:ring-[#00355f] focus:border-[#00355f] outline-none transition-all placeholder:text-gray-400"
-                />
-              </div>
-              <div className="relative">
-                <label className="block text-xs font-bold text-[#00355f] uppercase tracking-wider mb-2" htmlFor="job-desc">
-                  Descripción Detallada
-                </label>
-                <textarea 
-                  id="job-desc"
-                  rows={4}
-                  value={descripcion}
-                  onChange={(e) => setDescripcion(e.target.value)}
-                  placeholder="Describe el problema, materiales necesarios o cualquier detalle relevante..." 
-                  className="w-full px-4 py-3 rounded-xl bg-[#f7fafc] border border-gray-300 focus:ring-2 focus:ring-[#00355f] focus:border-[#00355f] outline-none transition-all placeholder:text-gray-400 resize-none"
-                ></textarea>
-              </div>
-            </div>
-
-            {/* Step 3: Photos */}
-            <div>
-              <label className="block text-xs font-bold text-[#00355f] uppercase tracking-wider mb-3">
-                Fotos (Opcional)
-              </label>
-              <div className="grid grid-cols-3 md:grid-cols-5 gap-4">
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-xl bg-[#f7fafc] hover:bg-gray-100 transition-colors text-gray-500 active:scale-95"
-                >
-                  <Camera className="w-7 h-7 mb-1" />
-                  <span className="text-[10px] font-bold">Añadir</span>
-                </button>
-                
-                {/* Thumbnails dinámicos */}
-                {fotos.map((foto) => (
-                  <div key={foto.id} className="aspect-square rounded-xl overflow-hidden relative group border border-gray-200 shadow-sm">
-                    <img src={foto.url} alt="Problema" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <button onClick={() => eliminarFoto(foto.id)} className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 active:scale-95">
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Step 4: Location */}
-            <div>
-              <label className="block text-xs font-bold text-[#00355f] uppercase tracking-wider mb-3">
-                Ubicación
-              </label>
-              <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-grow relative">
-                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-                  <input 
-                    type="text"
-                    value={ubicacion}
-                    onChange={(e) => setUbicacion(e.target.value)}
-                    placeholder="Ingresa tu dirección o usa el mapa" 
-                    className="w-full h-12 pl-10 pr-4 rounded-xl bg-[#f7fafc] border border-gray-300 focus:ring-2 focus:ring-[#00355f] focus:border-[#00355f] outline-none transition-all"
-                  />
-                </div>
-                <button 
-                  onClick={handleGetLocation}
-                  className="h-12 px-6 rounded-xl border-2 border-[#00355f] text-[#00355f] font-bold text-sm flex items-center justify-center gap-2 hover:bg-blue-50 transition-colors active:scale-95"
-                >
-                  <Crosshair className="w-5 h-5" />
-                  Usar mi ubicación
-                </button>
-              </div>
-              
-              {/* Minimal Map View */}
-              <div className="mt-4 w-full h-40 rounded-xl overflow-hidden border border-gray-300 relative">
-                <div 
-                  className="w-full h-full bg-cover bg-center" 
-                  style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuAWE60ICHA2UUg2iNhS0GqeHW4f8DlshOVk38GUAAHJF6WCMIdntJC9rh3sytx8XkE55NkdPG44g0nbJt0Kva16GAiXR77_osxxumoPXOPTVsR7vZB-UJgAnI2WsXz43rWAluOHWjh3DNAsUmzhOIVjmwwZHLA6SxNLsu1fYHugRhYduZVLGu-cZnVkGZ_Hck5cxUOez0Uj621UZnjut_BvKyJiKtJOJb2AKn-fEmKbRrbyw4g0uY4csItnvC-tGx-IZb8xXNc-em1G')" }}
-                ></div>
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <MapPin className="text-[#fc8127] fill-white w-10 h-10 drop-shadow-md" />
-                </div>
-              </div>
-            </div>
-
-            {/* Step 5: Urgency */}
-            <div>
-              <label className="block text-xs font-bold text-[#00355f] uppercase tracking-wider mb-4">
-                Nivel de Urgencia
-              </label>
-              <div className="grid grid-cols-2 gap-4">
-                <label className="relative cursor-pointer">
-                  <input 
-                    type="radio" 
-                    name="urgency" 
-                    value="normal" 
-                    className="peer sr-only" 
-                    checked={urgency === 'normal'}
-                    onChange={() => setUrgency('normal')}
-                  />
-                  <div className="flex flex-col items-center p-4 border-2 border-gray-200 rounded-xl peer-checked:border-[#00355f] peer-checked:bg-blue-50 transition-all text-gray-500 peer-checked:text-[#00355f]">
-                    <Calendar className="w-6 h-6 mb-1" />
-                    <span className="font-bold text-sm">Normal</span>
-                  </div>
-                </label>
-                <label className="relative cursor-pointer">
-                  <input 
-                    type="radio" 
-                    name="urgency" 
-                    value="urgent" 
-                    className="peer sr-only"
-                    checked={urgency === 'urgent'}
-                    onChange={() => setUrgency('urgent')}
-                  />
-                  <div className="flex flex-col items-center p-4 border-2 border-gray-200 rounded-xl peer-checked:border-red-500 peer-checked:bg-red-50 transition-all text-gray-500 peer-checked:text-red-600">
-                    <Zap className="w-6 h-6 mb-1" />
-                    <span className="font-bold text-sm">Urgente</span>
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            {/* Action Button */}
-            <div className="pt-4">
-              <button 
-                onClick={handleSubmit}
-                disabled={!isFormValid || isSubmitting}
-                className={`w-full py-4 transition-all rounded-xl font-bold text-lg flex items-center justify-center gap-2 shadow-lg ${
-                  !isFormValid 
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                    : 'bg-[#fc8127] hover:bg-[#e67320] active:scale-[0.98] text-white'
-                }`}
-              >
-                {isSubmitting ? <Loader2 className="w-6 h-6 animate-spin" /> : <Send className="w-5 h-5" />}
-                {isSubmitting ? 'Publicando...' : 'Publicar Trabajo'}
-              </button>
-              <p className="text-center text-xs text-gray-400 mt-4">
-                Al publicar, aceptas nuestros términos y condiciones de servicio.
-              </p>
-            </div>
-          </div>
-        </section>
+      {/* HEADER MOBILE */}
+      <div className="xl:hidden sticky top-0 bg-white/80 backdrop-blur-lg border-b border-gray-200 z-50 p-4 flex items-center justify-between">
+        <button onClick={() => router.back()} className="p-2 bg-gray-100 rounded-full text-gray-700 hover:bg-gray-200">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <Logo size="sm" theme="light" />
+        <div className="w-9 h-9"></div>
       </div>
 
-      {/* BottomNavBar */}
-      <nav className="fixed bottom-0 w-full z-50 bg-white border-t border-gray-200 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] flex justify-around items-center px-2 py-3 md:hidden">
-        <div 
-          onClick={() => router.push('/')}
-          className="flex flex-col items-center justify-center text-gray-400 hover:text-[#00355f] py-1 transition-all duration-300 cursor-pointer active:scale-90"
-        >
-          <Home className="w-6 h-6" />
-          <span className="font-medium text-[11px] mt-1">Explorar</span>
+      {/* FORMULARIO IZQUIERDA */}
+      <div className="w-full xl:w-7/12 flex-shrink-0 flex flex-col h-full relative z-10 xl:overflow-y-auto pb-20 xl:pb-0">
+        <div className="p-4 md:p-10 lg:p-14 max-w-3xl mx-auto w-full">
+          
+          <div className="hidden xl:flex items-center gap-4 mb-8">
+            <button onClick={() => router.back()} className="p-3 bg-white shadow-sm border border-gray-100 rounded-2xl text-gray-700 hover:bg-gray-50 transition-all hover:scale-105 active:scale-95">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="text-3xl font-black text-[#00355f]">Solicitar Profesional</h1>
+              <p className="text-sm font-medium text-gray-500">Completá los datos del servicio que necesitás en tu hogar.</p>
+            </div>
+          </div>
+
+          <div className="xl:hidden mb-6">
+            <h1 className="text-2xl font-black text-[#00355f]">Solicitar Profesional</h1>
+            <p className="text-xs font-medium text-gray-500 mt-1">Conectá con expertos en tu zona.</p>
+          </div>
+
+          {error && (
+            <div className="mb-8 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3 shadow-sm">
+              <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              <p className="text-sm font-bold text-red-800">{error}</p>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-6 md:space-y-8">
+            
+            {/* TARJETA 1: DATOS PRINCIPALES */}
+            <div className="bg-white p-5 md:p-8 rounded-[2rem] shadow-sm border border-gray-100 relative overflow-hidden group">
+              <div className="absolute top-0 left-0 w-1 h-full bg-[#00355f]"></div>
+              
+              <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                <Briefcase className="w-4 h-4 text-[#00355f]" /> 1. ¿Qué necesitás?
+              </h3>
+              
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-bold text-[#00355f] mb-2">Título de la solicitud <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    name="titulo"
+                    value={formData.titulo}
+                    onChange={handleChange}
+                    placeholder="Ej: Reparación de filtración en baño..."
+                    className="w-full h-14 px-5 rounded-2xl border-2 border-gray-100 focus:border-[#00355f] focus:ring-4 focus:ring-[#00355f]/10 outline-none bg-gray-50 hover:bg-white text-base font-semibold text-gray-800 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-[#00355f] mb-2">Categoría del Servicio</label>
+                  <select
+                    name="oficio"
+                    value={formData.oficio}
+                    onChange={handleChange}
+                    className="w-full h-14 px-5 rounded-2xl border-2 border-gray-100 focus:border-[#00355f] outline-none bg-gray-50 text-sm font-bold text-gray-700 cursor-pointer appearance-none"
+                    style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%236b7280\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1rem center', backgroundSize: '1.2em' }}
+                  >
+                    {OFICIOS.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-[#00355f] mb-2">Descripción Detallada <span className="text-red-500">*</span></label>
+                  <textarea
+                    name="descripcion"
+                    value={formData.descripcion}
+                    onChange={handleChange}
+                    rows={4}
+                    placeholder="Describe el problema, materiales que ya tenés o medidas estimadas..."
+                    className="w-full p-5 rounded-2xl border-2 border-gray-100 focus:border-[#00355f] focus:ring-4 focus:ring-[#00355f]/10 outline-none bg-gray-50 hover:bg-white text-sm font-medium text-gray-800 transition-all resize-y"
+                  ></textarea>
+                </div>
+              </div>
+            </div>
+
+            {/* TARJETA 2: UBICACIÓN Y FOTOS */}
+            <div className="bg-white p-5 md:p-8 rounded-[2rem] shadow-sm border border-gray-100 relative overflow-hidden group">
+              <div className="absolute top-0 left-0 w-1 h-full bg-[#fc8127]"></div>
+              
+              <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-[#fc8127]" /> 2. Ubicación y Detalles Visuales
+              </h3>
+              
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-bold text-[#00355f] mb-2">Provincia</label>
+                    <select
+                      name="provincia"
+                      value={formData.provincia}
+                      onChange={handleChange}
+                      className="w-full h-14 px-5 rounded-2xl border-2 border-gray-100 focus:border-[#fc8127] outline-none bg-gray-50 text-sm font-bold text-gray-700 cursor-pointer appearance-none"
+                      style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%236b7280\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1rem center', backgroundSize: '1.2em' }}
+                    >
+                      {PROVINCIAS.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div className="flex justify-between items-end mb-2">
+                      <label className="block text-sm font-bold text-[#00355f]">Ciudad / Barrio <span className="text-red-500">*</span></label>
+                      <button type="button" onClick={handleGetLocation} className="text-[10px] font-bold text-[#fc8127] flex items-center gap-1 hover:underline">
+                        {isLocating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Crosshair className="w-3 h-3" />} 
+                        Usar GPS
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      name="ciudad"
+                      value={formData.ciudad}
+                      onChange={handleChange}
+                      placeholder="Ej: Barrio Norte"
+                      className="w-full h-14 px-5 rounded-2xl border-2 border-gray-100 focus:border-[#fc8127] focus:ring-4 focus:ring-[#fc8127]/10 outline-none bg-gray-50 hover:bg-white text-base font-semibold text-gray-800 transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* GALERÍA DE FOTOS */}
+                <div>
+                  <label className="block text-sm font-bold text-[#00355f] mb-3">Fotos de Referencia (Máximo 3)</label>
+                  <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
+                    {fotos.length < 3 && (
+                      <button 
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-24 h-24 shrink-0 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-2xl bg-gray-50 hover:bg-gray-100 hover:border-[#fc8127] transition-all text-gray-400 hover:text-[#fc8127]"
+                      >
+                        <Camera className="w-6 h-6 mb-1" />
+                        <span className="text-[10px] font-bold">Añadir Foto</span>
+                      </button>
+                    )}
+                    
+                    {fotos.map((foto) => (
+                      <div key={foto.id} className="relative w-24 h-24 shrink-0 rounded-2xl overflow-hidden shadow-sm group border border-gray-200">
+                        <img src={foto.url} alt="Referencia" className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <button 
+                            type="button"
+                            onClick={() => eliminarFoto(foto.id)}
+                            className="p-1.5 bg-red-500 text-white rounded-lg hover:scale-110 transition-transform"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* TOGGLE URGENCIA */}
+                <div className="flex items-center justify-between p-4 bg-red-50/50 border border-red-100 rounded-2xl mt-4">
+                  <div>
+                    <h4 className="text-sm font-black text-red-700 flex items-center gap-1"><Zap className="w-4 h-4" /> Emergencia</h4>
+                    <p className="text-[11px] text-red-600 font-medium">Marcá esto si necesitás solución inmediata.</p>
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => setUrgente(!urgente)}
+                    className={`w-14 h-8 rounded-full transition-colors relative flex items-center ${urgente ? 'bg-red-500' : 'bg-gray-300'}`}
+                  >
+                    <div className={`w-6 h-6 bg-white rounded-full shadow-md transition-transform absolute ${urgente ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* BOTÓN SUBMIT MOBILE */}
+            <div className="pt-2 block xl:hidden">
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className={`w-full h-14 rounded-2xl font-black text-white text-base shadow-xl shadow-[#fc8127]/20 transition-all flex items-center justify-center gap-2
+                  ${isSubmitting ? 'bg-gray-400 cursor-not-allowed shadow-none' : 'bg-[#fc8127] hover:bg-[#e06d19] active:scale-[0.98]'}`}
+              >
+                {isSubmitting ? (
+                  <><Loader2 className="w-5 h-5 animate-spin" /> Publicando...</>
+                ) : (
+                  <><Zap className="w-5 h-5" /> Solicitar Presupuestos</>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
-        <div className="flex flex-col items-center justify-center text-[#fc8127] py-1 transition-all duration-300 cursor-pointer active:scale-90">
-          <ClipboardList className="w-6 h-6 fill-current" />
-          <span className="font-bold text-[11px] mt-1">Publicar</span>
+      </div>
+
+      {/* SIDEBAR DERECHO: LIVE PREVIEW & SUBMIT (Solo Desktop XL) */}
+      <div className="hidden xl:flex w-5/12 bg-[#001b33] flex-col p-10 h-screen sticky top-0 shadow-2xl z-20 justify-center">
+        
+        <div className="max-w-md mx-auto w-full">
+          <div className="flex items-center gap-2 mb-8">
+            <Zap className="w-6 h-6 text-[#fc8127]" />
+            <h2 className="text-2xl font-black text-white">Vista Previa Profesional</h2>
+          </div>
+
+          {/* TARJETA DE PREVIEW */}
+          <div className="bg-white rounded-3xl p-6 shadow-2xl relative overflow-hidden transform hover:scale-[1.02] transition-transform duration-300">
+            {/* Cinta Superior */}
+            <div className="flex justify-between items-start mb-4">
+              <div className="flex items-center gap-3">
+                <img src={profile?.avatar || profile?.fotoPerfil || profile?.foto_perfil || 'https://i.pravatar.cc/150'} alt="Avatar" className="w-12 h-12 rounded-xl object-cover border border-gray-200" />
+                <div>
+                  <h4 className="text-sm font-black text-[#00355f] leading-none">{profile?.nombre || 'Cliente'}</h4>
+                  <div className="flex items-center gap-1 mt-1 text-[10px] text-gray-500 font-bold">
+                    <ShieldCheck className="w-3 h-3 text-[#10b981]" /> Identidad Verificada
+                  </div>
+                </div>
+              </div>
+              {urgente && (
+                <span className="bg-red-500 text-white text-[10px] font-black uppercase px-3 py-1 rounded-full flex items-center gap-1 animate-pulse">
+                  <Zap className="w-3 h-3" /> Urgente
+                </span>
+              )}
+            </div>
+
+            <h3 className="text-xl font-black text-[#181c1e] mb-2 leading-tight">
+              {formData.titulo || 'Título de la solicitud...'}
+            </h3>
+            
+            <div className="flex flex-wrap gap-2 mb-4">
+              <span className="px-2.5 py-1 bg-[#fc8127]/10 text-[#c96218] rounded-md text-[10px] font-bold border border-[#fc8127]/20 flex items-center gap-1">
+                <Hammer className="w-3 h-3" /> {formData.oficio}
+              </span>
+              <span className="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-md text-[10px] font-bold border border-gray-200 flex items-center gap-1">
+                <MapPin className="w-3 h-3" /> {formData.ciudad || 'Ubicación'}, {formData.provincia}
+              </span>
+            </div>
+
+            <p className="text-xs text-gray-500 line-clamp-3 leading-relaxed mb-4 whitespace-pre-wrap">
+              {formData.descripcion || 'Aquí aparecerá la descripción del problema o trabajo a realizar...'}
+            </p>
+
+            {fotos.length > 0 && (
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Imágenes Adjuntas</p>
+                <div className="flex gap-2">
+                  {fotos.map((foto) => (
+                    <img key={foto.id} src={foto.url} alt="Miniatura" className="w-10 h-10 rounded-lg object-cover border border-gray-200" />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Botón de Publicación (Desktop) */}
+          <div className="mt-8">
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className={`w-full h-16 rounded-2xl font-black text-white text-lg shadow-2xl shadow-[#fc8127]/20 transition-all flex items-center justify-center gap-3 relative overflow-hidden group
+                ${isSubmitting ? 'bg-gray-600 cursor-not-allowed shadow-none' : 'bg-[#fc8127] hover:bg-[#e06d19] active:scale-[0.98]'}`}
+            >
+              {!isSubmitting && <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 rounded-2xl"></div>}
+              {isSubmitting ? (
+                <><Loader2 className="w-6 h-6 animate-spin" /> Procesando...</>
+              ) : (
+                <><Zap className="w-6 h-6 relative z-10" /> <span className="relative z-10">Solicitar Presupuestos</span></>
+              )}
+            </button>
+            <p className="text-center text-xs text-[#fc8127] font-bold mt-4 opacity-80">
+              Notificaremos a los expertos en tu área de inmediato
+            </p>
+          </div>
+
         </div>
-        <div 
-          onClick={() => router.push('/chat')}
-          className="flex flex-col items-center justify-center text-gray-400 hover:text-[#00355f] py-1 transition-all duration-300 cursor-pointer active:scale-90"
-        >
-          <MessageSquare className="w-6 h-6" />
-          <span className="font-medium text-[11px] mt-1">Mensajes</span>
-        </div>
-        <div 
-          onClick={() => router.push('/perfil-cliente')}
-          className="flex flex-col items-center justify-center text-gray-400 hover:text-[#00355f] py-1 transition-all duration-300 cursor-pointer active:scale-90"
-        >
-          <User className="w-6 h-6" />
-          <span className="font-medium text-[11px] mt-1">Perfil</span>
-        </div>
-      </nav>
-    </main>
+      </div>
+
+    </div>
   );
 }

@@ -13,19 +13,10 @@ import {
 import Tooltip from '@/components/Tooltip';
 import Logo from '@/components/Logo';
 import { dbHelper } from '@/lib/supabase';
+import { OFICIOS_CORE, PROVINCIAS_CORE } from '@/lib/constants';
 
-const PROVINCIAS = [
-  'Todas', 'Buenos Aires', 'Catamarca', 'Chaco', 'Chubut', 'Córdoba',
-  'Corrientes', 'Entre Ríos', 'Formosa', 'Jujuy', 'La Pampa',
-  'La Rioja', 'Mendoza', 'Misiones', 'Neuquén', 'Río Negro',
-  'Salta', 'San Juan', 'San Luis', 'Santa Cruz', 'Santa Fe',
-  'Santiago del Estero', 'Tierra del Fuego', 'Tucumán', 'CABA'
-];
-
-const OFICIOS = [
-  'Todos', 'Plomería', 'Electricidad', 'Pintura', 'Carpintería',
-  'Albañilería', 'Herrería', 'Jardinería', 'Limpieza', 'Otro'
-];
+const PROVINCIAS = ['Todas', ...PROVINCIAS_CORE];
+const OFICIOS = ['Todos', ...OFICIOS_CORE];
 
 const TIPOS = ['Todos', 'Permanente', 'Por obra', 'Temporal', 'Part-time'];
 

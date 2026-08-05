@@ -9,51 +9,9 @@ import {
 import Logo from '@/components/Logo';
 import { CrecimientoIcon, DolarIcon } from '@/components/ModernIcons';
 import { dbHelper } from '@/lib/supabase';
+import { OFICIOS_CORE, PROVINCIAS_Y_CIUDADES } from '@/lib/constants';
 
-// Constantes estructuradas de Oficios y Localizaciones de Argentina (Completa)
-const OFICIOS_REGISTRO = [
-  { id: 'Plomería', label: 'Plomería' },
-  { id: 'Electricidad', label: 'Electricidad' },
-  { id: 'Albañilería', label: 'Albañilería' },
-  { id: 'Pintura', label: 'Pintura' },
-  { id: 'Carpintería', label: 'Carpintería' },
-  { id: 'Gasista', label: 'Gasista' },
-  { id: 'Cerrajería', label: 'Cerrajería' },
-  { id: 'Durlock / Yeso', label: 'Durlock / Yeso' },
-  { id: 'Aire Acondicionado', label: 'Aire Acondicionado' },
-  { id: 'Jardinería', label: 'Jardinería' },
-  { id: 'Fumigación', label: 'Fumigación' },
-  { id: 'Herrería', label: 'Herrería' },
-  { id: 'Techista / Impermeabilización', label: 'Techista / Impermeabilización' },
-  { id: 'Fletes y Mudanzas', label: 'Fletes y Mudanzas' }
-];
 
-const PROVINCIAS_Y_CIUDADES: Record<string, string[]> = {
-  'Buenos Aires': ['La Plata', 'Mar del Plata', 'Bahía Blanca', 'Tandil', 'Pilar', 'Campana'],
-  'CABA (Ciudad Autónoma de Buenos Aires)': ['Palermo', 'Caballito', 'Belgrano', 'Recoleta', 'Flores', 'Almagro', 'Villa Urquiza'],
-  'Catamarca': ['San Fernando del Valle de Catamarca', 'Andalgalá', 'Tinogasta'],
-  'Chaco': ['Resistencia', 'Sáenz Peña', 'Villa Ángela'],
-  'Chubut': ['Rawson', 'Comodoro Rivadavia', 'Trelew', 'Puerto Madryn'],
-  'Córdoba': ['Córdoba Capital', 'Villa Carlos Paz', 'Río Cuarto', 'Villa María', 'San Francisco'],
-  'Corrientes': ['Corrientes Capital', 'Goya', 'Paso de los Libres'],
-  'Entre Ríos': ['Paraná', 'Concordia', 'Gualeguaychú'],
-  'Formosa': ['Formosa Capital', 'Clorinda'],
-  'Jujuy': ['San Salvador de Jujuy', 'San Pedro', 'Libertador General San Martín'],
-  'La Pampa': ['Santa Rosa', 'General Pico'],
-  'La Rioja': ['La Rioja Capital', 'Chilecito'],
-  'Mendoza': ['Mendoza Capital', 'San Rafael', 'Godoy Cruz', 'Luján de Cuyo'],
-  'Misiones': ['Posadas', 'Eldorado', 'Oberá'],
-  'Neuquén': ['Neuquén Capital', 'San Martín de los Andes', 'Villa La Angostura'],
-  'Río Negro': ['Viedma', 'San Carlos de Bariloche', 'General Roca', 'Cipolletti'],
-  'Salta': ['Salta Capital', 'San Ramón de la Nueva Orán', 'Tartagal'],
-  'San Juan': ['San Juan Capital', 'Caucete', 'Chimbas'],
-  'San Luis': ['San Luis Capital', 'Villa Mercedes', 'Merlo'],
-  'Santa Cruz': ['Río Gallegos', 'Caleta Olivia', 'El Calafate'],
-  'Santa Fe': ['Rosario', 'Santa Fe Capital', 'Rafaela', 'Venado Tuerto', 'Reconquista'],
-  'Santiago del Estero': ['Santiago del Estero Capital', 'La Banda', 'Termas de Río Hondo'],
-  'Tierra del Fuego': ['Ushuaia', 'Río Grande', 'Tolhuin'],
-  'Tucumán': ['San Miguel de Tucumán', 'Yerba Buena', 'Tafí Viejo', 'Concepción', 'Aguilares', 'Banda del Río Salí']
-};
 
 export default function RegistroProfesionalPage() {
   const router = useRouter();
@@ -296,22 +254,22 @@ export default function RegistroProfesionalPage() {
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-bold text-gray-700 px-1">Oficios o Especialidades (Selecciona una o más)</label>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-gray-50 p-3 rounded-2xl border border-gray-200">
-                    {OFICIOS_REGISTRO.map((oficio) => (
+                    {OFICIOS_CORE.map((oficio) => (
                       <label 
-                        key={oficio.id} 
+                        key={oficio} 
                         className={`flex items-center gap-2 px-3 py-2 border rounded-xl cursor-pointer text-xs font-semibold select-none transition-all ${
-                          selectedOficios.includes(oficio.id)
+                          selectedOficios.includes(oficio)
                             ? 'bg-blue-50 border-[#00355f] text-[#00355f]'
                             : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100/50'
                         }`}
                       >
                         <input 
                           type="checkbox"
-                          checked={selectedOficios.includes(oficio.id)}
-                          onChange={() => handleOficioToggle(oficio.id)}
+                          checked={selectedOficios.includes(oficio)}
+                          onChange={() => handleOficioToggle(oficio)}
                           className="w-3.5 h-3.5 accent-[#00355f]"
                         />
-                        {oficio.label}
+                        {oficio}
                       </label>
                     ))}
                   </div>

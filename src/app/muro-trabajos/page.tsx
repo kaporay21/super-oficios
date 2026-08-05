@@ -14,6 +14,7 @@ import Logo from '@/components/Logo';
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
 import { dbHelper, supabase } from '@/lib/supabase';
+import { OFICIOS_CORE } from '@/lib/constants';
 
 export default function MuroTrabajosPage() {
   return (
@@ -111,7 +112,8 @@ function MuroTrabajosContent() {
     const loadJobsAndStats = async () => {
       try {
         const allJobs = typeof dbHelper.getJobs === 'function' ? await dbHelper.getJobs() : [];
-        const clientRequests = (allJobs || []).filter((j: any) => !j.salario);
+        // Filtramos para mostrar solo trabajos solicitados por clientes (NO empleos)
+        const clientRequests = (allJobs || []).filter((j: any) => !j.esempleo);
         setTrabajos(clientRequests);
 
         if (typeof dbHelper.getPresupuestos === 'function') {
@@ -198,7 +200,7 @@ function MuroTrabajosContent() {
 
   const sugeridosTrabajos = trabajos.slice(0, 3);
 
-  const categorias = ['Todos', 'Plomería', 'Electricidad', 'Pintura', 'Carpintería', 'Albañilería'];
+  const categorias = ['Todos', ...OFICIOS_CORE];
 
   return (
     <div className="bg-[#f7fafc] text-[#181c1e] min-h-screen flex flex-col font-sans md:pl-24 pb-24 md:pb-0">

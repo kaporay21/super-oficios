@@ -273,7 +273,7 @@ export const dbHelper = {
     if (error) throw error;
     
     if (data.user) {
-      const { error: profileError } = await supabase.from('perfiles').insert([{
+      const { error: profileError } = await supabase.from('perfiles').upsert([{
         id: data.user.id,
         nombre: fullName,
         email,
@@ -322,7 +322,7 @@ export const dbHelper = {
         ciudad: ciudad || ''
       };
 
-      const { error: profileError } = await supabase.from('perfiles').insert([baseProfile]);
+      const { error: profileError } = await supabase.from('perfiles').upsert([baseProfile]);
       if (profileError) throw profileError;
 
       const profileData = {
@@ -380,9 +380,11 @@ export const dbHelper = {
   async createJob(job: any): Promise<any> {
     const dbJob: any = {
       ...job,
-      empleadoravatar: job.empleadorAvatar || job.empleadoravatar
+      empleadoravatar: job.empleadorAvatar || job.empleadoravatar,
+      esempleo: job.esEmpleo !== undefined ? job.esEmpleo : (job.esempleo || false)
     };
     delete dbJob.empleadorAvatar;
+    delete dbJob.esEmpleo;
     delete dbJob.imagen;
 
     // Guardar cliente_id del usuario autenticado para poder notificarlo después
@@ -479,7 +481,7 @@ export const dbHelper = {
       
       // 2. Notificar al profesional
       if (pregActualizada?.profesional_id && pregActualizada?.trabajo_id) {
-        const tituloTrabajo = pregActualizada.trabajos?.[0]?.titulo || pregActualizada.trabajos?.titulo || 'un trabajo';
+        const tituloTrabajo = (Array.isArray(pregActualizada.trabajos) ? (pregActualizada.trabajos[0] as any)?.titulo : (pregActualizada.trabajos as any)?.titulo) || 'un trabajo';
         await supabase.from('notificaciones').insert([{
           usuario_id: pregActualizada.profesional_id,
           tipo: 'mensaje',
@@ -856,6 +858,19 @@ export const dbHelper = {
       })
       .eq('id', conversacionId);
 
+    // Enviar notificacion al receptor
+    try {
+      await dbHelper.crearNotificacion({
+        usuario_id: receptorId,
+        tipo: 'mensaje',
+        titulo: 'Nuevo mensaje',
+        descripcion: `Recibiste un nuevo mensaje: "${texto.substring(0, 50)}..."`,
+        referencia_id: conversacionId
+      });
+    } catch (e) {
+      console.warn('Error al enviar notificacion de mensaje:', e);
+    }
+
     return data;
   },
 
@@ -871,64 +886,6 @@ export const dbHelper = {
       .eq('leido', false);
   },
 
-  // ============================================================
-  // PREGUNTAS Y RESPUESTAS PRE-PRESUPUESTO (Estilo Mercado Libre)
-  // ============================================================
-
-  async addPreguntaTrabajo(jobId: number | string, pregunta: string, usuarioId?: string, usuarioNombre?: string): Promise<any> {
-    const newPregunta = {
-      id: Date.now(),
-      job_id: jobId,
-      pregunta,
-      usuario_id: usuarioId || 'anon',
-      usuario_nombre: usuarioNombre || 'Profesional',
-      fecha: new Date().toISOString(),
-      respuesta: null,
-      fecha_respuesta: null
-    };
-
-    try {
-      await supabase.from('preguntas_trabajos').insert([newPregunta]);
-    } catch (e) {
-      console.warn("Tabla preguntas_trabajos guardando en local cache:", e);
-    }
-
-    const key = `oficiosya_preguntas_job_${jobId}`;
-    const existing = JSON.parse(localStorage.getItem(key) || '[]');
-    existing.unshift(newPregunta);
-    localStorage.setItem(key, JSON.stringify(existing));
-
-    return newPregunta;
-  },
-
-  async responderPreguntaTrabajo(jobId: number | string, preguntaId: number | string, respuesta: string): Promise<void> {
-    try {
-      await supabase.from('preguntas_trabajos').update({ respuesta, fecha_respuesta: new Date().toISOString() }).eq('id', preguntaId);
-    } catch (e) {
-      console.warn("Tabla preguntas_trabajos respondiendo en local cache:", e);
-    }
-
-    const key = `oficiosya_preguntas_job_${jobId}`;
-    const existing = JSON.parse(localStorage.getItem(key) || '[]');
-    const updated = existing.map((p: any) => p.id === preguntaId ? { ...p, respuesta, fecha_respuesta: new Date().toISOString() } : p);
-    localStorage.setItem(key, JSON.stringify(updated));
-  },
-
-  async getPreguntasTrabajo(jobId: number | string): Promise<any[]> {
-    const key = `oficiosya_preguntas_job_${jobId}`;
-    const localData = JSON.parse(localStorage.getItem(key) || '[]');
-
-    try {
-      const { data } = await supabase.from('preguntas_trabajos').select('*').eq('job_id', jobId).order('created_at', { ascending: false });
-      if (data && data.length > 0) {
-        return data;
-      }
-    } catch (e) {
-      // Table fallback
-    }
-
-    return localData;
-  },
 
   // ============================================================
   // Ã“RDENES DE TRABAJO (Informe 7 + 9)
