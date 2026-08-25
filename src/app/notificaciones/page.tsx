@@ -86,14 +86,27 @@ function NotificacionesContent() {
 
   const handleNotificacionClick = (notif: Notificacion) => {
     marcarComoLeida(notif.id);
-    if (notif.tipo === 'trabajo' || (notif as any).referencia_id) {
+    const refId = (notif as any).referencia_id;
+
+    if (notif.tipo === 'mensaje') {
+      if (refId) {
+        router.push(`/chat/${refId}`);
+      } else {
+        router.push('/chat');
+      }
+    } else if (notif.tipo === 'trabajo') {
       if (profile?.rol === 'profesional') {
         router.push('/muro-trabajos');
       } else {
-        router.push('/mis-trabajos');
+        router.push('/cliente');
       }
-    } else if (notif.tipo === 'mensaje') {
-      router.push('/chat');
+    } else {
+      // Default fallback
+      if (profile?.rol === 'profesional') {
+        router.push('/muro-trabajos');
+      } else {
+        router.push('/cliente');
+      }
     }
   };
 

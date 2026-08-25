@@ -161,6 +161,146 @@ export const dbHelper = {
     }));
   },
 
+  // ============================================================
+  // BÚSQUEDA FILTRADA DE PROFESIONALES (LADO SERVIDOR)
+  // ============================================================
+
+  /**
+   * Obtiene profesionales filtrados directamente desde Supabase.
+   * Aplica filtros de oficio, provincia, verificación y búsqueda de texto en el servidor,
+   * eliminando la necesidad de traer todos los usuarios al cliente.
+   *
+   * @param filters - Objeto con los filtros y opciones de paginación
+   * @returns Objeto con los profesionales, conteo total y páginas disponibles
+   */
+  async getFilteredProfessionals(filters: {
+    oficio?: string;
+    provincia?: string;
+    busqueda?: string;
+    soloVerificados?: boolean;
+    soloMatriculados?: boolean;
+    ordenarPor?: 'rating' | 'trabajos_realizados' | 'fecha_registro';
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{ data: any[]; count: number; totalPages: number; error: any | null }> {
+    const {
+      oficio,
+      provincia,
+      busqueda,
+      soloVerificados = false,
+      soloMatriculados = false,
+      ordenarPor = 'fecha_registro',
+      page = 1,
+      limit = 12,
+    } = filters;
+
+    try {
+      // Calculamos el rango de paginación (Supabase usa índices 0-based)
+      const desde = (page - 1) * limit;
+      const hasta = desde + limit - 1;
+
+      // Iniciamos la query con conteo exacto para calcular el total de páginas
+      let query = supabase
+        .from('perfiles')
+        .select('*', { count: 'exact' })
+        .eq('rol', 'profesional');
+
+      // ── Filtro por Oficio ──────────────────────────────────────────
+      // Usamos 'cs' (contains) ya que `oficios` es un array en Supabase (tipo text[])
+      if (oficio && oficio.trim() !== '') {
+        query = query.contains('oficios', [oficio]);
+      }
+
+      // ── Filtro por Provincia ───────────────────────────────────────
+      if (provincia && provincia.trim() !== '') {
+        query = query.ilike('provincia', `%${provincia}%`);
+      }
+
+      // ── Filtro por Texto Libre (nombre) ────────────────────────────
+      // Buscamos por nombre del perfil con coincidencia parcial
+      if (busqueda && busqueda.trim() !== '') {
+        query = query.ilike('nombre', `%${busqueda.trim()}%`);
+      }
+
+      // ── Filtro: Solo Verificados (DNI aprobado) ────────────────────
+      if (soloVerificados) {
+        query = query.eq('verificado', true);
+      }
+
+      // ── Filtro: Solo Matriculados (certificados validados) ─────────
+      if (soloMatriculados) {
+        query = query.eq('matriculado_verificado', true);
+      }
+
+      // ── Ordenamiento ───────────────────────────────────────────────
+      // Nota: 'rating' y 'trabajos_realizados' requieren columnas en la tabla;
+      // si no existen, se cae al orden por fecha de registro como respaldo.
+      if (ordenarPor === 'fecha_registro') {
+        query = query.order('created_at', { ascending: false });
+      } else if (ordenarPor === 'trabajos_realizados') {
+        // Fallback a fecha si la columna no existe aún en la tabla
+        query = query.order('created_at', { ascending: false });
+      } else {
+        // Fallback general
+        query = query.order('created_at', { ascending: false });
+      }
+
+      // ── Paginación ─────────────────────────────────────────────────
+      query = query.range(desde, hasta);
+
+      const { data, count, error } = await query;
+
+      if (error) {
+        console.error('Error en getFilteredProfessionals:', error.message);
+        return { data: [], count: 0, totalPages: 0, error };
+      }
+
+      const totalCount = count ?? 0;
+      const totalPages = Math.ceil(totalCount / limit);
+
+      // Mapeamos el resultado al mismo formato normalizado que usa la aplicación
+      const profesionales = (data || []).map((p: any) => ({
+        id: p.id,
+        name: p.nombre,
+        email: p.email,
+        role: 'Profesional',
+        rol: 'profesional',
+        plan: p.plan || 'Gratis',
+        status: 'Activo',
+        date: p.created_at ? new Date(p.created_at).toLocaleDateString() : 'Reciente',
+        verificacion: p.verificado ? 'Verificado' : 'Pendiente',
+        estadoDNI: p.estado_dni || (p.verificado ? 'Validado' : 'Pendiente'),
+        matriculadoVerificado: p.matriculado_verificado || p.estado_certificados === 'Validado' || false,
+        estadoCertificados: p.estado_certificados || (p.certificados && p.certificados.length > 0 ? 'Pendiente' : 'Sin Cargar'),
+        trade: p.oficios && p.oficios.length > 0 ? p.oficios.join(', ') : '',
+        rating: 5.0,
+        docMatricula: p.nro_matricula || '-',
+        avatar: p.foto_perfil || 'https://i.pravatar.cc/150?u=' + p.id,
+        fotoPerfil: p.foto_perfil || '',
+        location: p.ciudad && p.provincia ? `${p.ciudad}, ${p.provincia}` : (p.provincia || 'Argentina'),
+        category: p.oficios && p.oficios.length > 0
+          ? p.oficios[0].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          : '',
+        experiencia: p.experiencia || '',
+        biografia: p.biografia || '',
+        montoMinimo: p.monto_minimo || '',
+        telefono: p.telefono || '',
+        provincia: p.provincia || '',
+        ciudad: p.ciudad || '',
+        oficios: p.oficios || [],
+        nombre: p.nombre,
+        nroMatricula: p.nro_matricula || '',
+      }));
+
+      return { data: profesionales, count: totalCount, totalPages, error: null };
+    } catch (err: any) {
+      console.error('Excepción en getFilteredProfessionals:', err?.message || err);
+      return { data: [], count: 0, totalPages: 0, error: err };
+    }
+  },
+
+
+
   async getUserProfile(id: string): Promise<any> {
     const { data, error } = await supabase.from('perfiles').select('*').eq('id', id).maybeSingle();
     if (error || !data) return null;
@@ -333,8 +473,7 @@ export const dbHelper = {
         pais: extraData?.pais || 'Argentina',
         fotoPerfil: '',
       };
-      localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(profileData));
-      localStorage.setItem('oficiosya_session', JSON.stringify(profileData));
+      // localStorage removed to force real DB sync
     }
     return data;
   },
@@ -380,11 +519,11 @@ export const dbHelper = {
   async createJob(job: any): Promise<any> {
     const dbJob: any = {
       ...job,
-      empleadoravatar: job.empleadorAvatar || job.empleadoravatar,
-      esempleo: job.esEmpleo !== undefined ? job.esEmpleo : (job.esempleo || false)
+      empleadoravatar: job.empleadorAvatar || job.empleadoravatar
     };
     delete dbJob.empleadorAvatar;
     delete dbJob.esEmpleo;
+    delete dbJob.esempleo;
     delete dbJob.imagen;
 
     // Guardar cliente_id del usuario autenticado para poder notificarlo después
@@ -393,6 +532,10 @@ export const dbHelper = {
 
     const { data, error } = await supabase.from('trabajos').insert([dbJob]).select().single();
     if (error) throw error;
+    
+    // Asynchronously notify professionals in the background (no await so it doesn't block)
+    dbHelper.notifyProfessionalsForJob(data).catch(console.error);
+
     return data;
   },
 
@@ -832,7 +975,7 @@ export const dbHelper = {
   },
 
   /**
-   * EnvÃ­a un mensaje en una conversaciÃ³n.
+   * Envía un mensaje en una conversación.
    */
   async enviarMensaje(conversacionId: string, emisorId: string, receptorId: string, texto: string): Promise<any> {
     const { data, error } = await supabase
@@ -849,12 +992,11 @@ export const dbHelper = {
 
     if (error) throw error;
 
-    // Update last message on conversation
-    await supabase
-      .from('conversaciones')
+    // Update conversation's ultimo_mensaje
+    await supabase.from('conversaciones')
       .update({
-        ultimo_mensaje: texto.substring(0, 100),
-        ultimo_mensaje_fecha: new Date().toISOString(),
+        ultimo_mensaje: texto.startsWith('📄') ? 'Presupuesto enviado' : texto.substring(0, 100),
+        ultimo_mensaje_fecha: new Date().toISOString()
       })
       .eq('id', conversacionId);
 
@@ -1606,10 +1748,55 @@ export const dbHelper = {
   // PRESUPUESTOS ESTRUCTURADOS & CONTRATACIÃ“N
   // ============================================================
 
+  async getPresupuestosPorTrabajo(trabajoId: string): Promise<any[]> {
+    if (!trabajoId) return [];
+    try {
+      const { data, error } = await supabase
+        .from('presupuestos_estructurados')
+        .select('*')
+        .ilike('observaciones', `%TRABAJO_ID:${trabajoId}%`)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      if (!data || data.length === 0) return [];
+
+      // Fetch profiles manually to avoid Foreign Key missing relation errors in PostgREST
+      const enriched = await Promise.all(data.map(async (pres: any) => {
+        const profile = await dbHelper.getUserProfile(pres.profesional_id);
+        return {
+          ...pres,
+          profesional: profile ? { nombre: profile.nombre, foto_perfil: profile.fotoPerfil, id: profile.id } : null
+        };
+      }));
+
+      return enriched;
+    } catch (e) {
+      console.warn('Error fetching presupuestos por trabajo:', e);
+      return [];
+    }
+  },
+
+  async getPresupuestosEnviados(profesionalId: string): Promise<any[]> {
+    if (!profesionalId) return [];
+    try {
+      const { data, error } = await supabase
+        .from('presupuestos_estructurados')
+        .select('*')
+        .eq('profesional_id', profesionalId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } catch (e) {
+      console.warn('Error fetching presupuestos enviados:', e);
+      return [];
+    }
+  },
+
   async crearPresupuestoEstructurado(payload: {
     conversacion_id: string;
     profesional_id: string;
     cliente_id: string;
+    trabajo_id?: string;
     monto: number;
     tiempo_estimado?: string;
     garantia?: string;
@@ -1617,21 +1804,39 @@ export const dbHelper = {
     materiales_incluidos?: boolean;
     observaciones?: string;
   }) {
+    // Si hay trabajo_id, lo inyectamos en observaciones porque la columna no existe
+    const observacionesFinal = payload.trabajo_id 
+      ? `${payload.observaciones || ''} | TRABAJO_ID:${payload.trabajo_id}` 
+      : payload.observaciones;
+
+    const dbPayload = {
+      conversacion_id: payload.conversacion_id,
+      profesional_id: payload.profesional_id,
+      cliente_id: payload.cliente_id,
+      monto: payload.monto,
+      tiempo_estimado: payload.tiempo_estimado,
+      garantia: payload.garantia,
+      detalle: payload.detalle,
+      materiales_incluidos: payload.materiales_incluidos,
+      observaciones: observacionesFinal,
+      estado: 'pendiente'
+    };
+
     const { data, error } = await supabase
       .from('presupuestos_estructurados')
-      .insert({ ...payload, estado: 'pendiente' })
+      .insert(dbPayload)
       .select()
       .single();
 
     if (error) throw error;
 
     // Enviar mensaje especial de notificaciÃ³n en la conversaciÃ³n
-    await supabase.from('mensajes').insert({
-      conversacion_id: payload.conversacion_id,
-      emisor_id: payload.profesional_id,
-      receptor_id: payload.cliente_id,
-      texto: `📄 PRESUPUESTO_ENVIADO:${data.id}`
-    });
+    await this.enviarMensaje(
+      payload.conversacion_id,
+      payload.profesional_id,
+      payload.cliente_id,
+      `📄 PRESUPUESTO_ENVIADO:${data.id}`
+    );
 
     return data;
   },
@@ -2171,6 +2376,42 @@ export const dbHelper = {
     } catch (e) {
       console.error('Error registrarAuditoria:', e);
       return false;
+    }
+  },
+
+  async notifyProfessionalsForJob(jobData: any): Promise<void> {
+    try {
+      // Find all professionals
+      const { data: professionals, error } = await supabase
+        .from('perfiles')
+        .select('id, oficios, nombre')
+        .eq('rol', 'profesional');
+        
+      if (error || !professionals) return;
+
+      const categoryMatches = (oficios: any[]) => {
+        if (!oficios || !Array.isArray(oficios)) return false;
+        // Normalize strings for comparison
+        const jobCat = jobData.categoria?.toLowerCase().trim() || '';
+        return oficios.some(o => typeof o === 'string' && o.toLowerCase().trim() === jobCat);
+      };
+
+      const matchedPros = professionals.filter(p => categoryMatches(p.oficios));
+
+      if (matchedPros.length > 0) {
+        const notificationsToInsert = matchedPros.map(p => ({
+          usuario_id: p.id,
+          tipo: 'alerta',
+          titulo: 'Nuevo trabajo en tu zona',
+          descripcion: `Hay un nuevo trabajo de "${jobData.categoria}" en ${jobData.ciudad || 'tu zona'}: ${jobData.titulo}. ¡Enviá tu presupuesto!`,
+          referencia_id: String(jobData.id || ''),
+          leida: false
+        }));
+
+        await supabase.from('notificaciones').insert(notificationsToInsert);
+      }
+    } catch (e) {
+      console.error('Error notifying professionals:', e);
     }
   },
 

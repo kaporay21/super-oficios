@@ -22,7 +22,7 @@ export default function ChatIDPage() {
 function ChatIDContent() {
   const router = useRouter();
   const params = useParams();
-  const conversacionId = params.id as string;
+  const { id: conversacionId } = React.use(params as any) as { id: string };
   const { user, profile } = useAuth();
   
   const [message, setMessage] = useState("");

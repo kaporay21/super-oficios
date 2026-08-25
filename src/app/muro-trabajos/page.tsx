@@ -77,8 +77,17 @@ function MuroTrabajosContent() {
     'Albañilería': '/images/oficio_albanileria_m_1784427479131.png',
     'Pintura': '/images/oficio_pintura_m_1784427486978.png',
     'Carpintería': '/images/oficio_carpinteria_1784426158760.png',
+    'Gasista': '/images/oficio_gasista_1786058953543.png',
+    'Cerrajería': '/images/oficio_cerrajeria_1786058962290.png',
+    'Durlock / Yeso': '/images/oficio_durlock_1786058972139.png',
+    'Aire Acondicionado': '/images/oficio_aire_acondicionado_1786058980622.png',
     'Jardinería': '/images/oficio_jardineria_1784426924675.png',
+    'Fumigación': '/images/oficio_fumigacion_1786058989722.png',
+    'Herrería': '/images/oficio_herreria_1786058999047.png',
+    'Techista / Impermeabilización': '/images/oficio_techista_1786059008272.png',
+    'Fletes y Mudanzas': '/images/oficio_fletes_1786059017459.png',
     'Limpieza': '/images/oficio_limpieza_1784426932346.png',
+    'Otro': '/images/oficio_otro_1786059026661.png',
   };
   const getDefaultImage = (cat: string) => defaultImages[cat] || 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?q=80&w=1000&auto=format&fit=crop';
 
@@ -116,12 +125,11 @@ function MuroTrabajosContent() {
         const clientRequests = (allJobs || []).filter((j: any) => !j.esempleo);
         setTrabajos(clientRequests);
 
-        if (typeof dbHelper.getPresupuestos === 'function') {
-          const presupuestos = await dbHelper.getPresupuestos();
+        if (typeof dbHelper.getPresupuestosEnviados === 'function') {
+          const presupuestos = await dbHelper.getPresupuestosEnviados(user?.id || '');
           setPresupuestosCount(presupuestos ? presupuestos.length : 0);
         } else {
-          const stored = JSON.parse(localStorage.getItem('oficiosya_presupuestos_guardados') || '[]');
-          setPresupuestosCount(stored.length);
+          setPresupuestosCount(0);
         }
 
         if (typeof dbHelper.getObras === 'function') {
@@ -166,6 +174,7 @@ function MuroTrabajosContent() {
         conversacion_id: conv.id,
         profesional_id: user.id,
         cliente_id: selectedJobForBudget.cliente_id || selectedJobForBudget.empleador_id,
+        trabajo_id: selectedJobForBudget.id,
         monto: Number(budgetForm.monto),
         tiempo_estimado: budgetForm.tiempoEstimado,
         garantia: budgetForm.garantia,
@@ -185,8 +194,8 @@ function MuroTrabajosContent() {
 
       setShowBudgetModal(false);
       alert('¡Presupuesto enviado con éxito! Puedes hacer seguimiento en tus Mensajes.');
-    } catch (err) {
-      console.error('Error enviando presupuesto:', err);
+    } catch (err: any) {
+      console.error('Error enviando presupuesto - message:', err.message, 'details:', err.details, 'hint:', err.hint, 'code:', err.code, 'full:', err);
       alert('Hubo un error al enviar el presupuesto. Inténtalo de nuevo.');
     } finally {
       setIsSubmittingBudget(false);

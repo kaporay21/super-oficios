@@ -52,22 +52,28 @@ function HomePageContent() {
       const userId = authProfile?.id;
       
       try {
-        const [allJobs, allPostulaciones] = await Promise.all([
-          dbHelper.getJobs().catch(() => []),
-          dbHelper.getAllPostulaciones().catch(() => [])
-        ]);
-
-        const clientJobs = (clientName || userId
+        const allJobs = await dbHelper.getJobs().catch(() => []);
+        
+        // Filter jobs first
+        let clientJobs = clientName || userId
           ? allJobs.filter((j: any) => j.empleador === clientName || j.user_id === userId)
-          : allJobs
-        ).map((j: any) => {
-          const count = allPostulaciones.filter((p: any) => String(p.empleoId) === String(j.id) || String(p.trabajoId) === String(j.id)).length;
+          : allJobs;
+
+        // Fetch presupuestos for these jobs
+        const jobsWithPresupuestos = await Promise.all(clientJobs.map(async (j: any) => {
+          let count = 0;
+          try {
+            const presupuestos = await dbHelper.getPresupuestosPorTrabajo(j.id);
+            count = presupuestos.length;
+          } catch (e) {
+            console.error('Error fetching presupuestos for job', j.id);
+          }
           return {
             ...j,
             presupuestosCount: count
           };
-        });
-        setMyJobs(clientJobs);
+        }));
+        setMyJobs(jobsWithPresupuestos);
       } catch (error) {
         console.error("Error al cargar trabajos:", error);
       }
@@ -264,6 +270,7 @@ const HomeClient: React.FC<HomeClientProps> = ({
   // Estado para el panel de preguntas por trabajo
   const [expandedJobId, setExpandedJobId] = useState<string | number | null>(null);
   const [preguntasMap, setPreguntasMap] = useState<{ [jobId: string]: any[] }>({});
+  const [presupuestosMap, setPresupuestosMap] = useState<{ [jobId: string]: any[] }>({});
   const [respuestasMap, setRespuestasMap] = useState<{ [pregId: string]: string }>({});
   const [respondingMap, setRespondingMap] = useState<{ [pregId: string]: boolean }>({});
 
@@ -273,8 +280,17 @@ const HomeClient: React.FC<HomeClientProps> = ({
     'Albañilería': '/images/oficio_albanileria_m_1784427479131.png',
     'Pintura': '/images/oficio_pintura_m_1784427486978.png',
     'Carpintería': '/images/oficio_carpinteria_1784426158760.png',
+    'Gasista': '/images/oficio_gasista_1786058953543.png',
+    'Cerrajería': '/images/oficio_cerrajeria_1786058962290.png',
+    'Durlock / Yeso': '/images/oficio_durlock_1786058972139.png',
+    'Aire Acondicionado': '/images/oficio_aire_acondicionado_1786058980622.png',
     'Jardinería': '/images/oficio_jardineria_1784426924675.png',
+    'Fumigación': '/images/oficio_fumigacion_1786058989722.png',
+    'Herrería': '/images/oficio_herreria_1786058999047.png',
+    'Techista / Impermeabilización': '/images/oficio_techista_1786059008272.png',
+    'Fletes y Mudanzas': '/images/oficio_fletes_1786059017459.png',
     'Limpieza': '/images/oficio_limpieza_1784426932346.png',
+    'Otro': '/images/oficio_otro_1786059026661.png',
   };
   const getDefaultImage = (cat: string) => defaultImages[cat] || 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?q=80&w=1000&auto=format&fit=crop';
 
@@ -284,8 +300,12 @@ const HomeClient: React.FC<HomeClientProps> = ({
       return;
     }
     setExpandedJobId(jobId);
-    const pregs = await dbHelper.getPreguntasTrabajo(jobId);
+    const [pregs, presupuestos] = await Promise.all([
+      dbHelper.getPreguntasTrabajo(jobId),
+      dbHelper.getPresupuestosPorTrabajo(String(jobId))
+    ]);
     setPreguntasMap(prev => ({ ...prev, [String(jobId)]: pregs }));
+    setPresupuestosMap(prev => ({ ...prev, [String(jobId)]: presupuestos }));
   };
 
   const handleResponder = async (preguntaId: string, jobId: string | number) => {
@@ -317,7 +337,7 @@ const HomeClient: React.FC<HomeClientProps> = ({
     }))
   ];
 
-  const CAROUSEL_CARDS = OFICIOS_CORE.map((oficio, index) => ({
+  const CAROUSEL_CARDS = OFICIOS_CORE.filter(oficio => oficio !== 'Otro').map((oficio, index) => ({
     id: oficio.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
     label: oficio,
     img: getDefaultImage(oficio),
@@ -565,7 +585,7 @@ const HomeClient: React.FC<HomeClientProps> = ({
             Ver todos
           </button>
         </div>
-        <div className="grid grid-cols-1 gap-4 pt-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2 items-start">
           {postedJobs.length === 0 ? (
             <div className="col-span-full py-8 text-center bg-white border border-gray-100 rounded-2xl text-gray-500">
               Todavía no has publicado ningún trabajo. ¡Publicá uno para empezar!
@@ -573,12 +593,14 @@ const HomeClient: React.FC<HomeClientProps> = ({
           ) : postedJobs.map((job: any) => {
             const jobPregs = preguntasMap[String(job.id)];
             const pregsSinRespuesta = (jobPregs || []).filter((p: any) => !p.respuesta).length;
+            const isExpanded = expandedJobId === job.id;
+            
             return (
-              <div key={job.id} className={`bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden transition-all duration-300 ${expandedJobId === job.id ? 'grid grid-cols-1 lg:grid-cols-3' : ''}`}>
+              <div key={job.id} className={`bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden transition-all duration-300 ${isExpanded ? 'md:col-span-2 lg:col-span-3 grid grid-cols-1 lg:grid-cols-3' : 'col-span-1'}`}>
                 
                 {/* Cabecera / Info del trabajo (Izquierda cuando está expandido) */}
                 <div
-                  className={`p-5 flex flex-col justify-between cursor-pointer hover:bg-gray-50 transition-colors relative ${expandedJobId === job.id ? 'lg:col-span-1 border-b lg:border-b-0 lg:border-r border-gray-100' : ''}`}
+                  className={`p-5 flex flex-col justify-between cursor-pointer hover:bg-gray-50 transition-colors relative ${isExpanded ? 'lg:col-span-1 border-b lg:border-b-0 lg:border-r border-gray-100' : ''}`}
                   onClick={() => handleTogglePreguntas(job.id)}
                 >
                   {job.presupuestosCount > 0 && (
@@ -587,7 +609,7 @@ const HomeClient: React.FC<HomeClientProps> = ({
                     </div>
                   )}
                   
-                  {expandedJobId === job.id && (
+                  {isExpanded && (
                     <div className="w-full h-32 rounded-xl mb-4 overflow-hidden relative">
                        <img src={job.imagen || getDefaultImage(job.categoria || job.oficio)} alt="Trabajo" className="absolute inset-0 w-full h-full object-cover" />
                        <div className="absolute inset-0 bg-black/20"></div>
@@ -595,7 +617,7 @@ const HomeClient: React.FC<HomeClientProps> = ({
                   )}
 
                   <div className="flex items-center gap-4 flex-1 min-w-0">
-                    {!expandedJobId && (
+                    {!isExpanded && (
                       <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
                         <Search className="w-5 h-5 text-[#00355f]" />
                       </div>
@@ -608,7 +630,7 @@ const HomeClient: React.FC<HomeClientProps> = ({
                         <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{job.categoria || job.oficio || 'General'}</span>
                       </div>
                       <h4 className="font-bold text-gray-900 text-sm mt-1">{job.titulo || job.title}</h4>
-                      {expandedJobId === job.id && (
+                      {isExpanded && (
                          <p className="text-xs text-gray-500 mt-2 line-clamp-4">{job.descripcion}</p>
                       )}
                       <p className="text-xs text-gray-400 mt-1">{job.tiempo || 'Hace unos instantes'}</p>
@@ -625,16 +647,48 @@ const HomeClient: React.FC<HomeClientProps> = ({
                         <span className="bg-[#fc8127] text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-bounce">{pregsSinRespuesta}</span>
                       )}
                     </div>
-                    {expandedJobId === job.id
+                    {isExpanded
                       ? <ChevronUp className="w-5 h-5 text-gray-400" />
                       : <ChevronDown className="w-5 h-5 text-gray-400" />
                     }
                   </div>
                 </div>
 
-                {/* Panel de preguntas (Derecha cuando está expandido) */}
-                {expandedJobId === job.id && (
-                  <div className="lg:col-span-2 bg-[#f8fafc] p-5 md:p-6 flex flex-col h-full max-h-[500px]">
+                {/* Panel de preguntas y presupuestos (Derecha cuando está expandido) */}
+                {isExpanded && (
+                  <div className="lg:col-span-2 bg-[#f8fafc] p-5 md:p-6 flex flex-col h-full max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300">
+                    
+                    {/* PRESUPUESTOS RECIBIDOS */}
+                    {presupuestosMap[job.id] && presupuestosMap[job.id].length > 0 && (
+                      <div className="mb-6">
+                        <div className="flex items-center justify-between pb-3 border-b border-gray-200 mb-4 shrink-0">
+                          <h5 className="text-sm font-bold text-[#fc8127] flex items-center gap-2">
+                            <ClipboardList className="w-4 h-4 text-[#fc8127]" /> 
+                            Presupuestos Recibidos
+                          </h5>
+                        </div>
+                        <div className="space-y-4">
+                          {presupuestosMap[job.id].map((pres: any) => (
+                            <div key={pres.id} className="bg-white border-2 border-[#fc8127]/20 rounded-2xl p-4 shadow-sm flex items-center justify-between hover:border-[#fc8127] transition-colors cursor-pointer" onClick={() => router.push(`/chat/${pres.conversacion_id}`)}>
+                              <div className="flex items-center gap-3">
+                                <img src={pres.profesional?.foto_perfil || 'https://i.pravatar.cc/150'} className="w-10 h-10 rounded-full border border-gray-200 object-cover" alt="Pro" />
+                                <div>
+                                  <p className="text-xs font-black text-[#00355f]">{pres.profesional?.nombre || 'Profesional'}</p>
+                                  <p className="text-[10px] text-gray-500 line-clamp-1">{pres.detalle}</p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-lg font-black text-[#fc8127]">${parseFloat(pres.monto).toLocaleString('es-AR')}</p>
+                                <span className="text-[9px] font-bold text-[#00355f] bg-blue-50 px-2 py-0.5 rounded-full inline-flex items-center gap-1 mt-1">
+                                  <MessageSquare className="w-3 h-3" /> Ver en Chat
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between pb-3 border-b border-gray-200 mb-4 shrink-0">
                       <h5 className="text-sm font-bold text-[#00355f] flex items-center gap-2">
                         <MessageSquare className="w-4 h-4 text-[#fc8127]" /> 
@@ -642,9 +696,9 @@ const HomeClient: React.FC<HomeClientProps> = ({
                       </h5>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto space-y-4 scrollbar-thin scrollbar-thumb-gray-300 pr-2 pb-4">
+                    <div className="flex-1 space-y-4">
                       {!jobPregs || jobPregs.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-center opacity-60">
+                        <div className="flex flex-col items-center justify-center text-center opacity-60 py-8">
                            <MessageSquare className="w-12 h-12 text-gray-300 mb-3" />
                            <p className="text-sm text-gray-500 max-w-xs">Aún no hay consultas de profesionales para este trabajo.</p>
                         </div>

@@ -8,3 +8,5 @@
 ## Evaluación y Potenciación de Propuestas
 4. **Análisis Previo de Ideas**: Cada vez que el usuario proponga una nueva idea o característica, el asistente DEBE aplicar la skill `evaluar-ideas-de-usuario`: analizarla, mejorarla con mejores prácticas del producto, darle lógica acorde a la arquitectura de Super Oficios y brindar una opinión experta antes de su implementación.
 
+## Análisis Completo de Flujo de Datos
+5. **Trazabilidad de Principio a Fin**: Cada vez que se crea algo, se agrega alguna idea o se modifica algo, el asistente DEBE analizar completamente el flujo de datos: desde dónde ingresa un dato, cómo se procesa o almacena en la base de datos (Supabase), y hasta dónde debe aparecer o reflejarse en la interfaz de usuario para todos los tipos de usuarios involucrados (por ejemplo, si un Cliente publica un trabajo, asegurarse de que se envíe la notificación correcta al Profesional y aparezca en su panel).

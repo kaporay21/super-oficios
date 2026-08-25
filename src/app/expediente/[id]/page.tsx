@@ -23,7 +23,7 @@ export default function ExpedienteTrabajoPage() {
 function ExpedienteContent() {
   const router = useRouter();
   const params = useParams();
-  const expedienteId = params.id as string;
+  const { id: expedienteId } = React.use(params as any) as { id: string };
   const { user } = useAuth();
 
   const [expediente, setExpediente] = useState<any>(null);
