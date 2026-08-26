@@ -130,6 +130,35 @@ export function clearAllLocalData() {
 // DB HELPER â€” Solo Supabase (100% Real)
 // ============================================================
 
+/**
+ * Sube una captura de rostro (data-URL de la cámara) al bucket `avatars` y
+ * devuelve la URL pública para guardar en `perfiles.foto_perfil`.
+ *
+ * Guardar el data-URL en la columna significaba arrastrar ~100 KB por perfil
+ * en cada consulta, y getAllUsers() hace select('*').
+ *
+ * Si la subida falla devuelve el base64 original: preferimos una fila pesada
+ * antes que perder la captura, que es lo único que habilita el sello
+ * "Rostro Verificado".
+ */
+async function subirRostroAStorage(userId: string, foto: string): Promise<string> {
+  // Si ya es una URL (Storage o externa) no hay nada que subir.
+  if (!foto.startsWith('data:')) return foto;
+
+  try {
+    // Import dinámico: supabaseStorage importa de este módulo, así que un
+    // import estático crearía un ciclo entre ambos archivos.
+    const { uploadImageToSupabase } = await import('./supabaseStorage');
+    const blob = await (await fetch(foto)).blob();
+    const file = new File([blob], `rostro-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    const { publicUrl } = await uploadImageToSupabase('avatars', `${userId}/rostro.jpg`, file);
+    return publicUrl || foto;
+  } catch (e) {
+    console.warn('No se pudo subir el rostro a Storage, se guarda inline:', e);
+    return foto;
+  }
+}
+
 export const dbHelper = {
   // --- USERS / PROFILES ---
   async getAllUsers(): Promise<any[]> {
@@ -146,7 +175,9 @@ export const dbHelper = {
       date: p.created_at ? new Date(p.created_at).toLocaleDateString() : 'Reciente',
       verificacion: p.verificado ? 'Verificado' : (p.rol === 'profesional' ? 'Pendiente' : 'Sin Solicitud'),
       trade: p.oficios && p.oficios.length > 0 ? p.oficios.join(', ') : '',
-      rating: 5.0,
+      rating: Number(p.rating) || 0,
+      totalResenas: Number(p.total_resenas) || 0,
+      fotoVerificada: !!p.foto_verificada_en,
       docMatricula: '-',
       avatar: p.foto_perfil || 'https://i.pravatar.cc/150?u=' + p.id,
       location: p.ciudad && p.provincia ? `${p.ciudad}, ${p.provincia}` : (p.provincia || ''),
@@ -233,15 +264,19 @@ export const dbHelper = {
       }
 
       // ── Ordenamiento ───────────────────────────────────────────────
-      // Nota: 'rating' y 'trabajos_realizados' requieren columnas en la tabla;
-      // si no existen, se cae al orden por fecha de registro como respaldo.
-      if (ordenarPor === 'fecha_registro') {
-        query = query.order('created_at', { ascending: false });
+      // Antes las tres opciones caían al mismo order('created_at'): el
+      // selector "Más Valorados" no ordenaba nada. Ahora `rating` y
+      // `total_resenas` son columnas reales (ver sprint0_desbloqueo.sql).
+      if (ordenarPor === 'rating') {
+        // nullsFirst:false deja abajo a los que todavía no tienen reseñas.
+        query = query
+          .order('rating', { ascending: false, nullsFirst: false })
+          .order('total_resenas', { ascending: false, nullsFirst: false });
       } else if (ordenarPor === 'trabajos_realizados') {
-        // Fallback a fecha si la columna no existe aún en la tabla
-        query = query.order('created_at', { ascending: false });
+        query = query
+          .order('total_resenas', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false });
       } else {
-        // Fallback general
         query = query.order('created_at', { ascending: false });
       }
 
@@ -273,7 +308,13 @@ export const dbHelper = {
         matriculadoVerificado: p.matriculado_verificado || p.estado_certificados === 'Validado' || false,
         estadoCertificados: p.estado_certificados || (p.certificados && p.certificados.length > 0 ? 'Pendiente' : 'Sin Cargar'),
         trade: p.oficios && p.oficios.length > 0 ? p.oficios.join(', ') : '',
-        rating: 5.0,
+        // Rating real calculado por trigger sobre `reviews`. 0 = sin calificaciones
+        // todavía; la UI muestra "Nuevo" en vez de inventar un 5.0.
+        rating: Number(p.rating) || 0,
+        totalResenas: Number(p.total_resenas) || 0,
+        // Solo es "Rostro Verificado" si la foto se tomó con la cámara en vivo.
+        // No alcanza con tener `avatar`, que siempre trae un fallback.
+        fotoVerificada: !!p.foto_verificada_en,
         docMatricula: p.nro_matricula || '-',
         avatar: p.foto_perfil || 'https://i.pravatar.cc/150?u=' + p.id,
         fotoPerfil: p.foto_perfil || '',
@@ -320,7 +361,9 @@ export const dbHelper = {
       matriculadoVerificado: data.matriculado_verificado || data.estado_certificados === 'Validado' || false,
       estadoCertificados: data.estado_certificados || (data.certificados && data.certificados.length > 0 ? 'Pendiente' : 'Sin Cargar'),
       trade: data.oficios && data.oficios.length > 0 ? data.oficios.join(', ') : '',
-      rating: 5.0,
+      rating: Number(data.rating) || 0,
+      totalResenas: Number(data.total_resenas) || 0,
+      fotoVerificada: !!data.foto_verificada_en,
       docMatricula: data.nro_matricula || '-',
       avatar: data.foto_perfil || 'https://i.pravatar.cc/150?u=' + data.id,
       fotoPerfil: data.foto_perfil || '',
@@ -451,6 +494,12 @@ export const dbHelper = {
     if (error) throw error;
     
     if (data.user) {
+      // La foto llega como data-URL desde CameraCaptureModal: la subimos a
+      // Storage antes de escribir el perfil para no guardar el base64 crudo.
+      const fotoPerfil = extraData?.fotoPerfil
+        ? await subirRostroAStorage(data.user.id, extraData.fotoPerfil)
+        : '';
+
       const baseProfile: any = {
         id: data.user.id,
         nombre: fullName,
@@ -460,7 +509,10 @@ export const dbHelper = {
         rol: 'profesional',
         provincia: provincia || '',
         ciudad: ciudad || '',
-        foto_perfil: extraData?.fotoPerfil || '',
+        foto_perfil: fotoPerfil,
+        // El registro exige captura con cámara en vivo, así que si vino foto
+        // queda sellada como verificada. Es lo que habilita el badge real.
+        foto_verificada_en: fotoPerfil ? new Date().toISOString() : null,
       };
 
       const { error: profileError } = await supabase.from('perfiles').upsert([baseProfile]);
@@ -469,11 +521,25 @@ export const dbHelper = {
     return data;
   },
 
+  /**
+   * Actualiza la foto de perfil con una captura de cámara en vivo.
+   *
+   * Guarda la URL de Storage, no el base64 (ver subirRostroAStorage).
+   *
+   * Sella `foto_verificada_en`, que es lo único que habilita el badge
+   * "Rostro Verificado". Sin este sello el badge no debe mostrarse.
+   */
   async updateFotoPerfilCamara(userId: string, fotoBase64: string): Promise<boolean> {
+    const urlFinal = await subirRostroAStorage(userId, fotoBase64);
+
     const { error } = await supabase
       .from('perfiles')
-      .update({ foto_perfil: fotoBase64 })
+      .update({
+        foto_perfil: urlFinal,
+        foto_verificada_en: new Date().toISOString(),
+      })
       .eq('id', userId);
+
     if (error) {
       console.error('Error al actualizar foto de perfil con cámara:', error);
       throw error;
@@ -527,7 +593,16 @@ export const dbHelper = {
     delete dbJob.empleadorAvatar;
     delete dbJob.esEmpleo;
     delete dbJob.esempleo;
+
+    // Fotos de referencia de la solicitud.
+    // Antes se hacía `delete dbJob.imagen` porque la columna no existía, así que
+    // las fotos que subía el cliente se perdían siempre. Ahora van a la columna
+    // `imagenes text[]` como URLs de Storage (ver sprint0_desbloqueo.sql).
+    const imagenes: string[] = Array.isArray(job.imagenes)
+      ? job.imagenes.filter(Boolean)
+      : (job.imagen ? [job.imagen] : []);
     delete dbJob.imagen;
+    dbJob.imagenes = imagenes;
 
     // Guardar cliente_id del usuario autenticado para poder notificarlo después
     const { data: { user } } = await supabase.auth.getUser();

@@ -551,7 +551,7 @@ const HomeClient: React.FC<HomeClientProps> = ({
                 {/* Cabecera Visual con Imagen del Oficio */}
                 <div className="h-32 w-full relative overflow-hidden bg-gradient-to-r from-[#00355f] to-[#0f4c81]">
                   <img
-                    src={job.imagen || getDefaultImage(job.categoria || job.oficio)}
+                    src={job.imagenes?.[0] || getDefaultImage(job.categoria || job.oficio)}
                     alt={job.titulo}
                     className="w-full h-full object-cover opacity-80"
                   />
@@ -769,9 +769,19 @@ const HomeClient: React.FC<HomeClientProps> = ({
                           <Sparkles className="w-3.5 h-3.5 fill-white text-white" /> Destacado
                         </div>
                       )}
+                      {/* Rating real. Sin reseñas mostramos "Nuevo": un 0.0 en la
+                          tarjeta hunde al profesional recién registrado igual que
+                          un 5.0 inventado engaña al cliente. */}
                       <div className="absolute top-3 right-3 bg-white/95 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm">
-                        <Star className="w-3.5 h-3.5 fill-green-700 text-green-700" />
-                        <span className="font-bold text-xs text-green-700">{pro.rating.toFixed(1)}</span>
+                        {pro.totalResenas > 0 ? (
+                          <>
+                            <Star className="w-3.5 h-3.5 fill-green-700 text-green-700" />
+                            <span className="font-bold text-xs text-green-700">{Number(pro.rating).toFixed(1)}</span>
+                            <span className="text-[10px] text-gray-400 font-bold">({pro.totalResenas})</span>
+                          </>
+                        ) : (
+                          <span className="font-bold text-[10px] text-[#00355f] uppercase tracking-wide">Nuevo</span>
+                        )}
                       </div>
                     </div>
                     

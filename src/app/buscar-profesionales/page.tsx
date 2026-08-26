@@ -489,9 +489,14 @@ function BuscadorContenido() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 pt-2">
               {professionals.map((pro) => {
                 const premium = pro.plan === 'Master';
-                // Badge "Cerca tuyo" si el profesional está en la misma provincia detectada
-                const esCercano = geo.provincia && pro.province && 
-                  pro.province.toLowerCase().trim() === geo.provincia.toLowerCase().trim();
+                // Badge "Cerca tuyo" si el profesional está en la misma zona detectada.
+                // El campo del dbHelper es `provincia`, no `province`: con el nombre
+                // viejo la condición era siempre falsa y el badge nunca aparecía.
+                const mismaProvincia = !!geo.provincia && !!pro.provincia &&
+                  pro.provincia.toLowerCase().trim() === geo.provincia.toLowerCase().trim();
+                const mismaCiudad = !!geo.ciudad && !!pro.ciudad &&
+                  pro.ciudad.toLowerCase().trim() === geo.ciudad.toLowerCase().trim();
+                const esCercano = mismaProvincia || mismaCiudad;
                 return (
                   <div
                     key={pro.id}
@@ -527,9 +532,19 @@ function BuscadorContenido() {
                             <Navigation className="w-3 h-3 text-[#fc8127]" /> Cerca tuyo
                           </div>
                         )}
+                        {/* Rating real. Sin reseñas mostramos "Nuevo" en vez de
+                            un 5.0 inventado: un puntaje falso destruye la
+                            confianza que es el activo central del marketplace. */}
                         <div className="absolute top-3 right-3 bg-white/95 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm">
-                          <Star className="w-3.5 h-3.5 fill-green-700 text-green-700" />
-                          <span className="font-bold text-xs text-green-700">{(pro.rating || 5.0).toFixed(1)}</span>
+                          {pro.totalResenas > 0 ? (
+                            <>
+                              <Star className="w-3.5 h-3.5 fill-green-700 text-green-700" />
+                              <span className="font-bold text-xs text-green-700">{Number(pro.rating).toFixed(1)}</span>
+                              <span className="text-[10px] text-gray-400 font-bold">({pro.totalResenas})</span>
+                            </>
+                          ) : (
+                            <span className="font-bold text-[10px] text-[#00355f] uppercase tracking-wide">Nuevo</span>
+                          )}
                         </div>
                       </div>
 
@@ -545,8 +560,13 @@ function BuscadorContenido() {
 
                           {/* Insignias */}
                           <div className="flex flex-wrap gap-1.5 mt-2 mb-1">
-                            {(pro.fotoPerfil || pro.avatar) && (
-                              <span className="inline-flex items-center gap-1 bg-blue-50 text-[#00355f] text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-blue-200" title="Foto verificada por cámara en vivo">
+                            {/* Solo si la foto se capturó con cámara en vivo.
+                                Antes la condición era `pro.fotoPerfil || pro.avatar`,
+                                y `avatar` siempre tiene fallback a pravatar.cc:
+                                el sello le salía a todos, incluso a quien nunca
+                                abrió la cámara. */}
+                            {pro.fotoVerificada && (
+                              <span className="inline-flex items-center gap-1 bg-blue-50 text-[#00355f] text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-blue-200" title="Foto capturada con cámara en vivo al registrarse">
                                 <Camera className="w-3 h-3 text-[#fc8127]" /> Rostro Verificado
                               </span>
                             )}

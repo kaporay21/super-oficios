@@ -3,15 +3,17 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { 
-  ArrowLeft, Share2, MoreVertical, Star, FileText, 
-  MessageSquare, CheckCircle, ShieldCheck, Home, 
-  ClipboardList, User, Bell, Award, Camera, RefreshCw
+  ArrowLeft, Share2, Star, FileText,
+  MessageSquare, CheckCircle, ShieldCheck, Home,
+  ClipboardList, User, Bell, Award, Camera, Lock, Loader2, Check
 } from 'lucide-react';
-import { PROFESSIONALS } from '@/data';
 import { dbHelper, getCurrentProfile } from '@/lib/supabase';
 import Tooltip from '@/components/Tooltip';
 import Logo from '@/components/Logo';
 import CameraCaptureModal from '@/components/CameraCaptureModal';
+
+/** Cuántas opiniones se muestran antes de pedir "ver todas". */
+const RESENAS_INICIALES = 3;
 
 export default function PerfilProfesional() {
   const params = useParams();
@@ -23,6 +25,59 @@ export default function PerfilProfesional() {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [abriendoChat, setAbriendoChat] = useState(false);
+  const [linkCopiado, setLinkCopiado] = useState(false);
+  const [verTodasResenas, setVerTodasResenas] = useState(false);
+
+  /** Comparte el perfil: menú nativo en celular, copiar link en escritorio. */
+  const compartirPerfil = async () => {
+    const url = typeof window !== 'undefined' ? window.location.href : '';
+    const titulo = pro?.name ? `${pro.name} en OficiosYa` : 'Perfil en OficiosYa';
+
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({ title: titulo, url });
+        return;
+      } catch {
+        // El usuario canceló el menú nativo: no es un error.
+        return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkCopiado(true);
+      setTimeout(() => setLinkCopiado(false), 2000);
+    } catch {
+      console.warn('No se pudo copiar el link al portapapeles');
+    }
+  };
+
+  /**
+   * Abre (o crea) la conversación con este profesional y navega al chat.
+   * Si no hay sesión, manda a login guardando el destino para volver acá.
+   */
+  const abrirChat = async () => {
+    if (!pro?.id) return;
+
+    if (!currentUser?.id) {
+      router.push(`/login?redirect=${encodeURIComponent(`/profesional/${proId}`)}`);
+      return;
+    }
+    if (currentUser.id === pro.id) return; // no tiene sentido chatear con uno mismo
+
+    setAbriendoChat(true);
+    try {
+      const conv = await dbHelper.getOrCreateConversation(currentUser.id, pro.id);
+      if (conv?.id) router.push(`/chat/${conv.id}`);
+      else throw new Error('No se pudo abrir la conversación');
+    } catch (err) {
+      console.error('Error al abrir el chat:', err);
+      alert('No pudimos abrir el chat. Intentá de nuevo en un momento.');
+    } finally {
+      setAbriendoChat(false);
+    }
+  };
 
   useEffect(() => {
     getCurrentProfile().then(setCurrentUser).catch(() => null);
@@ -41,18 +96,11 @@ export default function PerfilProfesional() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        let dbProfile = await dbHelper.getUserProfile(proId).catch(() => null);
-        
-        // Fallback si proId es '1', 'me' o el id no devolvió un perfil en Supabase
-        if (!dbProfile) {
-          const currentP = await getCurrentProfile().catch(() => null);
-          if (currentP) {
-            dbProfile = currentP;
-          } else {
-            const stored = localStorage.getItem('oficiosya_profesional_perfil');
-            if (stored) dbProfile = JSON.parse(stored);
-          }
-        }
+        // Sin fallback al perfil propio: antes, si el id no existía en la BD,
+        // se cargaba getCurrentProfile() y la página mostraba TU perfil como si
+        // fuera el del profesional buscado. Ahora un id inexistente muestra el
+        // estado "no encontrado", que es la verdad.
+        const dbProfile = await dbHelper.getUserProfile(proId).catch(() => null);
 
         setPro(dbProfile);
 
@@ -99,19 +147,26 @@ export default function PerfilProfesional() {
     );
   }
 
-  // Calcular calificación promedio si hay opiniones reales
-  const avgRating = resenasReales.length > 0 
-    ? resenasReales.reduce((acc, curr) => acc + curr.rating, 0) / resenasReales.length 
-    : 5.0;
+  // Calificación promedio real. Sin reseñas queda en 0 y la UI muestra "Nuevo":
+  // antes se mostraba 5.0 a todo profesional recién registrado.
+  const tieneResenas = resenasReales.length > 0;
+  const resenasVisibles = verTodasResenas
+    ? resenasReales
+    : resenasReales.slice(0, RESENAS_INICIALES);
+  const avgRating = tieneResenas
+    ? resenasReales.reduce((acc, curr) => acc + curr.rating, 0) / resenasReales.length
+    : 0;
 
   // Datos extendidos del profesional
   const perfilCompleto = {
     ...pro,
     rating: avgRating,
-    experiencia: pro.experiencia || '5+ años',
-    trabajosRealizados: 30 + resenasReales.length,
+    // Sin dato cargado mostramos "—", no un "5+ años" inventado.
+    experiencia: pro.experiencia || '—',
+    // Antes era `30 + resenasReales.length`: le regalaba 30 trabajos
+    // ficticios a cualquiera que se registrara.
+    trabajosRealizados: resenasReales.length,
     zona: pro.location || pro.ciudad || 'Argentina',
-    whatsapp: '5493811234567',
     descripcion: (pro.biografia || pro.bio) 
       ? (pro.biografia || pro.bio) 
       : (pro.trade || (pro.oficios && pro.oficios.length > 0)
@@ -148,15 +203,19 @@ export default function PerfilProfesional() {
               <Logo size="md" theme="light" />
             </div>
           </div>
+          {/* "Compartir" no hacía nada y "Más opciones" abría un menú inexistente.
+              Compartir ahora usa la Web Share API (nativa en celulares) con
+              fallback a copiar el link; el menú fantasma se eliminó. */}
           <div className="flex items-center gap-2">
-            <Tooltip text="Compartir perfil" position="bottom">
-              <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors">
-                <Share2 className="w-5 h-5" />
-              </button>
-            </Tooltip>
-            <Tooltip text="Más opciones" position="bottom">
-              <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors">
-                <MoreVertical className="w-5 h-5" />
+            <Tooltip text={linkCopiado ? '¡Link copiado!' : 'Compartir perfil'} position="bottom">
+              <button
+                onClick={compartirPerfil}
+                aria-label="Compartir perfil"
+                className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors active:scale-95"
+              >
+                {linkCopiado
+                  ? <Check className="w-5 h-5 text-green-600" />
+                  : <Share2 className="w-5 h-5" />}
               </button>
             </Tooltip>
           </div>
@@ -197,8 +256,10 @@ export default function PerfilProfesional() {
                 <div className="flex flex-wrap items-center gap-2 mb-1">
                   <h1 className="text-2xl font-bold text-[#00355f]">{perfilCompleto.name}</h1>
                   
-                  {(perfilCompleto.fotoPerfil || perfilCompleto.avatar) && (
-                    <span className="bg-blue-50 text-[#00355f] border border-blue-200 px-2.5 py-1 rounded-full text-xs font-extrabold flex items-center gap-1 shadow-sm" title="Foto capturada en vivo con la cámara">
+                  {/* `avatar` siempre trae fallback, así que la condición vieja
+                      le daba el sello a todos. Solo cuenta la captura en vivo. */}
+                  {perfilCompleto.fotoVerificada && (
+                    <span className="bg-blue-50 text-[#00355f] border border-blue-200 px-2.5 py-1 rounded-full text-xs font-extrabold flex items-center gap-1 shadow-sm" title="Foto capturada con cámara en vivo">
                       <Camera className="w-3.5 h-3.5 text-[#fc8127]" /> Rostro Verificado
                     </span>
                   )}
@@ -215,9 +276,16 @@ export default function PerfilProfesional() {
                     </span>
                   )}
 
-                  <span className="bg-green-50 text-green-700 border border-green-100 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
-                    <Star className="w-3.5 h-3.5 fill-green-700" /> {perfilCompleto.rating.toFixed(1)}
-                  </span>
+                  {tieneResenas ? (
+                    <span className="bg-green-50 text-green-700 border border-green-100 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
+                      <Star className="w-3.5 h-3.5 fill-green-700" /> {perfilCompleto.rating.toFixed(1)}
+                      <span className="text-green-600/70 font-medium">({resenasReales.length})</span>
+                    </span>
+                  ) : (
+                    <span className="bg-gray-100 text-gray-600 border border-gray-200 px-2.5 py-1 rounded-lg text-xs font-bold">
+                      Sin calificaciones aún
+                    </span>
+                  )}
                 </div>
                 <p className="text-[#fc8127] font-bold text-sm uppercase tracking-wide mb-5">
                   {perfilCompleto.trade}
@@ -225,7 +293,9 @@ export default function PerfilProfesional() {
                 
                 <div className="flex flex-wrap gap-5 mb-4">
                   <div className="flex flex-col">
-                    <span className="text-lg text-[#00355f] font-bold">{perfilCompleto.trabajosRealizados}+</span>
+                    <span className="text-lg text-[#00355f] font-bold">
+                      {perfilCompleto.trabajosRealizados > 0 ? perfilCompleto.trabajosRealizados : '—'}
+                    </span>
                     <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Trabajos</span>
                   </div>
                   <div className="w-px bg-gray-200"></div>
@@ -242,25 +312,40 @@ export default function PerfilProfesional() {
 
                 <p className="text-sm text-gray-500 leading-relaxed mb-5">{perfilCompleto.descripcion}</p>
                 
-                {/* Botones de Acción */}
+                {/* Botones de Acción
+                    Antes ambos hacían router.push(`/chat/${proId}`), pero
+                    /chat/[id] espera el id de la CONVERSACIÓN, no el del
+                    profesional: el botón siempre caía en "Conversación no
+                    encontrada". Ahora se resuelve la conversación primero. */}
                 <div className="flex flex-col sm:flex-row gap-3">
-                  <button onClick={() => router.push(`/chat/${proId}`)} className="bg-[#fc8127] text-white px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:scale-[0.98] transition-all shadow-md sm:flex-1 active:scale-[0.98]">
-                    <FileText className="w-5 h-5" /> Pedir Presupuesto
+                  <button
+                    onClick={() => abrirChat()}
+                    disabled={abriendoChat}
+                    className="bg-[#fc8127] text-white px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-[#e06d19] transition-all shadow-md sm:flex-1 active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    {abriendoChat
+                      ? <><Loader2 className="w-5 h-5 animate-spin" /> Abriendo chat...</>
+                      : <><FileText className="w-5 h-5" /> Pedir Presupuesto</>}
                   </button>
-                  <button onClick={() => router.push(`/chat/${proId}`)} className="border-2 border-[#00355f] text-[#00355f] px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-50 transition-colors sm:w-auto active:scale-[0.98]">
+                  <button
+                    onClick={() => abrirChat()}
+                    disabled={abriendoChat}
+                    className="border-2 border-[#00355f] text-[#00355f] px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-50 transition-colors sm:w-auto active:scale-[0.98] disabled:opacity-70"
+                  >
                     <MessageSquare className="w-5 h-5" /> Contactar
                   </button>
-                  <a 
-                    href={`https://wa.me/${perfilCompleto.whatsapp}?text=${encodeURIComponent(`Hola ${perfilCompleto.name}, te contacto a través de OficiosYa y me gustaría pedirte un presupuesto.`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="bg-[#25D366] text-white px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-[#20ba5a] transition-colors shadow-md sm:w-auto active:scale-[0.98]"
-                  >
-                    <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                      <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
-                    </svg>
-                    WhatsApp
-                  </a>
+                </div>
+
+                {/* El teléfono se revela recién cuando hay un trabajo contratado.
+                    Antes había acá un botón de WhatsApp público apuntando a un
+                    número hardcodeado ('5493811234567') que no era de nadie. */}
+                <div className="mt-3 flex items-start gap-2 text-xs text-gray-500 bg-gray-50 border border-gray-150 rounded-xl px-3 py-2.5">
+                  <Lock className="w-4 h-4 text-[#00355f] shrink-0 mt-px" />
+                  <span>
+                    Coordinás todo por el chat de OficiosYa. El teléfono se
+                    intercambia automáticamente cuando aceptás un presupuesto,
+                    así queda registro de lo acordado.
+                  </span>
                 </div>
               </div>
             </div>
@@ -300,22 +385,42 @@ export default function PerfilProfesional() {
           {/* Lado Derecho: Confianza y Reseñas */}
           <div className="lg:col-span-4 flex flex-col gap-8">
             
-            {/* Badge de Verificación */}
+            {/* Estado de verificación REAL.
+                Antes esta tarjeta afirmaba "Identidad validada", "Matrícula
+                vigente" y "Fondo de garantía" para todos los perfiles sin
+                comprobar nada: era el reclamo de confianza más fuerte de la
+                página y también el más falso. Ahora refleja el estado de cada
+                control, incluidos los que faltan. */}
             <div className="bg-[#104C82] text-white p-6 rounded-2xl flex flex-col gap-4 shadow-md">
               <div className="flex items-center gap-3">
                 <ShieldCheck className="w-8 h-8 text-[#fc8127]" />
-                <h3 className="text-lg font-bold">Profesional Verificado</h3>
+                <h3 className="text-lg font-bold">Estado de verificación</h3>
               </div>
-              <ul className="text-sm space-y-3 opacity-90 font-medium">
-                <li className="flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 shrink-0" /> Identidad validada
-                </li>
-                <li className="flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 shrink-0" /> Matrícula vigente
-                </li>
-                <li className="flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 shrink-0" /> Fondo de garantía OficiosYa
-                </li>
+              <ul className="text-sm space-y-3 font-medium">
+                {[
+                  {
+                    ok: !!perfilCompleto.fotoVerificada,
+                    si: 'Rostro capturado en vivo',
+                    no: 'Sin foto en vivo',
+                  },
+                  {
+                    ok: perfilCompleto.verificado || perfilCompleto.estadoDNI === 'Validado',
+                    si: 'Identidad (DNI) validada',
+                    no: 'DNI sin validar',
+                  },
+                  {
+                    ok: perfilCompleto.matriculadoVerificado || perfilCompleto.estadoCertificados === 'Validado',
+                    si: 'Matrícula / certificados validados',
+                    no: 'Matrícula no acreditada',
+                  },
+                ].map((item, i) => (
+                  <li key={i} className={`flex items-center gap-3 ${item.ok ? 'opacity-95' : 'opacity-50'}`}>
+                    {item.ok
+                      ? <CheckCircle className="w-5 h-5 shrink-0 text-emerald-300" />
+                      : <Lock className="w-5 h-5 shrink-0 text-white/40" />}
+                    {item.ok ? item.si : item.no}
+                  </li>
+                ))}
               </ul>
             </div>
 
@@ -326,7 +431,7 @@ export default function PerfilProfesional() {
               <div className="space-y-4">
 
                 {/* Reseñas Dinámicas (de clientes reales) */}
-                {resenasReales.map((resena) => (
+                {resenasVisibles.map((resena) => (
                   <div key={resena.id} className="bg-white border-2 border-[#fc8127]/30 p-5 rounded-2xl shadow-sm relative">
                     <div className="absolute top-3 right-3">
                       <span className="bg-[#fc8127]/10 text-[#fc8127] text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-md">Verificada</span>
@@ -359,9 +464,16 @@ export default function PerfilProfesional() {
                 )}
               </div>
               
-              {resenasReales.length > 0 && (
-                <button className="w-full py-3 text-[#00355f] font-bold text-sm border border-[#00355f] rounded-xl hover:bg-blue-50 transition-colors mt-2">
-                  Ver todas las {resenasReales.length} opiniones
+              {/* Antes este botón no hacía nada: la lista ya renderizaba todas
+                  las reseñas. Ahora se muestran 3 y el botón expande de verdad. */}
+              {resenasReales.length > RESENAS_INICIALES && (
+                <button
+                  onClick={() => setVerTodasResenas(v => !v)}
+                  className="w-full py-3 text-[#00355f] font-bold text-sm border border-[#00355f] rounded-xl hover:bg-blue-50 transition-colors mt-2 active:scale-[0.98]"
+                >
+                  {verTodasResenas
+                    ? 'Ver menos opiniones'
+                    : `Ver todas las ${resenasReales.length} opiniones`}
                 </button>
               )}
             </div>

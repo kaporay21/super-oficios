@@ -420,7 +420,12 @@ function MuroTrabajosContent() {
 
                       {/* Imagen */}
                       <div className={`overflow-hidden rounded-xl bg-gray-100 relative shrink-0 ${expandedJobQuestionsId === job.id ? 'w-full h-32 mb-4' : 'w-full md:w-56 h-48 md:h-auto'}`}>
-                        <img className="absolute inset-0 w-full h-full object-cover" src={job.imagen || getDefaultImage(job.categoria || job.oficio)} alt={job.titulo} />
+                        <img className="absolute inset-0 w-full h-full object-cover" src={job.imagenes?.[0] || getDefaultImage(job.categoria || job.oficio)} alt={job.titulo} />
+                        {job.imagenes?.length > 1 && (
+                          <span className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] font-bold px-2 py-0.5 rounded-md backdrop-blur-sm">
+                            +{job.imagenes.length - 1} foto{job.imagenes.length > 2 ? 's' : ''}
+                          </span>
+                        )}
                         <div className="absolute inset-0 bg-black/10"></div>
                         {/* Overlay si está adjudicado */}
                         {estaAdjudicado && !yoGane && (

@@ -9,7 +9,7 @@ import {
   Calendar, ShieldCheck, Hammer
 } from 'lucide-react';
 import { dbHelper } from '@/lib/supabase';
-import { compressImage } from '@/lib/supabaseStorage';
+import { compressImage, uploadImageToSupabase } from '@/lib/supabaseStorage';
 import { OFICIOS_CORE, PROVINCIAS_CORE } from '@/lib/constants';
 import { useAuth } from '@/components/AuthContext';
 import AuthGuard from '@/components/AuthGuard';
@@ -40,9 +40,14 @@ function PublicarTrabajoContent() {
   });
   
   const [urgente, setUrgente] = useState(false);
-  const [fotos, setFotos] = useState<{id: number, url: string}[]>([]);
+  // Guardamos el File real además del preview: el archivo se sube a Storage
+  // recién al enviar, y `url` es solo un object-URL local para la vista previa.
+  const [fotos, setFotos] = useState<{ id: number; url: string; file: File }[]>([]);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Texto de progreso: subir 3 fotos puede tardar y un spinner mudo se lee
+  // como que la app se colgó.
+  const [uploadStatus, setUploadStatus] = useState('');
   const [error, setError] = useState('');
   const [isLocating, setIsLocating] = useState(false);
 
@@ -52,35 +57,48 @@ function PublicarTrabajoContent() {
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (fotos.length >= 3) {
-        alert("Máximo 3 fotos permitidas.");
-        return;
-      }
-      
-      try {
-        let sourceFile = file;
-        try {
-          sourceFile = await compressImage(file);
-        } catch {
-          // Fallback
-        }
-        
-        const reader = new FileReader();
-        reader.onload = () => {
-          setFotos(prev => [...prev, { id: Date.now(), url: reader.result as string }]);
-        };
-        reader.readAsDataURL(sourceFile);
-      } catch (err: any) {
-        console.error('Error procesando foto:', err);
-      }
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (fotos.length >= 3) {
+      setError('Podés adjuntar hasta 3 fotos.');
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      setError('El archivo tiene que ser una imagen (JPG, PNG o WEBP).');
+      return;
+    }
+
+    try {
+      // Comprimimos ya para que el preview pese poco y la subida sea rápida.
+      const comprimida = await compressImage(file).catch(() => file);
+      setFotos(prev => [
+        ...prev,
+        { id: Date.now(), url: URL.createObjectURL(comprimida), file: comprimida },
+      ]);
+      setError('');
+    } catch (err: any) {
+      console.error('Error procesando foto:', err);
+      setError('No pudimos procesar esa imagen. Probá con otra.');
+    } finally {
+      // Permite volver a elegir el mismo archivo si el usuario lo borra y reintenta.
+      e.target.value = '';
     }
   };
 
   const eliminarFoto = (id: number) => {
-    setFotos(fotos.filter(foto => foto.id !== id));
+    setFotos(prev => {
+      const foto = prev.find(f => f.id === id);
+      if (foto) URL.revokeObjectURL(foto.url);
+      return prev.filter(f => f.id !== id);
+    });
   };
+
+  // Liberamos los object-URLs al desmontar para no filtrar memoria.
+  React.useEffect(() => {
+    return () => { fotos.forEach(f => URL.revokeObjectURL(f.url)); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
@@ -123,6 +141,30 @@ function PublicarTrabajoContent() {
     setIsSubmitting(true);
 
     try {
+      // Subimos las fotos a Storage antes de crear el trabajo.
+      // Para el profesional, ver la foto del problema es la diferencia entre
+      // presupuestar con criterio y presupuestar a ciegas.
+      let imagenes: string[] = [];
+      if (fotos.length > 0) {
+        setUploadStatus(`Subiendo ${fotos.length} foto${fotos.length > 1 ? 's' : ''}...`);
+        const subidas = await Promise.all(
+          fotos.map(async (foto, i) => {
+            const ext = (foto.file.name.split('.').pop() || 'jpg').toLowerCase();
+            const path = `${profile?.id || 'anon'}/${Date.now()}-${i}.${ext}`;
+            const { publicUrl } = await uploadImageToSupabase('trabajos', path, foto.file);
+            return publicUrl;
+          })
+        );
+        imagenes = subidas.filter((u): u is string => !!u);
+
+        if (imagenes.length < fotos.length) {
+          // No abortamos la publicación por una foto: el trabajo igual sirve.
+          console.warn(`Se subieron ${imagenes.length} de ${fotos.length} fotos.`);
+        }
+      }
+
+      setUploadStatus('Publicando tu solicitud...');
+
       const jobData = {
         categoria: formData.oficio,
         oficio: formData.oficio,
@@ -135,41 +177,24 @@ function PublicarTrabajoContent() {
         tiempo: 'Hace unos instantes',
         urgente: urgente,
         empleador: profile?.nombre || profile?.name || 'Cliente',
-        empleadorAvatar: profile?.avatar || profile?.foto_perfil || profile?.fotoPerfil || 'https://i.pravatar.cc/150',
-        imagen: fotos.length > 0 ? fotos[0].url : null,
+        empleadorAvatar: profile?.avatar || profile?.foto_perfil || profile?.fotoPerfil || '',
+        imagenes,
         esEmpleo: false
       };
-      
-      const savedJob = await dbHelper.createJob(jobData);
 
-      // Notificación simulada (opcional, como estaba en la base original)
-      const storedProfile = localStorage.getItem('oficiosya_profesional_perfil');
-      if (storedProfile) {
-        try {
-          const parsedProfile = JSON.parse(storedProfile);
-          if ((parsedProfile.especialidades || []).includes(formData.oficio)) {
-            const notifs = JSON.parse(localStorage.getItem('oficiosya_user_notifications') || '[]');
-            notifs.unshift({
-              id: Date.now(),
-              tipo: 'trabajo',
-              titulo: `Nuevo trabajo de ${formData.oficio}: ${formData.titulo}`,
-              descripcion: `Se publicó una nueva solicitud: "${formData.descripcion.substring(0, 60)}..."`,
-              tiempo: 'Hace un momento',
-              leida: false,
-              trabajoId: savedJob?.id
-            });
-            localStorage.setItem('oficiosya_user_notifications', JSON.stringify(notifs));
-          }
-        } catch {}
-      }
-      
-      setTimeout(() => {
-        setIsSubmitting(false);
-        router.push('/cliente');
-      }, 1000);
+      await dbHelper.createJob(jobData);
+
+      // Las notificaciones a los profesionales las emite createJob() contra
+      // Supabase. Antes había acá un bloque que escribía una notificación
+      // "simulada" en localStorage que nadie leía nunca: se eliminó.
+
+      router.push('/cliente');
     } catch (err: any) {
-      setError(err.message || 'Error al publicar el trabajo.');
+      console.error('Error al publicar el trabajo:', err);
+      setError(err?.message || 'No pudimos publicar tu solicitud. Revisá tu conexión e intentá de nuevo.');
+      setUploadStatus('');
       setIsSubmitting(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -363,7 +388,7 @@ function PublicarTrabajoContent() {
                   ${isSubmitting ? 'bg-gray-400 cursor-not-allowed shadow-none' : 'bg-[#fc8127] hover:bg-[#e06d19] active:scale-[0.98]'}`}
               >
                 {isSubmitting ? (
-                  <><Loader2 className="w-5 h-5 animate-spin" /> Publicando...</>
+                  <><Loader2 className="w-5 h-5 animate-spin" /> {uploadStatus || 'Publicando...'}</>
                 ) : (
                   <><Zap className="w-5 h-5" /> Solicitar Presupuestos</>
                 )}
@@ -441,7 +466,7 @@ function PublicarTrabajoContent() {
             >
               {!isSubmitting && <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 rounded-2xl"></div>}
               {isSubmitting ? (
-                <><Loader2 className="w-6 h-6 animate-spin" /> Procesando...</>
+                <><Loader2 className="w-6 h-6 animate-spin" /> {uploadStatus || 'Procesando...'}</>
               ) : (
                 <><Zap className="w-6 h-6 relative z-10" /> <span className="relative z-10">Solicitar Presupuestos</span></>
               )}

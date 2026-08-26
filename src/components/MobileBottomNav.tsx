@@ -1,47 +1,91 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Home, Search, ClipboardList, MessageSquare, User } from 'lucide-react';
+import { Home, Search, ClipboardList, MessageSquare, User, LayoutDashboard } from 'lucide-react';
 import { useNotification } from '@/providers/NotificationProvider';
-import { getCurrentProfile } from '@/lib/supabase';
+import { useAuth } from '@/components/AuthContext';
+
+// Rutas donde la barra inferior estorba: flujos de autenticación, onboarding
+// y el panel de administración (que tiene su propia navegación).
+const RUTAS_SIN_NAV = [
+  '/login',
+  '/registro-cliente',
+  '/registro-profesional',
+  '/recuperar-password',
+  '/bienvenida',
+  '/admin',
+];
+
+interface NavItem {
+  id: string;
+  label: string;
+  icon: React.ElementType;
+  path?: string;
+  action?: () => void;
+  isActive: boolean;
+  badge?: number;
+}
 
 export default function MobileBottomNav() {
   const router = useRouter();
   const pathname = usePathname();
   const { unreadMessagesCount } = useNotification();
-  const [userProfile, setUserProfile] = useState<any>(null);
+  // Usamos el perfil que ya mantiene AuthContext en vez de consultar la BD
+  // en cada navegación (antes: getCurrentProfile() en un useEffect con [pathname]).
+  const { profile, loading } = useAuth();
 
-  useEffect(() => {
-    getCurrentProfile().then(setUserProfile).catch(() => null);
-  }, [pathname]);
-
-  // Si estamos en la vista individual de un chat (/chat/[id]), ocultar la barra inferior
-  // para dar el 100% del espacio al teclado y al chat activo estilo WhatsApp.
+  // En la vista individual de un chat ocultamos la barra para darle el 100%
+  // del alto al teclado y a los mensajes, estilo WhatsApp.
   const isIndividualChat = pathname.startsWith('/chat/') && pathname !== '/chat';
-  if (isIndividualChat) return null;
+  const enRutaSinNav = RUTAS_SIN_NAV.some(r => pathname === r || pathname.startsWith(`${r}/`));
 
-  const handlePerfilClick = () => {
-    if (!userProfile) {
-      router.push('/login');
-      return;
-    }
-    if (userProfile.rol === 'profesional') {
-      router.push('/panel-profesional');
-    } else if (userProfile.rol === 'admin') {
-      router.push('/admin');
-    } else {
-      router.push('/panel-cliente');
-    }
-  };
+  if (isIndividualChat || enRutaSinNav) return null;
 
-  const navItems = [
+  const rol = profile?.rol as 'cliente' | 'profesional' | 'admin' | undefined;
+  const esProfesional = rol === 'profesional';
+  const autenticado = !loading && !!profile;
+
+  const rutaInicio = !autenticado
+    ? '/'
+    : esProfesional
+      ? '/panel-profesional'
+      : '/cliente';
+
+  const rutaPerfil = !autenticado
+    ? '/login'
+    : rol === 'admin'
+      ? '/admin'
+      : esProfesional
+        ? '/configuracion-profesional'
+        : '/perfil-cliente';
+
+  // El ítem central cambia según el rol: el profesional busca trabajo en el Muro,
+  // el cliente publica el suyo. Mostrarle "Muro" a un cliente lo mandaba a una
+  // pantalla protegida por AuthGuard requiredRole="profesional".
+  const itemCentral: NavItem = esProfesional
+    ? {
+        id: 'muro',
+        label: 'Muro',
+        icon: ClipboardList,
+        path: '/muro-trabajos',
+        isActive: pathname.startsWith('/muro-trabajos'),
+      }
+    : {
+        id: 'publicar',
+        label: 'Publicar',
+        icon: ClipboardList,
+        path: autenticado ? '/publicar-trabajo' : '/registro-cliente',
+        isActive: pathname.startsWith('/publicar-trabajo'),
+      };
+
+  const navItems: NavItem[] = [
     {
       id: 'inicio',
       label: 'Inicio',
-      icon: Home,
-      path: '/',
-      isActive: pathname === '/',
+      icon: autenticado ? LayoutDashboard : Home,
+      path: rutaInicio,
+      isActive: pathname === rutaInicio,
     },
     {
       id: 'buscar',
@@ -50,32 +94,29 @@ export default function MobileBottomNav() {
       path: '/buscar-profesionales',
       isActive: pathname.startsWith('/buscar-profesionales'),
     },
-    {
-      id: 'muro',
-      label: 'Muro',
-      icon: ClipboardList,
-      path: '/muro-servicios',
-      isActive: pathname.startsWith('/muro-servicios'),
-    },
+    itemCentral,
     {
       id: 'chat',
       label: 'Chat',
       icon: MessageSquare,
-      path: '/chat',
+      path: autenticado ? '/chat' : '/login',
       isActive: pathname.startsWith('/chat'),
       badge: unreadMessagesCount,
     },
     {
       id: 'perfil',
-      label: 'Perfil',
+      label: autenticado ? 'Perfil' : 'Ingresar',
       icon: User,
-      action: handlePerfilClick,
-      isActive: pathname.includes('/panel-') || pathname.includes('/login') || pathname.includes('/admin'),
+      path: rutaPerfil,
+      isActive: pathname === rutaPerfil,
     },
   ];
 
   return (
-    <nav aria-label="Navegación Móvil" className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-lg border-t border-gray-200/80 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] pb-[env(safe-area-inset-bottom)]">
+    <nav
+      aria-label="Navegación principal"
+      className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-lg border-t border-gray-200/80 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] pb-[env(safe-area-inset-bottom)]"
+    >
       <div className="flex items-center justify-around h-16 px-2">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -84,6 +125,8 @@ export default function MobileBottomNav() {
             <button
               key={item.id}
               onClick={() => (item.action ? item.action() : router.push(item.path!))}
+              aria-current={active ? 'page' : undefined}
+              aria-label={item.label}
               className={`flex-1 flex flex-col items-center justify-center h-full relative py-1 transition-all active:scale-95 ${
                 active ? 'text-[#00355f]' : 'text-gray-400 hover:text-gray-600'
               }`}
@@ -91,7 +134,10 @@ export default function MobileBottomNav() {
               <div className="relative">
                 <Icon className={`w-5 h-5 transition-transform duration-200 ${active ? 'scale-110 text-[#fc8127]' : ''}`} />
                 {item.badge && item.badge > 0 ? (
-                  <span className="absolute -top-1.5 -right-2.5 bg-red-500 text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow-sm animate-pulse">
+                  <span
+                    aria-label={`${item.badge} sin leer`}
+                    className="absolute -top-1.5 -right-2.5 bg-red-500 text-white text-[10px] font-black min-w-4 h-4 px-1 rounded-full flex items-center justify-center shadow-sm"
+                  >
                     {item.badge > 9 ? '9+' : item.badge}
                   </span>
                 ) : null}

@@ -1,8 +1,8 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { MessageSquare, Bell, X, ArrowRight, Volume2, Sparkles } from 'lucide-react';
+import { MessageSquare, Bell, X, ArrowRight, Volume2 } from 'lucide-react';
 import { supabase, getCurrentProfile } from '@/lib/supabase';
 
 interface NotificationToast {
@@ -62,8 +62,58 @@ function playNotificationSound() {
     gain2.connect(ctx.destination);
     osc2.start(ctx.currentTime + 0.08);
     osc2.stop(ctx.currentTime + 0.5);
+
+    // Liberamos el AudioContext al terminar: cada notificación creaba uno
+    // nuevo y los navegadores cortan a las ~6 instancias simultáneas.
+    osc2.onended = () => { ctx.close().catch(() => {}); };
   } catch (e) {
     // Ignorar si el audio aún no fue desbloqueado por interacción del usuario
+  }
+}
+
+/**
+ * Convierte el `texto` crudo de un mensaje en algo legible para el toast.
+ *
+ * Los presupuestos del Muro viajan como un JSON serializado dentro de la
+ * columna `texto` (ver dbHelper.enviarOfertaMuro), y los presupuestos del
+ * chat como un marcador `📄 PRESUPUESTO_ENVIADO:<uuid>`. Sin esto el usuario
+ * veía el JSON completo en la notificación.
+ */
+function resumirMensaje(texto?: string | null): string {
+  if (!texto) return 'Te envió un mensaje';
+
+  if (texto.startsWith('📄 PRESUPUESTO_ENVIADO:')) return '📄 Te envió un presupuesto';
+  if (texto.startsWith('✅ PRESUPUESTO_ACEPTADO:')) return '✅ Aceptó el presupuesto';
+  if (texto.startsWith('❌ PRESUPUESTO_RECHAZADO:')) return '❌ Rechazó el presupuesto';
+
+  if (texto.trimStart().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(texto);
+      if (parsed?.tipo === 'presupuesto_card') {
+        const monto = Number(parsed.monto || 0).toLocaleString('es-AR');
+        return `💰 Presupuesto de $${monto}`;
+      }
+    } catch {
+      // No era JSON válido: cae al texto plano de abajo.
+    }
+  }
+
+  return texto.length > 80 ? `${texto.slice(0, 80)}…` : texto;
+}
+
+/** Ruta a la que debe llevar el toast de una notificación, según su tipo. */
+function destinoNotificacion(notif: any): string {
+  const ref = notif?.referencia_id ? String(notif.referencia_id) : '';
+
+  switch (notif?.tipo) {
+    case 'presupuesto':
+      // El cliente recibió una oferta: lo llevamos a comparar las de ESE trabajo.
+      // /comparar-presupuestos exige ?trabajoId= — sin él muestra la pantalla vacía.
+      return ref ? `/comparar-presupuestos?trabajoId=${ref}` : '/notificaciones';
+    case 'mensaje':
+      return ref ? `/chat/${ref}` : '/chat';
+    default:
+      return '/notificaciones';
   }
 }
 
@@ -101,16 +151,44 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
   };
 
-  // Cargar usuario autenticado
+  // Cargar usuario autenticado y mantenerlo sincronizado con la sesión.
+  // Antes se resolvía una sola vez al montar: si el usuario iniciaba sesión
+  // después, nunca se abría la suscripción realtime.
   useEffect(() => {
-    getCurrentProfile().then(u => {
-      setUser(u);
-    }).catch(() => null);
+    let cancelado = false;
+
+    const cargar = async () => {
+      const perfil = await getCurrentProfile().catch(() => null);
+      if (!cancelado) setUser(perfil);
+    };
+
+    cargar();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN') cargar();
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setUnreadMessagesCount(0);
+        setToasts([]);
+      }
+    });
+
+    return () => {
+      cancelado = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  // Agregar toast in-app
+  const removeToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  // Agregar toast in-app.
+  // `removeToast` se declara ARRIBA a propósito: antes estaba definido después
+  // de addToast, que lo referencia, y el compilador de React lo marcaba como
+  // "cannot access variable before it is declared".
   const addToast = useCallback((toast: Omit<NotificationToast, 'id'>) => {
-    const id = Date.now().toString();
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const newToast = { ...toast, id };
     setToasts(prev => [newToast, ...prev.slice(0, 2)]); // Máximo 3 toasts simultáneos
 
@@ -122,7 +200,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       try {
         new Notification(toast.titulo, {
           body: toast.mensaje,
-          icon: toast.avatar || '/icon.png',
+          // /icon.png no existe; los íconos de la PWA viven en /icons/.
+          icon: toast.avatar || '/icons/icon-192.png',
         });
       } catch (e) {
         console.error('Error push nativo:', e);
@@ -133,11 +212,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setTimeout(() => {
       removeToast(id);
     }, 6000);
-  }, []);
-
-  const removeToast = useCallback((id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  }, []);
+  }, [removeToast]);
 
   // Cargar contador inicial de mensajes no leídos
   const loadUnreadCount = useCallback(async (userId: string) => {
@@ -178,27 +253,33 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         },
         async (payload) => {
           const nuevoMensaje = payload.new;
-          
-          // Actualizar contador
+          const convId = nuevoMensaje.conversacion_id;
+
+          // Si el usuario YA está leyendo esa conversación, no molestamos:
+          // ni toast, ni sonido, ni sumamos al contador (el chat lo marca leído).
+          // Antes se comparaba contra emisor_id, que nunca coincide con la URL
+          // (que lleva el id de la CONVERSACIÓN), así que el toast saltaba
+          // incluso mientras estabas leyendo ese mismo chat.
+          if (pathname === `/chat/${convId}`) return;
+
           setUnreadMessagesCount(prev => prev + 1);
 
-          // Si el usuario no está justo en la conversación abierta
-          if (!pathname.includes(`/chat/${nuevoMensaje.emisor_id}`)) {
-            // Obtener nombre del emisor
-            const { data: emisor } = await supabase
-              .from('perfiles')
-              .select('nombre, foto_perfil')
-              .eq('id', nuevoMensaje.emisor_id)
-              .maybeSingle();
+          const { data: emisor } = await supabase
+            .from('perfiles')
+            .select('nombre, foto_perfil')
+            .eq('id', nuevoMensaje.emisor_id)
+            .maybeSingle();
 
-            addToast({
-              titulo: emisor?.nombre ? `💬 ${emisor.nombre}` : '💬 Nuevo Mensaje',
-              mensaje: nuevoMensaje.contenido || 'Te ha enviado un mensaje',
-              avatar: emisor?.foto_perfil,
-              linkUrl: `/chat/${nuevoMensaje.emisor_id}`,
-              tipo: 'mensaje',
-            });
-          }
+          addToast({
+            titulo: emisor?.nombre ? `💬 ${emisor.nombre}` : '💬 Nuevo Mensaje',
+            // La columna es `texto`, no `contenido`: antes el toast siempre
+            // mostraba el texto genérico en vez del mensaje real.
+            mensaje: resumirMensaje(nuevoMensaje.texto),
+            avatar: emisor?.foto_perfil || undefined,
+            // /chat/[id] espera el id de la conversación, no el del usuario.
+            linkUrl: convId ? `/chat/${convId}` : '/chat',
+            tipo: 'mensaje',
+          });
         }
       )
       .subscribe();
@@ -216,10 +297,18 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         },
         (payload) => {
           const notif = payload.new;
+
+          // Los mensajes ya generan su propio toast en el canal de `mensajes`;
+          // sin esto el usuario recibía dos avisos por cada mensaje entrante.
+          if (notif.tipo === 'mensaje') return;
+
           addToast({
             titulo: notif.titulo || '🔔 Nueva Notificación',
             mensaje: notif.descripcion || '',
-            linkUrl: '/comparar-presupuestos',
+            // Antes todo apuntaba a /comparar-presupuestos sin trabajoId:
+            // el cliente caía en la pantalla vacía y al profesional lo
+            // expulsaba el AuthGuard requiredRole="cliente".
+            linkUrl: destinoNotificacion(notif),
             tipo: 'notificacion',
           });
         }
