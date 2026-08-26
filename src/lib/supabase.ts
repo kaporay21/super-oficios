@@ -445,7 +445,7 @@ export const dbHelper = {
     oficios: string[], 
     provincia?: string, 
     ciudad?: string,
-    extraData?: { apellido?: string; fechaNacimiento?: string; pais?: string; experiencia?: string }
+    extraData?: { apellido?: string; fechaNacimiento?: string; pais?: string; experiencia?: string; fotoPerfil?: string }
   ): Promise<any> {
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
@@ -459,23 +459,26 @@ export const dbHelper = {
         oficios: oficios || [],
         rol: 'profesional',
         provincia: provincia || '',
-        ciudad: ciudad || ''
+        ciudad: ciudad || '',
+        foto_perfil: extraData?.fotoPerfil || '',
       };
 
       const { error: profileError } = await supabase.from('perfiles').upsert([baseProfile]);
       if (profileError) throw profileError;
-
-      const profileData = {
-        ...baseProfile,
-        apellido: extraData?.apellido || '',
-        experiencia: extraData?.experiencia || '',
-        fechaNacimiento: extraData?.fechaNacimiento || '',
-        pais: extraData?.pais || 'Argentina',
-        fotoPerfil: '',
-      };
-      // localStorage removed to force real DB sync
     }
     return data;
+  },
+
+  async updateFotoPerfilCamara(userId: string, fotoBase64: string): Promise<boolean> {
+    const { error } = await supabase
+      .from('perfiles')
+      .update({ foto_perfil: fotoBase64 })
+      .eq('id', userId);
+    if (error) {
+      console.error('Error al actualizar foto de perfil con cámara:', error);
+      throw error;
+    }
+    return true;
   },
 
   // --- TICKETS ---
@@ -2412,6 +2415,384 @@ export const dbHelper = {
       }
     } catch (e) {
       console.error('Error notifying professionals:', e);
+    }
+  },
+
+  // ============================================================
+  // MURO DE SERVICIOS — Presupuestos del Muro (presupuestos_muro)
+  // ============================================================
+
+  /**
+   * Verifica si un profesional ya envió una oferta en un trabajo.
+   * Retorna la oferta existente o null.
+   */
+  async getMiOfertaEnTrabajo(trabajoId: number | string, profesionalId: string): Promise<any | null> {
+    try {
+      const { data, error } = await supabase
+        .from('presupuestos_muro')
+        .select('*')
+        .eq('trabajo_id', Number(trabajoId))
+        .eq('profesional_id', profesionalId)
+        .maybeSingle();
+      if (error) throw error;
+      return data || null;
+    } catch (e) {
+      console.warn('Error getMiOfertaEnTrabajo:', e);
+      return null;
+    }
+  },
+
+  /**
+   * Cuenta cuántos profesionales ofertaron en un trabajo.
+   * No expone montos — solo el contador.
+   */
+  async getCountOfertasTrabajo(trabajoId: number | string): Promise<number> {
+    try {
+      const { count, error } = await supabase
+        .from('presupuestos_muro')
+        .select('*', { count: 'exact', head: true })
+        .eq('trabajo_id', Number(trabajoId))
+        .eq('estado', 'pendiente');
+      if (error) throw error;
+      return count || 0;
+    } catch (e) {
+      console.warn('Error getCountOfertasTrabajo:', e);
+      return 0;
+    }
+  },
+
+  /**
+   * Envía una nueva oferta al Muro de Servicios.
+   * Crea el registro y notifica al cliente.
+   */
+  async enviarOfertaMuro(oferta: {
+    trabajo_id: number | string;
+    profesional_id: string;
+    cliente_id: string;
+    monto: number;
+    descripcion: string;
+    tiempo_estimado?: string;
+    materiales_incluidos?: boolean;
+    garantia?: string;
+    titulo_trabajo?: string;
+  }): Promise<any> {
+    // 1. Obtener o crear conversación entre cliente y profesional
+    let conv = await dbHelper.getOrCreateConversation(oferta.cliente_id, oferta.profesional_id).catch(() => null);
+
+    // 2. Insertar en presupuestos_muro
+    const { data, error } = await supabase
+      .from('presupuestos_muro')
+      .insert([{
+        trabajo_id: Number(oferta.trabajo_id),
+        profesional_id: oferta.profesional_id,
+        cliente_id: oferta.cliente_id,
+        conversacion_id: conv?.id || null,
+        monto: oferta.monto,
+        descripcion: oferta.descripcion,
+        tiempo_estimado: oferta.tiempo_estimado || '',
+        materiales_incluidos: oferta.materiales_incluidos || false,
+        garantia: oferta.garantia || 'sin_garantia',
+        estado: 'pendiente',
+        version: 1,
+      }])
+      .select()
+      .single();
+    if (error) throw error;
+
+    // 3. Generar mensaje automático con tarjeta de presupuesto en la conversación
+    if (conv?.id) {
+      const cardPayload = JSON.stringify({
+        tipo: 'presupuesto_card',
+        presupuesto_id: data.id,
+        profesional_id: oferta.profesional_id,
+        monto: oferta.monto,
+        detalle: oferta.descripcion,
+        tiempo_estimado: oferta.tiempo_estimado || 'A convenir',
+        garantia: oferta.garantia || 'sin_garantia',
+        materiales_incluidos: oferta.materiales_incluidos || false,
+        estado: 'pendiente'
+      });
+
+      try {
+        await supabase.from('mensajes').insert([{
+          conversacion_id: conv.id,
+          emisor_id: oferta.profesional_id,
+          receptor_id: oferta.cliente_id,
+          texto: cardPayload,
+          leido: false,
+        }]);
+
+        await supabase.from('conversaciones').update({
+          ultimo_mensaje: `💰 Presupuesto de $${Number(oferta.monto).toLocaleString('es-AR')}: ${oferta.descripcion.substring(0, 60)}`,
+          ultimo_mensaje_fecha: new Date().toISOString()
+        }).eq('id', conv.id);
+      } catch (e) {
+        console.warn('Error al vincular mensaje de presupuesto en chat:', e);
+      }
+    }
+
+
+    // Obtener nombre del profesional para notificación
+    const { data: perfil } = await supabase
+      .from('perfiles')
+      .select('nombre')
+      .eq('id', oferta.profesional_id)
+      .maybeSingle();
+    const nombrePro = perfil?.nombre || 'Un profesional';
+
+    // Notificar al cliente
+    await supabase.from('notificaciones').insert([{
+      usuario_id: oferta.cliente_id,
+      tipo: 'presupuesto',
+      titulo: '💰 Nueva oferta recibida',
+      descripcion: `${nombrePro} te envió una oferta para "${oferta.titulo_trabajo || 'tu trabajo'}". ¡Revisá tus presupuestos!`,
+      referencia_id: String(oferta.trabajo_id),
+      leida: false,
+    }]);
+
+    return data;
+  },
+
+  /**
+   * Edita la oferta existente de un profesional en un trabajo.
+   * Incrementa la versión y notifica al cliente.
+   */
+  async editarOfertaMuro(ofertaId: string, updates: {
+    monto?: number;
+    descripcion?: string;
+    tiempo_estimado?: string;
+    materiales_incluidos?: boolean;
+    garantia?: string;
+    cliente_id?: string;
+    titulo_trabajo?: string;
+    profesional_nombre?: string;
+  }): Promise<any> {
+    // Primero obtenemos la versión actual
+    const { data: actual } = await supabase
+      .from('presupuestos_muro')
+      .select('version, trabajo_id')
+      .eq('id', ofertaId)
+      .maybeSingle();
+
+    const versionActual = actual?.version || 1;
+
+    const { data, error } = await supabase
+      .from('presupuestos_muro')
+      .update({
+        monto: updates.monto,
+        descripcion: updates.descripcion,
+        tiempo_estimado: updates.tiempo_estimado,
+        materiales_incluidos: updates.materiales_incluidos,
+        garantia: updates.garantia,
+        version: versionActual + 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', ofertaId)
+      .select()
+      .single();
+    if (error) throw error;
+
+    // Notificar al cliente que hubo una actualización
+    if (updates.cliente_id) {
+      await supabase.from('notificaciones').insert([{
+        usuario_id: updates.cliente_id,
+        tipo: 'presupuesto',
+        titulo: '🔄 Oferta actualizada',
+        descripcion: `${updates.profesional_nombre || 'Un profesional'} actualizó su oferta para "${updates.titulo_trabajo || 'tu trabajo'}". Revisá los nuevos detalles.`,
+        referencia_id: String(actual?.trabajo_id || ''),
+        leida: false,
+      }]);
+    }
+
+    return data;
+  },
+
+  /**
+   * Obtiene todos los presupuestos del Muro para un trabajo específico.
+   * Solo el cliente dueño puede ver todos los montos.
+   * Incluye perfil del profesional.
+   */
+  async getPresupuestosMuroByTrabajo(trabajoId: number | string): Promise<any[]> {
+    try {
+      const { data, error } = await supabase
+        .from('presupuestos_muro')
+        .select('*, profesional:perfiles!presupuestos_muro_profesional_id_fkey(id, nombre, foto_perfil, oficios, provincia, ciudad, verificado, rating)')
+        .eq('trabajo_id', Number(trabajoId))
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return (data || []).map((p: any) => ({
+        id: p.id,
+        trabajoId: p.trabajo_id,
+        profesionalId: p.profesional_id,
+        clienteId: p.cliente_id,
+        conversacionId: p.conversacion_id || null,
+        monto: p.monto,
+        descripcion: p.descripcion,
+        tiempoEstimado: p.tiempo_estimado,
+        materialesIncluidos: p.materiales_incluidos,
+        garantia: p.garantia,
+        estado: p.estado,
+        version: p.version,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
+        profesional: {
+          id: p.profesional?.id,
+          nombre: p.profesional?.nombre || 'Profesional',
+          fotoPerfil: p.profesional?.foto_perfil || '',
+          oficios: p.profesional?.oficios || [],
+          provincia: p.profesional?.provincia || '',
+          ciudad: p.profesional?.ciudad || '',
+          verificado: p.profesional?.verificado || false,
+          rating: p.profesional?.rating || 0,
+        },
+      }));
+    } catch (e) {
+      console.warn('Error getPresupuestosMuroByTrabajo:', e);
+      return [];
+    }
+  },
+
+  /**
+   * Adjudica un trabajo a un profesional.
+   * Flujo completo:
+   * 1. Marca el presupuesto elegido como 'aceptado'
+   * 2. Rechaza los demás presupuestos del mismo trabajo
+   * 3. Actualiza el estado del trabajo a 'adjudicado'
+   * 4. Crea una Orden de Trabajo automáticamente
+   * 5. Notifica al profesional ganador
+   * 6. Notifica a los demás profesionales que el trabajo fue adjudicado
+   */
+  async adjudicarTrabajo({
+    trabajoId,
+    presupuestoId,
+    profesionalId,
+    clienteId,
+    tituloTrabajo,
+    monto,
+    garantia,
+  }: {
+    trabajoId: number | string;
+    presupuestoId: string;
+    profesionalId: string;
+    clienteId: string;
+    tituloTrabajo: string;
+    monto: number;
+    garantia?: string;
+  }): Promise<{ ordenId: string }> {
+    // 1. Marcar presupuesto seleccionado como aceptado
+    await supabase
+      .from('presupuestos_muro')
+      .update({ estado: 'aceptado' })
+      .eq('id', presupuestoId);
+
+    // 2. Rechazar todos los demás presupuestos del mismo trabajo
+    await supabase
+      .from('presupuestos_muro')
+      .update({ estado: 'rechazado' })
+      .eq('trabajo_id', Number(trabajoId))
+      .neq('id', presupuestoId);
+
+    // 3. Actualizar estado del trabajo a 'adjudicado'
+    await supabase
+      .from('trabajos')
+      .update({
+        estado: 'adjudicado',
+        profesional_adjudicado_id: profesionalId,
+      })
+      .eq('id', trabajoId);
+
+    // 4. Crear Orden de Trabajo
+    const orden = await dbHelper.createOrdenTrabajo({
+      profesional_id: profesionalId,
+      cliente_id: clienteId,
+      titulo: tituloTrabajo,
+      descripcion: `Trabajo adjudicado desde el Muro de Servicios`,
+      garantia: garantia || 'sin_garantia',
+      monto,
+    });
+
+    // 5. Notificar al profesional ganador
+    await supabase.from('notificaciones').insert([{
+      usuario_id: profesionalId,
+      tipo: 'trabajo',
+      titulo: '🎉 ¡Te eligieron!',
+      descripcion: `El cliente aceptó tu presupuesto para "${tituloTrabajo}". Se generó una Orden de Trabajo. ¡Coordiná los detalles!`,
+      referencia_id: String(trabajoId),
+      leida: false,
+    }]);
+
+    // 6. Notificar a los demás profesionales
+    const { data: rechazados } = await supabase
+      .from('presupuestos_muro')
+      .select('profesional_id')
+      .eq('trabajo_id', Number(trabajoId))
+      .eq('estado', 'rechazado');
+
+    if (rechazados && rechazados.length > 0) {
+      const notifs = rechazados.map((r: any) => ({
+        usuario_id: r.profesional_id,
+        tipo: 'alerta',
+        titulo: 'Trabajo adjudicado',
+        descripcion: `El trabajo "${tituloTrabajo}" fue adjudicado a otro profesional.`,
+        referencia_id: String(trabajoId),
+        leida: false,
+      }));
+      await supabase.from('notificaciones').insert(notifs);
+    }
+
+    return { ordenId: orden.id };
+  },
+
+  /**
+   * Obtiene presupuestos del Muro enviados por un profesional.
+   * Para el panel del profesional.
+   */
+  async getPresupuestosEnviadosMuro(profesionalId: string): Promise<any[]> {
+    try {
+      const { data, error } = await supabase
+        .from('presupuestos_muro')
+        .select('*, trabajo:trabajos!presupuestos_muro_trabajo_id_fkey(id, titulo, categoria, estado)')
+        .eq('profesional_id', profesionalId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } catch (e) {
+      console.warn('Error getPresupuestosEnviadosMuro:', e);
+      return [];
+    }
+  },
+
+  /**
+   * El cliente descarta/rechaza un presupuesto del Muro desde su vista.
+   * Cambia estado a 'rechazado' y notifica al profesional.
+   */
+  async descartarOfertaMuro(presupuestoId: string, clienteId: string, tituloTrabajo?: string): Promise<void> {
+    // Obtener datos antes de actualizar para notificar
+    const { data: pres } = await supabase
+      .from('presupuestos_muro')
+      .select('profesional_id, monto, trabajo_id')
+      .eq('id', presupuestoId)
+      .eq('cliente_id', clienteId) // seguridad: solo el cliente dueño
+      .maybeSingle();
+
+    const { error } = await supabase
+      .from('presupuestos_muro')
+      .update({ estado: 'rechazado' })
+      .eq('id', presupuestoId)
+      .eq('cliente_id', clienteId);
+
+    if (error) throw error;
+
+    // Notificar al profesional
+    if (pres?.profesional_id) {
+      await supabase.from('notificaciones').insert([{
+        usuario_id: pres.profesional_id,
+        tipo: 'alerta',
+        titulo: 'Oferta descartada',
+        descripcion: `Tu oferta${tituloTrabajo ? ` para "${tituloTrabajo}"` : ''} no fue seleccionada por el cliente.`,
+        referencia_id: String(pres.trabajo_id || ''),
+        leida: false,
+      }]);
     }
   },
 

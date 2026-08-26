@@ -22,8 +22,9 @@ export default function ChatIDPage() {
 function ChatIDContent() {
   const router = useRouter();
   const params = useParams();
-  const { id: conversacionId } = React.use(params as any) as { id: string };
+  const conversacionId = params.id as string;
   const { user, profile } = useAuth();
+
   
   const [message, setMessage] = useState("");
   const [mensajes, setMensajes] = useState<any[]>([]);
@@ -73,7 +74,54 @@ function ChatIDContent() {
           setPartner(partnerProfile);
         }
 
-        const msgs = await dbHelper.getMensajes(conversacionId);
+        let msgs = await dbHelper.getMensajes(conversacionId);
+
+        // Si la conversación no tiene mensajes pero corresponde a un presupuesto del Muro
+        if (msgs.length === 0 && conv) {
+          const partnerId = conv.usuario1_id === user.id ? conv.usuario2_id : conv.usuario1_id;
+          const { data: presMuro } = await supabase
+            .from('presupuestos_muro')
+            .select('*')
+            .or(`conversacion_id.eq.${conversacionId},and(cliente_id.eq.${user.id},profesional_id.eq.${partnerId}),and(cliente_id.eq.${partnerId},profesional_id.eq.${user.id})`)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (presMuro) {
+            const cardPayload = JSON.stringify({
+              tipo: 'presupuesto_card',
+              presupuesto_id: presMuro.id,
+              profesional_id: presMuro.profesional_id,
+              monto: presMuro.monto,
+              detalle: presMuro.descripcion,
+              tiempo_estimado: presMuro.tiempo_estimado || 'A convenir',
+              garantia: presMuro.garantia || 'sin_garantia',
+              materiales_incluidos: presMuro.materiales_incluidos || false,
+              estado: presMuro.estado || 'pendiente'
+            });
+
+            // Actualizar la conversación para vincularla si estaba suelta
+            if (!presMuro.conversacion_id) {
+              await supabase
+                .from('presupuestos_muro')
+                .update({ conversacion_id: conversacionId })
+                .eq('id', presMuro.id);
+            }
+
+            const { data: autoMsg } = await supabase.from('mensajes').insert([{
+              conversacion_id: conversacionId,
+              emisor_id: presMuro.profesional_id,
+              receptor_id: presMuro.cliente_id,
+              texto: cardPayload,
+              leido: false
+            }]).select().single();
+
+            if (autoMsg) {
+              msgs = [autoMsg];
+            }
+          }
+        }
+
         setMensajes(msgs);
 
         // Cargar detalles de presupuestos vinculados en mensajes
@@ -104,6 +152,7 @@ function ChatIDContent() {
 
     loadChat();
   }, [conversacionId, user]);
+
 
   useEffect(() => {
     if (!conversacionId) return;
@@ -245,6 +294,73 @@ function ChatIDContent() {
     return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
   };
 
+  /**
+   * Parsea un mensaje para detectar si es una card de presupuesto en formato JSON.
+   * Retorna el objeto card o null si es un mensaje normal.
+   */
+  const parsePresupuestoCard = (texto: string): any | null => {
+    if (!texto) return null;
+    try {
+      const parsed = JSON.parse(texto);
+      if (parsed?.tipo === 'presupuesto_card') return parsed;
+    } catch {}
+    return null;
+  };
+
+  const handleAceptarCard = async (msg: any, cardData: any) => {
+    if (!user?.id || !partner?.id) return;
+    setProcesandoAceptacion(msg.id);
+    try {
+      // Crear Orden de Trabajo directamente
+      await dbHelper.createOrdenTrabajo({
+        profesional_id: cardData.profesional_id || msg.emisor_id,
+        cliente_id: user.id,
+        titulo: 'Trabajo acordado por chat',
+        descripcion: cardData.detalle || '',
+        garantia: cardData.garantia || 'sin_garantia',
+        monto: cardData.monto || 0,
+      });
+
+      // Notificar al profesional
+      await dbHelper.crearNotificacion({
+        usuario_id: cardData.profesional_id || msg.emisor_id,
+        tipo: 'trabajo',
+        titulo: '🎉 ¡Presupuesto aceptado!',
+        descripcion: `El cliente aceptó tu presupuesto de $${Number(cardData.monto).toLocaleString('es-AR')}. Se generó una Orden de Trabajo.`,
+        referencia_id: conversacionId,
+      });
+
+      // Actualizar estado local del mensaje
+      setMensajes(prev => prev.map(m =>
+        m.id === msg.id
+          ? { ...m, texto: JSON.stringify({ ...cardData, estado: 'aceptado' }) }
+          : m
+      ));
+    } catch (err: any) {
+      alert(err?.message || 'Error al aceptar el presupuesto.');
+    } finally {
+      setProcesandoAceptacion(null);
+    }
+  };
+
+  const handleRechazarCard = async (msg: any, cardData: any) => {
+    if (!user?.id) return;
+    // Notificar al profesional
+    await dbHelper.crearNotificacion({
+      usuario_id: cardData.profesional_id || msg.emisor_id,
+      tipo: 'alerta',
+      titulo: 'Presupuesto rechazado',
+      descripcion: `El cliente rechazó tu presupuesto de $${Number(cardData.monto).toLocaleString('es-AR')}.`,
+      referencia_id: conversacionId,
+    });
+    // Actualizar estado local
+    setMensajes(prev => prev.map(m =>
+      m.id === msg.id
+        ? { ...m, texto: JSON.stringify({ ...cardData, estado: 'rechazado' }) }
+        : m
+    ));
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#001b33] flex items-center justify-center">
@@ -327,7 +443,78 @@ function ChatIDContent() {
           mensajes.map((msg) => {
             const isMe = msg.emisor_id === user?.id;
 
-            // Renderizar Tarjeta de Presupuesto Estructurado si el mensaje es especial
+            // ── NUEVO: Card de presupuesto en formato JSON ──
+            const cardData = parsePresupuestoCard(msg.texto);
+            if (cardData) {
+              const estaPendiente = cardData.estado === 'pendiente';
+              const estaAceptado = cardData.estado === 'aceptado';
+              const estaRechazado = cardData.estado === 'rechazado';
+              return (
+                <div key={msg.id} className="flex justify-center my-3 w-full">
+                  <div className={`rounded-3xl p-5 max-w-sm w-full shadow-2xl space-y-4 border-2 ${
+                    estaAceptado ? 'bg-emerald-950/60 border-emerald-500/40' :
+                    estaRechazado ? 'bg-red-950/40 border-red-500/30 opacity-70' :
+                    'bg-[#001529] border-[#fc8127]/40'
+                  }`}>
+                    {/* Header */}
+                    <div className="flex justify-between items-start pb-3 border-b border-slate-800">
+                      <div>
+                        <span className="text-[10px] font-black uppercase text-[#fc8127] tracking-wider flex items-center gap-1">
+                          💰 Presupuesto Formal
+                        </span>
+                        <p className="text-2xl font-black text-white mt-1">
+                          ${Number(cardData.monto || 0).toLocaleString('es-AR')}
+                        </p>
+                      </div>
+                      <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border uppercase ${
+                        estaAceptado ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                        estaRechazado ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                        'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                      }`}>
+                        {estaAceptado ? '✅ Aceptado' : estaRechazado ? '❌ Rechazado' : '⏳ Pendiente'}
+                      </span>
+                    </div>
+
+                    {/* Detalles */}
+                    <div className="space-y-2 text-xs text-slate-300">
+                      {cardData.detalle && <p><strong className="text-white">Detalle:</strong> {cardData.detalle}</p>}
+                      <div className="grid grid-cols-2 gap-2 pt-1 text-[11px] text-slate-400">
+                        {cardData.tiempo_estimado && <div>⏱️ <strong>Plazo:</strong> {cardData.tiempo_estimado}</div>}
+                        {cardData.garantia && cardData.garantia !== 'sin_garantia' && (
+                          <div>🛡️ <strong>Garantía:</strong> {cardData.garantia.replace('_', ' ')}</div>
+                        )}
+                      </div>
+                      {cardData.materiales_incluidos && (
+                        <p className="text-[11px] text-emerald-400 font-bold">✓ Incluye materiales</p>
+                      )}
+                    </div>
+
+                    {/* Botones — solo cliente, solo si pendiente */}
+                    {!isProfesional && estaPendiente && (
+                      <div className="flex gap-2 pt-2 border-t border-slate-800">
+                        <button
+                          onClick={() => handleAceptarCard(msg, cardData)}
+                          disabled={procesandoAceptacion === msg.id}
+                          className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl transition-all shadow-lg flex items-center justify-center gap-1.5"
+                        >
+                          {procesandoAceptacion === msg.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CheckCircle2 className="w-4 h-4" /> Aceptar</>}
+                        </button>
+                        <button
+                          onClick={() => handleRechazarCard(msg, cardData)}
+                          className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition-all border border-slate-700"
+                        >
+                          Rechazar
+                        </button>
+                      </div>
+                    )}
+
+                    <p className="text-[9px] text-slate-600 text-right">{formatHora(msg.created_at)}</p>
+                  </div>
+                </div>
+              );
+            }
+
+            // ── LEGACY: Card formato PRESUPUESTO_ENVIADO ──
             if (msg.texto?.startsWith('📄 PRESUPUESTO_ENVIADO:')) {
               const presId = msg.texto.replace('📄 PRESUPUESTO_ENVIADO:', '');
               const presData = presupuestosCache[presId];
@@ -364,7 +551,6 @@ function ChatIDContent() {
                         {presData.estado}
                       </span>
                     </div>
-
                     <div className="space-y-2 text-xs text-slate-300">
                       <p><strong className="text-white">Detalle:</strong> {presData.detalle || 'Servicio profesional'}</p>
                       <div className="grid grid-cols-2 gap-2 pt-1 text-[11px] text-slate-400">
@@ -375,8 +561,6 @@ function ChatIDContent() {
                         <p className="text-[11px] text-emerald-400 font-bold">✓ Incluye materiales de trabajo</p>
                       )}
                     </div>
-
-                    {/* Acciones de Aceptar / Rechazar para el Cliente */}
                     {!isProfesional && estaPendiente && (
                       <div className="flex gap-2 pt-2 border-t border-slate-800">
                         <button
@@ -399,18 +583,14 @@ function ChatIDContent() {
               );
             }
 
+            // ── Mensaje de texto normal ──
             return (
-              <div
-                key={msg.id}
-                className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[80%] px-4 py-3 rounded-2xl text-xs leading-relaxed shadow-md ${
-                    isMe
-                      ? 'bg-[#fc8127] text-white rounded-br-none'
-                      : 'bg-[#001529] text-slate-200 border border-slate-800 rounded-bl-none'
-                  }`}
-                >
+              <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[80%] px-4 py-3 rounded-2xl text-xs leading-relaxed shadow-md ${
+                  isMe
+                    ? 'bg-[#fc8127] text-white rounded-br-none'
+                    : 'bg-[#001529] text-slate-200 border border-slate-800 rounded-bl-none'
+                }`}>
                   <p>{msg.texto}</p>
                   <div className={`flex items-center gap-1 mt-1 text-[9px] ${isMe ? 'justify-end text-orange-200' : 'justify-start text-slate-500'}`}>
                     <span>{formatHora(msg.created_at)}</span>

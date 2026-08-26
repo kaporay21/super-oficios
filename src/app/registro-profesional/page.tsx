@@ -4,12 +4,14 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Bell, Menu, CheckCircle, TrendingUp, DollarSign, 
-  User, Wrench, MapPin, Phone, Mail, ArrowRight, Lock
+  User, Wrench, MapPin, Phone, Mail, ArrowRight, Lock,
+  Camera, ShieldCheck, RefreshCw
 } from 'lucide-react';
 import Logo from '@/components/Logo';
 import { CrecimientoIcon, DolarIcon } from '@/components/ModernIcons';
 import { dbHelper } from '@/lib/supabase';
 import { OFICIOS_CORE, PROVINCIAS_Y_CIUDADES } from '@/lib/constants';
+import CameraCaptureModal from '@/components/CameraCaptureModal';
 
 
 
@@ -31,6 +33,8 @@ export default function RegistroProfesionalPage() {
   const [selectedOficios, setSelectedOficios] = useState<string[]>([]);
   const [selectedProvincia, setSelectedProvincia] = useState('');
   const [selectedCiudad, setSelectedCiudad] = useState('');
+  const [fotoPerfil, setFotoPerfil] = useState<string | null>(null);
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
 
   const handleOficioToggle = (oficio: string) => {
     if (selectedOficios.includes(oficio)) {
@@ -54,6 +58,11 @@ export default function RegistroProfesionalPage() {
       alert('Las contraseñas ingresadas no coinciden. Por favor verifica.');
       return;
     }
+    if (!fotoPerfil) {
+      alert('Es obligatorio tomar una foto de tu rostro con la cámara en vivo para verificar tu identidad.');
+      setIsCameraModalOpen(true);
+      return;
+    }
     
     setIsSubmitting(true);
     
@@ -67,7 +76,7 @@ export default function RegistroProfesionalPage() {
         selectedOficios, 
         selectedProvincia, 
         selectedCiudad,
-        { apellido, fechaNacimiento, pais, experiencia }
+        { apellido, fechaNacimiento, pais, experiencia, fotoPerfil }
       );
       
       setTimeout(() => {
@@ -403,6 +412,54 @@ export default function RegistroProfesionalPage() {
                   </div>
                 </div>
 
+                {/* Foto de Perfil en Vivo Obligatoria */}
+                <div className="flex flex-col gap-2 p-4 bg-[#00355f]/5 border border-[#00355f]/15 rounded-2xl">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-extrabold text-[#00355f] flex items-center gap-1.5">
+                      <Camera className="w-4 h-4 text-[#fc8127]" />
+                      Foto de Perfil en Vivo (Requerido)
+                    </label>
+                    <span className="text-[10px] bg-[#00355f]/10 text-[#00355f] px-2 py-0.5 rounded-md font-bold uppercase">
+                      🔒 Verificación de Rostro
+                    </span>
+                  </div>
+
+                  {fotoPerfil ? (
+                    <div className="flex items-center justify-between gap-4 bg-white p-3 rounded-xl border border-gray-200">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={fotoPerfil}
+                          alt="Foto en vivo"
+                          className="w-14 h-14 rounded-full object-cover border-2 border-[#fc8127] shadow-sm"
+                        />
+                        <div>
+                          <p className="text-xs font-bold text-gray-800 flex items-center gap-1">
+                            <CheckCircle className="w-3.5 h-3.5 text-green-600" /> Rostro Capturado
+                          </p>
+                          <p className="text-[11px] text-gray-500">Tomada con la cámara en tiempo real</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsCameraModalOpen(true)}
+                        className="text-xs text-[#00355f] font-bold underline flex items-center gap-1 hover:text-[#fc8127] transition-colors"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Tomar otra
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsCameraModalOpen(true)}
+                      className="w-full py-3.5 bg-white border-2 border-dashed border-[#00355f]/40 hover:border-[#fc8127] text-[#00355f] font-bold text-xs rounded-xl flex items-center justify-center gap-2 hover:bg-orange-50/50 transition-all shadow-sm group"
+                    >
+                      <Camera className="w-4 h-4 text-[#fc8127] group-hover:scale-110 transition-transform" />
+                      Abrir Cámara y Sacar Foto de Rostro
+                    </button>
+                  )}
+                </div>
+
                 {/* Botón y Login */}
                 <div className="mt-4 flex flex-col gap-4">
                   <button 
@@ -422,6 +479,14 @@ export default function RegistroProfesionalPage() {
           </div>
         </div>
       </main>
+
+      {/* Modal de Captura por Cámara en Vivo */}
+      <CameraCaptureModal
+        isOpen={isCameraModalOpen}
+        onClose={() => setIsCameraModalOpen(false)}
+        onCapture={(base64) => setFotoPerfil(base64)}
+        title="Verificación de Rostro en Tiempo Real"
+      />
 
       {/* Success Modal - Modificado */}
       {showModal && (

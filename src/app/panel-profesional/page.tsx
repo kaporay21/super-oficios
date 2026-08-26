@@ -194,8 +194,9 @@ function PanelProfesionalContent() {
   //  RENDER
   // ══════════════════════════════════════════════════════════════════════════
   return (
-    <main className="min-h-screen bg-gradient-to-br from-[#0a1628] via-[#0d2040] to-[#0a1628] text-white font-sans overflow-x-hidden">
+    <main className="min-h-screen bg-gradient-to-br from-[#0a1628] via-[#0d2040] to-[#0a1628] text-white font-sans overflow-x-hidden pb-24 md:pb-8">
       <BienvenidaProModal />
+
 
       {/* ── HEADER ─────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 backdrop-blur-xl bg-[#0d1f3c]/90 border-b border-white/10 px-4 md:px-8 h-16 flex items-center justify-between shadow-xl">

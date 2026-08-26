@@ -172,26 +172,6 @@ function ChatIndexContent() {
           </div>
         )}
       </main>
-
-      {/* Navegación Inferior (Mobile) */}
-      <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 px-6 py-3 z-50 pb-safe md:hidden">
-        <div className="flex justify-between items-center">
-          <div className="flex flex-col items-center gap-1 text-gray-400 cursor-pointer" onClick={() => router.push(userRole === 'profesional' ? '/panel-profesional' : '/cliente')}>
-            <div className="p-1.5"><Home className="w-6 h-6" /></div>
-            <span className="text-[11px] font-medium">Inicio</span>
-          </div>
-          <div className="flex flex-col items-center gap-1 cursor-pointer">
-            <div className="bg-[#00355f] text-white p-1.5 rounded-xl shadow-sm">
-              <MessageSquare className="w-6 h-6" />
-            </div>
-            <span className="text-[11px] font-bold text-[#00355f]">Mensajes</span>
-          </div>
-          <div className="flex flex-col items-center gap-1 text-gray-400 cursor-pointer" onClick={() => router.push('/notificaciones')}>
-            <div className="p-1.5"><Bell className="w-6 h-6" /></div>
-            <span className="text-[11px] font-medium">Notificaciones</span>
-          </div>
-        </div>
-      </nav>
     </div>
   );
 }

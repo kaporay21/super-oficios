@@ -5,12 +5,13 @@ import { useParams, useRouter } from 'next/navigation';
 import { 
   ArrowLeft, Share2, MoreVertical, Star, FileText, 
   MessageSquare, CheckCircle, ShieldCheck, Home, 
-  ClipboardList, User, Bell, Award 
+  ClipboardList, User, Bell, Award, Camera, RefreshCw
 } from 'lucide-react';
 import { PROFESSIONALS } from '@/data';
 import { dbHelper, getCurrentProfile } from '@/lib/supabase';
 import Tooltip from '@/components/Tooltip';
 import Logo from '@/components/Logo';
+import CameraCaptureModal from '@/components/CameraCaptureModal';
 
 export default function PerfilProfesional() {
   const params = useParams();
@@ -20,6 +21,22 @@ export default function PerfilProfesional() {
   const [pro, setPro] = useState<any>(null);
   const [resenasReales, setResenasReales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+
+  useEffect(() => {
+    getCurrentProfile().then(setCurrentUser).catch(() => null);
+  }, []);
+
+  const handleUpdateFotoCamara = async (base64: string) => {
+    if (!pro?.id) return;
+    try {
+      await dbHelper.updateFotoPerfilCamara(pro.id, base64);
+      setPro((prev: any) => ({ ...prev, avatar: base64, fotoPerfil: base64 }));
+    } catch (err) {
+      alert('Error al actualizar la foto de perfil.');
+    }
+  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -154,7 +171,7 @@ export default function PerfilProfesional() {
             
             {/* Tarjeta Principal de Información */}
             <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm flex flex-col md:flex-row gap-6 items-start">
-              <div className="relative shrink-0">
+              <div className="relative shrink-0 group">
                 <img 
                   className="w-24 h-24 md:w-32 md:h-32 rounded-full object-cover border-4 border-white shadow-md" 
                   alt={perfilCompleto.name}
@@ -163,15 +180,32 @@ export default function PerfilProfesional() {
                 <div className="absolute bottom-1 right-1 bg-[#00355f] text-white p-1.5 rounded-full border-2 border-white flex items-center justify-center">
                   <CheckCircle className="w-4 h-4" />
                 </div>
+                {/* Botón flotante para cambiar foto con cámara en vivo si es su perfil */}
+                {currentUser && (currentUser.id === pro?.id || currentUser.id === proId) && (
+                  <button
+                    onClick={() => setIsCameraModalOpen(true)}
+                    className="absolute inset-0 rounded-full bg-black/50 text-white font-bold text-xs flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity p-2 text-center"
+                    title="Solo se permite actualizar foto sacándote otra con la cámara en tiempo real"
+                  >
+                    <Camera className="w-6 h-6 text-[#fc8127] mb-1" />
+                    <span>Cambiar foto con cámara</span>
+                  </button>
+                )}
               </div>
               
               <div className="flex-1 w-full">
                 <div className="flex flex-wrap items-center gap-2 mb-1">
                   <h1 className="text-2xl font-bold text-[#00355f]">{perfilCompleto.name}</h1>
                   
+                  {(perfilCompleto.fotoPerfil || perfilCompleto.avatar) && (
+                    <span className="bg-blue-50 text-[#00355f] border border-blue-200 px-2.5 py-1 rounded-full text-xs font-extrabold flex items-center gap-1 shadow-sm" title="Foto capturada en vivo con la cámara">
+                      <Camera className="w-3.5 h-3.5 text-[#fc8127]" /> Rostro Verificado
+                    </span>
+                  )}
+
                   {(perfilCompleto.verificado || perfilCompleto.estadoDNI === 'Validado') && (
                     <span className="bg-green-100 text-green-800 border border-green-200 px-2.5 py-1 rounded-full text-xs font-extrabold flex items-center gap-1 shadow-sm" title="DNI Verificado por Administración">
-                      <CheckCircle className="w-3.5 h-3.5 text-green-600 fill-green-100" /> Identidad Verificada
+                      <CheckCircle className="w-3.5 h-3.5 text-green-600 fill-green-100" /> DNI Verificado
                     </span>
                   )}
 
@@ -365,6 +399,13 @@ export default function PerfilProfesional() {
         </div>
       </nav>
 
+      {/* Modal de Cámara en vivo para actualizar foto de perfil */}
+      <CameraCaptureModal
+        isOpen={isCameraModalOpen}
+        onClose={() => setIsCameraModalOpen(false)}
+        onCapture={handleUpdateFotoCamara}
+        title="Actualizar Foto de Perfil con Cámara"
+      />
     </main>
   );
 }

@@ -3,12 +3,14 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import {
   Search, MapPin, Star, MessageSquare, ClipboardList, ArrowRight,
-  Sparkles, CheckCircle, Award, ChevronLeft, ChevronRight, Loader2
+  Sparkles, CheckCircle, Award, ChevronLeft, ChevronRight, Loader2,
+  Navigation, X, Camera
 } from 'lucide-react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { dbHelper } from '@/lib/supabase';
 import Tooltip from '@/components/Tooltip';
 import Logo from '@/components/Logo';
+import { useGeolocalizacion } from '@/hooks/useGeolocalizacion';
 
 // ──────────────────────────────────────────────────────────────────────
 // Carrusel estático de oficios (datos de presentación, no de la BD)
@@ -77,6 +79,22 @@ function BuscadorContenido() {
     (searchParams.get('orden') as any) || 'fecha_registro'
   );
   const [page, setPage] = useState(parseInt(searchParams.get('pagina') || '1', 10));
+
+  // ── Geolocalización automática ─────────────────────────────────────
+  const geo = useGeolocalizacion();
+  const [bannerGeoVisible, setBannerGeoVisible] = useState(true);
+  const geoBannerYaAplicado = useRef(false);
+
+  // Cuando la geo termina de detectar, si no hay provincia activa y no lo aplicamos antes,
+  // mostramos el banner pero NO aplicamos el filtro automáticamente (respeta la autonomía).
+  // El usuario puede hacer clic en "Aplicar" para filtrar por su zona.
+  const handleAplicarGeo = () => {
+    if (geo.provincia) {
+      handleProvinciaChange(geo.provincia);
+      geoBannerYaAplicado.current = true;
+      setBannerGeoVisible(false);
+    }
+  };
 
   // Ref para el debounce del texto de búsqueda
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -195,6 +213,8 @@ function BuscadorContenido() {
     setSoloMatriculados(false);
     setOrdenarPor('fecha_registro');
     setPage(1);
+    geoBannerYaAplicado.current = false;
+    setBannerGeoVisible(true);
     router.replace(pathname, { scroll: false });
   };
 
@@ -238,6 +258,32 @@ function BuscadorContenido() {
           <p className="text-sm md:text-base text-gray-500 max-w-2xl mx-auto leading-relaxed px-2">
             Explorá los perfiles de nuestros expertos verificados. Para solicitar presupuestos y gestionar tus trabajos, crea tu cuenta gratuita.
           </p>
+
+          {/* Banner de Geolocalización */}
+          {bannerGeoVisible && !geo.rechazado && (
+            <div className="mt-4">
+              {geo.loading ? (
+                <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold px-4 py-2 rounded-full">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Detectando tu ubicación...
+                </div>
+              ) : geo.ciudad && geo.provincia && !provincia ? (
+                <div className="inline-flex items-center gap-3 bg-[#00355f]/5 border border-[#00355f]/20 text-[#00355f] text-sm font-medium px-5 py-3 rounded-2xl">
+                  <Navigation className="w-4 h-4 text-[#fc8127] shrink-0" />
+                  <span>Detectamos que estás en <strong>{geo.ciudad}, {geo.provincia}</strong></span>
+                  <button
+                    onClick={handleAplicarGeo}
+                    className="bg-[#fc8127] text-white text-xs font-black px-3 py-1.5 rounded-lg hover:bg-[#e67320] transition-colors whitespace-nowrap"
+                  >
+                    Ver profesionales cerca
+                  </button>
+                  <button onClick={() => setBannerGeoVisible(false)} className="text-gray-400 hover:text-gray-600 ml-1">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : geo.error ? null : null}
+            </div>
+          )}
         </section>
 
         {/* ── Carrusel de Oficios ─────────────────────────────────── */}
@@ -310,16 +356,16 @@ function BuscadorContenido() {
                 )}
               </div>
 
-              {/* Selector de Provincia — filtra en el servidor */}
+              {/* Selector de Provincia — con indicador de zona detectada */}
               <div className="md:col-span-4 flex items-center bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-150 relative">
-                <MapPin className="w-5 h-5 text-gray-400 mr-2.5 shrink-0" />
+                <MapPin className={`w-5 h-5 mr-2.5 shrink-0 ${provincia && geo.provincia && provincia === geo.provincia ? 'text-[#fc8127]' : 'text-gray-400'}`} />
                 <select
                   id="provincia-profesional"
                   value={provincia}
                   onChange={(e) => handleProvinciaChange(e.target.value)}
                   className="w-full bg-transparent border-none outline-none focus:ring-0 text-gray-700 text-xs font-bold appearance-none pr-8 cursor-pointer"
                 >
-                  <option value="">Todas las provincias</option>
+                  <option value="">{geo.provincia && !geo.loading ? `Tu zona: ${geo.provincia}` : 'Todas las provincias'}</option>
                   {PROVINCIAS_ARGENTINAS.map((prov) => (
                     <option key={prov} value={prov} className="text-gray-900 font-medium">{prov}</option>
                   ))}
@@ -443,6 +489,9 @@ function BuscadorContenido() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 pt-2">
               {professionals.map((pro) => {
                 const premium = pro.plan === 'Master';
+                // Badge "Cerca tuyo" si el profesional está en la misma provincia detectada
+                const esCercano = geo.provincia && pro.province && 
+                  pro.province.toLowerCase().trim() === geo.provincia.toLowerCase().trim();
                 return (
                   <div
                     key={pro.id}
@@ -467,6 +516,17 @@ function BuscadorContenido() {
                             <Sparkles className="w-3.5 h-3.5 fill-white text-white" /> Destacado
                           </div>
                         )}
+                        {/* Badge "Cerca tuyo" */}
+                        {esCercano && !premium && (
+                          <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm text-[#00355f] px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm text-[9px] font-black uppercase tracking-wider border border-[#00355f]/10">
+                            <Navigation className="w-3 h-3 text-[#fc8127]" /> Cerca tuyo
+                          </div>
+                        )}
+                        {esCercano && premium && (
+                          <div className="absolute top-10 left-3 bg-white/95 backdrop-blur-sm text-[#00355f] px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm text-[9px] font-black uppercase tracking-wider border border-[#00355f]/10">
+                            <Navigation className="w-3 h-3 text-[#fc8127]" /> Cerca tuyo
+                          </div>
+                        )}
                         <div className="absolute top-3 right-3 bg-white/95 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm">
                           <Star className="w-3.5 h-3.5 fill-green-700 text-green-700" />
                           <span className="font-bold text-xs text-green-700">{(pro.rating || 5.0).toFixed(1)}</span>
@@ -485,9 +545,14 @@ function BuscadorContenido() {
 
                           {/* Insignias */}
                           <div className="flex flex-wrap gap-1.5 mt-2 mb-1">
+                            {(pro.fotoPerfil || pro.avatar) && (
+                              <span className="inline-flex items-center gap-1 bg-blue-50 text-[#00355f] text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-blue-200" title="Foto verificada por cámara en vivo">
+                                <Camera className="w-3 h-3 text-[#fc8127]" /> Rostro Verificado
+                              </span>
+                            )}
                             {(pro.verificacion === 'Verificado' || pro.estadoDNI === 'Validado') && (
                               <span className="inline-flex items-center gap-1 bg-green-100 text-green-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
-                                <CheckCircle className="w-3 h-3 text-green-600" /> Verificado
+                                <CheckCircle className="w-3 h-3 text-green-600" /> DNI Verificado
                               </span>
                             )}
                             {(pro.matriculadoVerificado || pro.estadoCertificados === 'Validado') && (

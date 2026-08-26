@@ -153,83 +153,6 @@ function HomePageContent() {
         />
       </div>
 
-      {/* Navegación Inferior */}
-      <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 px-6 py-3 z-50 pb-safe">
-        <div className="max-w-7xl mx-auto w-full flex justify-between md:justify-center md:gap-24 items-center">
-          <Tooltip text="Explorar" position="top">
-            <div className="flex flex-col items-center gap-1 cursor-pointer">
-              <div className="text-[#00355f] p-1.5">
-                <Home className="w-6 h-6 fill-current" />
-              </div>
-              <span className="text-[11px] font-bold text-[#00355f]">Explorar</span>
-            </div>
-          </Tooltip>
-
-          <Tooltip text="Mi Hogar" position="top">
-            <div 
-              onClick={() => router.push('/mi-hogar')}
-              className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#fc8127] cursor-pointer transition-colors active:scale-95"
-            >
-              <div className="p-1.5">
-                <Building className="w-6 h-6" />
-              </div>
-              <span className="text-[11px] font-medium">Mi Hogar</span>
-            </div>
-          </Tooltip>
-
-          <Tooltip text="Publicar trabajo" position="top">
-            <div 
-              onClick={() => handleNavigate('publish_job')}
-              className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#fc8127] cursor-pointer transition-colors active:scale-95"
-            >
-              <div className="p-1.5">
-                <ClipboardList className="w-6 h-6" />
-              </div>
-              <span className="text-[11px] font-medium">Publicar</span>
-            </div>
-          </Tooltip>
-
-          <Tooltip text="Mensajes" position="top">
-            <div 
-              onClick={() => router.push('/chat')}
-              className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#00355f] cursor-pointer transition-colors active:scale-95"
-            >
-              <div className="p-1.5 relative">
-                <MessageSquare className="w-6 h-6" />
-              </div>
-              <span className="text-[11px] font-medium">Mensajes</span>
-            </div>
-          </Tooltip>
-
-          <Tooltip text="Notificaciones" position="top">
-            <div 
-              onClick={() => router.push('/notificaciones')}
-              className="flex flex-col items-center gap-1 text-gray-400 hover:text-gray-600 cursor-pointer relative"
-            >
-              <div className="p-1.5 relative">
-                <Bell className="w-6 h-6" />
-                {unreadNotifsCount > 0 && (
-                  <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
-                )}
-              </div>
-              <span className="text-[11px] font-medium">Notificaciones</span>
-            </div>
-          </Tooltip>
-
-          <Tooltip text="Mi perfil" position="top">
-            <div 
-              onClick={() => router.push('/perfil-cliente')}
-              className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#00355f] cursor-pointer transition-colors active:scale-95"
-            >
-              <div className="p-1.5 relative">
-                <User className="w-6 h-6" />
-              </div>
-              <span className="text-[11px] font-medium">Perfil</span>
-            </div>
-          </Tooltip>
-        </div>
-      </nav>
-
       {/* Botón Flotante Naranja conectado con borde animado de alta interacción */}
       <Tooltip text="Publicar trabajo" position="top">
         <button
@@ -274,7 +197,29 @@ const HomeClient: React.FC<HomeClientProps> = ({
   const [respuestasMap, setRespuestasMap] = useState<{ [pregId: string]: string }>({});
   const [respondingMap, setRespondingMap] = useState<{ [pregId: string]: boolean }>({});
 
+  const handleVerEnChatPresupuesto = async (pres: any) => {
+    const userId = clientProfile?.id;
+    if (!userId) return;
+    const proId = pres.profesionalId || pres.profesional?.id || pres.profesional_id;
+    if (!proId) return;
+
+    try {
+      let convId = pres.conversacion_id || pres.conversacionId;
+      if (!convId) {
+        const conv = await dbHelper.getOrCreateConversation(userId, proId);
+        convId = conv?.id;
+      }
+      if (convId) {
+        router.push(`/chat/${convId}`);
+      }
+    } catch (err) {
+      console.error('Error al abrir chat de presupuesto:', err);
+    }
+  };
+
+
   const defaultImages: Record<string, string> = {
+
     'Plomería': '/images/oficio_plomeria_m_1784427462868.png',
     'Electricidad': '/images/oficio_electricidad_m_1784427470881.png',
     'Albañilería': '/images/oficio_albanileria_m_1784427479131.png',
@@ -596,63 +541,79 @@ const HomeClient: React.FC<HomeClientProps> = ({
             const isExpanded = expandedJobId === job.id;
             
             return (
-              <div key={job.id} className={`bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden transition-all duration-300 ${isExpanded ? 'md:col-span-2 lg:col-span-3 grid grid-cols-1 lg:grid-cols-3' : 'col-span-1'}`}>
-                
-                {/* Cabecera / Info del trabajo (Izquierda cuando está expandido) */}
+              <div
+                key={job.id}
+
+                className={`bg-white border rounded-3xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 ${
+                  job.presupuestosCount > 0 ? 'border-2 border-[#fc8127] shadow-lg shadow-[#fc8127]/10' : 'border-gray-200'
+                } ${isExpanded ? 'md:col-span-2 lg:col-span-3 grid grid-cols-1 lg:grid-cols-3' : 'col-span-1'}`}
+              >
+                {/* Cabecera Visual con Imagen del Oficio */}
+                <div className="h-32 w-full relative overflow-hidden bg-gradient-to-r from-[#00355f] to-[#0f4c81]">
+                  <img
+                    src={job.imagen || getDefaultImage(job.categoria || job.oficio)}
+                    alt={job.titulo}
+                    className="w-full h-full object-cover opacity-80"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
+
+                  {/* Badges de Urgencia y Categoría */}
+                  <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm ${
+                      job.urgente ? 'bg-red-500 text-white' : 'bg-[#00355f]/90 backdrop-blur-sm text-white border border-white/20'
+                    }`}>
+                      {job.urgente ? '🔥 Urgente' : '⏱️ Normal'}
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-white/90 backdrop-blur-sm text-[#00355f] shadow-sm">
+                      {job.categoria || job.oficio || 'General'}
+                    </span>
+                  </div>
+
+                  {job.presupuestosCount > 0 && (
+                    <div className="absolute top-3 right-3 bg-[#fc8127] text-white text-[10px] font-black px-3 py-1 rounded-full shadow-lg border border-white/40 flex items-center gap-1 animate-pulse">
+                      <span>💰 {job.presupuestosCount} {job.presupuestosCount === 1 ? 'Presupuesto' : 'Presupuestos'}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Contenido / Info del Trabajo */}
                 <div
-                  className={`p-5 flex flex-col justify-between cursor-pointer hover:bg-gray-50 transition-colors relative ${isExpanded ? 'lg:col-span-1 border-b lg:border-b-0 lg:border-r border-gray-100' : ''}`}
+                  className={`p-5 flex flex-col justify-between cursor-pointer hover:bg-gray-50/50 transition-colors ${
+                    isExpanded ? 'lg:col-span-1 border-b lg:border-b-0 lg:border-r border-gray-100' : ''
+                  }`}
                   onClick={() => handleTogglePreguntas(job.id)}
                 >
-                  {job.presupuestosCount > 0 && (
-                    <div className="absolute -top-2 -right-2 bg-[#fc8127] text-white text-[11px] font-black px-3 py-1 rounded-full shadow-md border-2 border-white z-10 animate-pulse">
-                      {job.presupuestosCount} {job.presupuestosCount === 1 ? 'Presupuesto' : 'Presupuestos'}
-                    </div>
-                  )}
-                  
-                  {isExpanded && (
-                    <div className="w-full h-32 rounded-xl mb-4 overflow-hidden relative">
-                       <img src={job.imagen || getDefaultImage(job.categoria || job.oficio)} alt="Trabajo" className="absolute inset-0 w-full h-full object-cover" />
-                       <div className="absolute inset-0 bg-black/20"></div>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
-                    {!isExpanded && (
-                      <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-                        <Search className="w-5 h-5 text-[#00355f]" />
-                      </div>
-                    )}
-                    <div className="min-w-0 w-full">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-                          job.urgente ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-[#00355f]'
-                        }`}>{job.urgente ? 'Urgente' : 'Normal'}</span>
-                        <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{job.categoria || job.oficio || 'General'}</span>
-                      </div>
-                      <h4 className="font-bold text-gray-900 text-sm mt-1">{job.titulo || job.title}</h4>
-                      {isExpanded && (
-                         <p className="text-xs text-gray-500 mt-2 line-clamp-4">{job.descripcion}</p>
-                      )}
-                      <p className="text-xs text-gray-400 mt-1">{job.tiempo || 'Hace unos instantes'}</p>
-                    </div>
+                  <div>
+                    <h4 className="font-extrabold text-gray-900 text-base leading-snug">
+                      {job.titulo || job.title}
+                    </h4>
+                    <p className="text-xs text-gray-500 mt-1.5 line-clamp-2 leading-relaxed">
+                      {job.descripcion || 'Sin descripción adicional.'}
+                    </p>
+                    <span className="inline-block text-[11px] text-gray-400 font-bold mt-2">
+                      📍 {job.provincia || 'Zona'} · {job.tiempo || 'Hace unos instantes'}
+                    </span>
                   </div>
-                  
-                  <div className={`flex items-center justify-between shrink-0 mt-4 pt-4 border-t border-gray-100`}>
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#00355f] bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
-                      <HelpCircle className="w-3.5 h-3.5 text-[#fc8127]" />
-                      <span>
-                        {jobPregs === undefined ? '...' : `${jobPregs.length} consulta${jobPregs.length !== 1 ? 's' : ''}`}
-                      </span>
-                      {pregsSinRespuesta > 0 && (
-                        <span className="bg-[#fc8127] text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-bounce">{pregsSinRespuesta}</span>
-                      )}
+
+                  {/* Pie de Tarjeta Interactivo */}
+                  <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-[#00355f] bg-blue-50/80 px-2.5 py-1 rounded-xl border border-blue-100">
+                      <MessageSquare className="w-3.5 h-3.5 text-[#fc8127]" />
+                      <span>{jobPregs && jobPregs.length > 0 ? `${jobPregs.length} consulta${jobPregs.length > 1 ? 's' : ''}` : 'Sin consultas'}</span>
                     </div>
-                    {isExpanded
-                      ? <ChevronUp className="w-5 h-5 text-gray-400" />
-                      : <ChevronDown className="w-5 h-5 text-gray-400" />
-                    }
+
+                    <button className={`px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 shadow-sm transition-all ${
+                      job.presupuestosCount > 0 ? 'bg-[#fc8127] text-white hover:bg-[#e67320]' : 'bg-[#00355f] text-white hover:bg-[#0f4c81]'
+                    }`}>
+                      {isExpanded ? (
+                        <>Cerrar <ChevronUp className="w-4 h-4" /></>
+                      ) : (
+                        <>Ver Ofertas {job.presupuestosCount > 0 ? `(${job.presupuestosCount})` : ''} <ChevronDown className="w-4 h-4" /></>
+                      )}
+                    </button>
                   </div>
                 </div>
+
 
                 {/* Panel de preguntas y presupuestos (Derecha cuando está expandido) */}
                 {isExpanded && (
@@ -669,7 +630,8 @@ const HomeClient: React.FC<HomeClientProps> = ({
                         </div>
                         <div className="space-y-4">
                           {presupuestosMap[job.id].map((pres: any) => (
-                            <div key={pres.id} className="bg-white border-2 border-[#fc8127]/20 rounded-2xl p-4 shadow-sm flex items-center justify-between hover:border-[#fc8127] transition-colors cursor-pointer" onClick={() => router.push(`/chat/${pres.conversacion_id}`)}>
+                            <div key={pres.id} className="bg-white border-2 border-[#fc8127]/20 rounded-2xl p-4 shadow-sm flex items-center justify-between hover:border-[#fc8127] transition-colors cursor-pointer" onClick={() => handleVerEnChatPresupuesto(pres)}>
+
                               <div className="flex items-center gap-3">
                                 <img src={pres.profesional?.foto_perfil || 'https://i.pravatar.cc/150'} className="w-10 h-10 rounded-full border border-gray-200 object-cover" alt="Pro" />
                                 <div>

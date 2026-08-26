@@ -57,3 +57,57 @@ export interface ResultadoProfesionales {
   totalPages: number;
   error: any | null;
 }
+
+// ============================================================
+// MURO DE SERVICIOS
+// ============================================================
+
+/** Estado posible de un trabajo publicado en el Muro de Servicios */
+export type EstadoTrabajo = 'abierto' | 'adjudicado' | 'en_progreso' | 'finalizado';
+
+/** Trabajo con su estado para el Muro de Servicios */
+export interface TrabajoConEstado {
+  id: number | string;
+  titulo: string;
+  descripcion: string;
+  categoria: string;
+  ubicacion?: string;
+  ciudad?: string;
+  provincia?: string;
+  urgente?: boolean;
+  imagen?: string;
+  cliente_id: string;
+  estado: EstadoTrabajo;
+  profesional_adjudicado_id?: string;
+  created_at: string;
+}
+
+/** Estado posible de una oferta en el Muro de Servicios */
+export type EstadoOfertaMuro = 'pendiente' | 'aceptado' | 'rechazado';
+
+/** Oferta enviada por un profesional en el Muro de Servicios */
+export interface PresupuestoMuro {
+  id: string;
+  trabajoId: number | string;
+  profesionalId: string;
+  clienteId: string;
+  monto: number;
+  descripcion: string;
+  tiempoEstimado?: string;
+  materialesIncluidos: boolean;
+  garantia: string;
+  estado: EstadoOfertaMuro;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  profesional?: {
+    id: string;
+    nombre: string;
+    fotoPerfil: string;
+    oficios: string[];
+    provincia: string;
+    ciudad: string;
+    verificado: boolean;
+    rating: number;
+  };
+}
