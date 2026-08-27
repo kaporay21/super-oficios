@@ -112,7 +112,7 @@ export default function LandingPage() {
         <div className="relative z-10 max-w-xl lg:max-w-2xl pt-10 w-full lg:w-[55%] animate-in fade-in slide-in-from-bottom-4 duration-700">
           <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 text-white text-xs font-bold mb-6 backdrop-blur-md border border-white/20">
             <Star className="w-3.5 h-3.5 fill-[#fc8127] text-[#fc8127]" />
-            Confiado por +10k familias
+            Sin comisión por trabajo cerrado
           </span>
 
           <h2 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-white leading-tight mb-6">

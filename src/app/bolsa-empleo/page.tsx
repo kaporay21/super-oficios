@@ -14,6 +14,7 @@ import Tooltip from '@/components/Tooltip';
 import Logo from '@/components/Logo';
 import { dbHelper } from '@/lib/supabase';
 import { OFICIOS_CORE, PROVINCIAS_CORE } from '@/lib/constants';
+import { useAuth } from '@/components/AuthContext';
 
 const PROVINCIAS = ['Todas', ...PROVINCIAS_CORE];
 const OFICIOS = ['Todos', ...OFICIOS_CORE];
@@ -22,6 +23,7 @@ const TIPOS = ['Todos', 'Permanente', 'Por obra', 'Temporal', 'Part-time'];
 
 export default function BolsaEmpleoPage() {
   const router = useRouter();
+  const { profile: authProfile } = useAuth();
   const [empleos, setEmpleos] = useState<any[]>([]);
   const [busqueda, setBusqueda] = useState('');
   const [provinciaFiltro, setProvinciaFiltro] = useState('Todas');
@@ -96,7 +98,8 @@ export default function BolsaEmpleoPage() {
       empleador: empleo.empleador,
       candidato: nombrePro,
       candidatoAvatar: avatarPro,
-      candidatoRating: 5.0,
+      candidatoRating: authProfile?.rating || perfil?.rating || 0,
+      candidatoVerificado: authProfile?.verificado || false,
       mensaje: 'Me interesa la propuesta, cuento con disponibilidad.',
       oficio: empleo.oficio,
       tipo: empleo.tipo,

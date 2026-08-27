@@ -309,13 +309,21 @@ const HomeClient: React.FC<HomeClientProps> = ({
     <div className="space-y-10 pb-10">
       
       {/* Título de Bienvenida */}
-      <section className="text-center bg-white py-12 px-4 rounded-3xl border border-gray-100 shadow-sm space-y-3">
-        <h1 className="text-3xl md:text-4xl font-extrabold text-[#00355f] leading-tight">
-          Encontrá al profesional que necesitás hoy
-        </h1>
-        <p className="text-sm md:text-base text-gray-500 max-w-2xl mx-auto leading-relaxed px-2">
-          Conectamos tus necesidades con expertos verificados y de confianza en tu zona.
-        </p>
+      <section className="text-center bg-white py-12 px-4 rounded-3xl border border-gray-100 shadow-sm space-y-5">
+        <div className="space-y-3">
+          <h1 className="text-3xl md:text-4xl font-extrabold text-[#00355f] leading-tight">
+            Encontrá al profesional que necesitás hoy
+          </h1>
+          <p className="text-sm md:text-base text-gray-500 max-w-2xl mx-auto leading-relaxed px-2">
+            Conectamos tus necesidades con expertos verificados y de confianza en tu zona.
+          </p>
+        </div>
+        <button
+          onClick={() => onNavigate('publish_job')}
+          className="inline-flex items-center gap-2 bg-[#fc8127] hover:bg-[#e67320] text-white font-bold px-6 py-3 rounded-xl shadow-md active:scale-95 transition-all"
+        >
+          <Plus className="w-5 h-5" /> Publicar Trabajo
+        </button>
       </section>
 
       {/* Carrusel Visual de Oficios (Marquee Continuo) */}

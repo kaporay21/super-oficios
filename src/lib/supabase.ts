@@ -61,7 +61,7 @@ export async function getCurrentProfile() {
         nombre: stored?.nombre || user.email?.split('@')[0] || 'Usuario',
         telefono: stored?.telefono || '',
         oficios: stored?.oficios || [],
-        rol: stored?.rol || (stored?.oficios && stored.oficios.length > 0 ? 'profesional' : 'profesional'),
+        rol: stored?.rol || (stored?.oficios && stored.oficios.length > 0 ? 'profesional' : 'cliente'),
         provincia: stored?.provincia || '',
         ciudad: stored?.ciudad || ''
       };
@@ -156,6 +156,92 @@ async function subirRostroAStorage(userId: string, foto: string): Promise<string
   } catch (e) {
     console.warn('No se pudo subir el rostro a Storage, se guarda inline:', e);
     return foto;
+  }
+}
+
+/**
+ * Devuelve el nombre de la columna que Supabase reporta como inexistente,
+ * o null si el error es de otra naturaleza.
+ *
+ * Hay dos formas del mensaje según por dónde entre la escritura:
+ *   PGRST204 → "Could not find the 'pais' column of 'perfiles' in the schema cache"
+ *   42703    → "column perfiles.pais does not exist"
+ */
+function columnaFaltante(error: any): string | null {
+  const msg = String(error?.message || '');
+  return (
+    msg.match(/Could not find the '([^']+)' column/i)?.[1] ||
+    msg.match(/column (?:[\w]+\.)?"?(\w+)"? does not exist/i)?.[1] ||
+    null
+  );
+}
+
+/**
+ * Escribe en `perfiles` tolerando columnas que todavía no existen.
+ *
+ * Las migraciones se corren a mano en el SQL Editor de Supabase, así que el
+ * código puede quedar por delante del esquema. Sin esta tolerancia un solo
+ * campo nuevo tira abajo el guardado entero: en el registro dejaría al usuario
+ * con cuenta de auth pero sin fila en `perfiles`, un estado del que no puede
+ * salir por sí mismo.
+ *
+ * Descarta solo las columnas que faltan y avisa por consola cuáles fueron.
+ */
+async function escribirPerfil(
+  fila: Record<string, any>,
+  modo: 'upsert' | 'update',
+  id?: string
+): Promise<void> {
+  const payload = { ...fila };
+  const descartadas: string[] = [];
+
+  // Cada vuelta descarta a lo sumo una columna, así que con tantos intentos
+  // como campos haya alcanza para terminar.
+  for (let intento = 0; intento <= Object.keys(fila).length; intento++) {
+    const { error } = modo === 'upsert'
+      ? await supabase.from('perfiles').upsert([payload])
+      : await supabase.from('perfiles').update(payload).eq('id', id!);
+
+    if (!error) {
+      if (descartadas.length > 0) {
+        console.warn(
+          `[perfiles] Columnas inexistentes en el esquema, se guardó sin ellas ` +
+          `(correr sprint0_pendientes.sql): ${descartadas.join(', ')}`
+        );
+      }
+      return;
+    }
+
+    const col = columnaFaltante(error);
+    if (!col || !(col in payload)) throw error;
+    delete payload[col];
+    descartadas.push(col);
+  }
+}
+
+/**
+ * Inserta en `tabla` tolerando columnas que todavía no existen en el
+ * esquema (mismo problema que `escribirPerfil`, generalizado para
+ * cualquier tabla). Devuelve la fila creada.
+ */
+async function insertarTolerante(tabla: string, fila: Record<string, any>): Promise<any> {
+  const payload = { ...fila };
+  const descartadas: string[] = [];
+
+  for (let intento = 0; intento <= Object.keys(fila).length; intento++) {
+    const { data, error } = await supabase.from(tabla).insert([payload]).select().single();
+
+    if (!error) {
+      if (descartadas.length > 0) {
+        console.warn(`[${tabla}] Columnas inexistentes en el esquema, se guardó sin ellas: ${descartadas.join(', ')}`);
+      }
+      return data;
+    }
+
+    const col = columnaFaltante(error);
+    if (!col || !(col in payload)) throw error;
+    delete payload[col];
+    descartadas.push(col);
   }
 }
 
@@ -515,8 +601,18 @@ export const dbHelper = {
         foto_verificada_en: fotoPerfil ? new Date().toISOString() : null,
       };
 
-      const { error: profileError } = await supabase.from('perfiles').upsert([baseProfile]);
-      if (profileError) throw profileError;
+      // Datos que el formulario ya pedía y hasta ahora se descartaban: el
+      // apellido solo se concatenaba dentro de `nombre` y los otros tres no
+      // llegaban nunca a la base (ver sprint0_pendientes.sql).
+      // Van como null y no como '' para que "no lo cargó" quede distinguible
+      // de "lo cargó vacío".
+      await escribirPerfil({
+        ...baseProfile,
+        apellido: extraData?.apellido?.trim() || null,
+        fecha_nacimiento: extraData?.fechaNacimiento || null,
+        pais: extraData?.pais?.trim() || null,
+        experiencia: extraData?.experiencia?.trim() || null,
+      }, 'upsert');
     }
     return data;
   },
@@ -741,7 +837,21 @@ export const dbHelper = {
   async getPostulaciones(empleadorName: string): Promise<any[]> {
     const { data, error } = await supabase.from('postulaciones').select('*').eq('empleador', empleadorName);
     if (error) throw error;
-    return data || [];
+    return (data || []).map(p => ({
+      id: p.id || p.idpostulacion,
+      idPostulacion: p.id || p.idpostulacion,
+      empleoId: p.empleoid,
+      tituloEmpleo: p.tituloempleo,
+      candidato: p.candidato,
+      candidatoAvatar: p.candidatoavatar,
+      candidatoRating: p.candidatorating,
+      candidatoVerificado: p.candidatoverificado,
+      candidatoOficio: p.candidatooficio,
+      empleador: p.empleador,
+      estado: p.estado || 'Pendiente',
+      fecha: p.fecha || p.created_at,
+      mensaje: p.mensaje,
+    }));
   },
 
   async updatePostulacion(id: number | string, nuevoEstado: string, _empleadorName: string): Promise<void> {
@@ -754,23 +864,43 @@ export const dbHelper = {
       ...postulacion,
       idpostulacion: postulacion.idPostulacion || Date.now(),
       empleoid: postulacion.empleoId,
+      tituloempleo: postulacion.tituloEmpleo,
       candidatoavatar: postulacion.candidatoAvatar,
+      candidatorating: postulacion.candidatoRating,
+      candidatoverificado: postulacion.candidatoVerificado,
       candidatooficio: postulacion.candidatoOficio
     };
     delete dbPostulacion.idPostulacion;
     delete dbPostulacion.empleoId;
+    delete dbPostulacion.tituloEmpleo;
     delete dbPostulacion.candidatoAvatar;
+    delete dbPostulacion.candidatoRating;
+    delete dbPostulacion.candidatoVerificado;
     delete dbPostulacion.candidatoOficio;
 
-    const { data, error } = await supabase.from('postulaciones').insert([dbPostulacion]).select().single();
-    if (error) throw error;
-    return data;
+    // Tolerante a columnas que no existen todavía en el esquema real
+    // (oficio, tipo, provincia, candidatoverificado no están creadas).
+    return insertarTolerante('postulaciones', dbPostulacion);
   },
 
   async getMisPostulaciones(candidatoName: string): Promise<any[]> {
     const { data, error } = await supabase.from('postulaciones').select('*').eq('candidato', candidatoName).order('created_at', { ascending: false });
     if (error) throw error;
-    return data || [];
+    return (data || []).map(p => ({
+      id: p.id || p.idpostulacion,
+      idPostulacion: p.id || p.idpostulacion,
+      empleoId: p.empleoid,
+      tituloEmpleo: p.tituloempleo,
+      candidato: p.candidato,
+      candidatoAvatar: p.candidatoavatar,
+      candidatoRating: p.candidatorating,
+      candidatoVerificado: p.candidatoverificado,
+      candidatoOficio: p.candidatooficio,
+      empleador: p.empleador,
+      estado: p.estado || 'Pendiente',
+      fecha: p.fecha || p.created_at,
+      mensaje: p.mensaje,
+    }));
   },
 
   async deletePostulacion(empleoId: number | string, candidatoName: string): Promise<void> {
@@ -2691,7 +2821,7 @@ export const dbHelper = {
     try {
       const { data, error } = await supabase
         .from('presupuestos_muro')
-        .select('*, profesional:perfiles!presupuestos_muro_profesional_id_fkey(id, nombre, foto_perfil, oficios, provincia, ciudad, verificado, rating)')
+        .select('*, profesional:perfiles!presupuestos_muro_profesional_id_fkey(id, nombre, foto_perfil, oficios, provincia, ciudad, verificado, rating, total_resenas)')
         .eq('trabajo_id', Number(trabajoId))
         .order('created_at', { ascending: true });
       if (error) throw error;
@@ -2719,6 +2849,7 @@ export const dbHelper = {
           ciudad: p.profesional?.ciudad || '',
           verificado: p.profesional?.verificado || false,
           rating: p.profesional?.rating || 0,
+          totalResenas: Number(p.profesional?.total_resenas) || 0,
         },
       }));
     } catch (e) {

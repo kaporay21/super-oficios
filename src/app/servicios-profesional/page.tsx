@@ -69,7 +69,7 @@ const beneficios = [
 ];
 
 const estadisticas = [
-  { valor: '+10.000', label: 'Familias que confían', icon: Users },
+  { valor: '0%', label: 'Comisión por trabajo', icon: Users },
   { valor: '+500', label: 'Profesionales activos', icon: Wrench },
   { valor: '4.8★', label: 'Valoración promedio', icon: Star },
   { valor: '< 2hs', label: 'Tiempo de primer contacto', icon: Clock },

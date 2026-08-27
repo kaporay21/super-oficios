@@ -154,7 +154,7 @@ export default function RegistroProfesionalPage() {
                 Únete a la red más grande
               </div>
               <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-md text-[#00355f] px-3.5 py-1.5 rounded-2xl font-bold text-xs shadow-md border border-white/20">
-                🚀 +10,000 profesionales activos
+                🚀 Sin comisión por trabajo cerrado
               </div>
             </div>
 

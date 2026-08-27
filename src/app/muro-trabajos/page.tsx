@@ -3,11 +3,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
-  Search, Bell, Home, Briefcase, MessageSquare, 
-  User, PlusCircle, Grid, Wrench, Zap, Paintbrush, 
+  Search, Bell, Home, Briefcase, MessageSquare,
+  User, PlusCircle, Grid, Wrench, Zap, Paintbrush,
   Hammer, Sparkles, MapPin, Clock, LayoutDashboard, Send,
   HelpCircle, ChevronDown, ChevronUp, CheckCircle, Loader2,
-  Edit2, BadgeCheck, Users, Lock, TrendingUp
+  Edit2, BadgeCheck, Users, Lock, TrendingUp, X, ChevronLeft,
+  ChevronRight, Images
 } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import { PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, ConfiguracionIcon, HerramientasIcon } from '@/components/ModernIcons';
@@ -64,6 +65,19 @@ function MuroTrabajosContent() {
     materialesIncluidos: false
   });
   const [isSubmittingBudget, setIsSubmittingBudget] = useState(false);
+
+  // Galería de fotos (lightbox)
+  const [galleryImages, setGalleryImages] = useState<string[] | null>(null);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+
+  const openGallery = (imagenes: string[], startIndex: number = 0) => {
+    if (!imagenes || imagenes.length === 0) return;
+    setGalleryImages(imagenes);
+    setGalleryIndex(startIndex);
+  };
+  const closeGallery = () => setGalleryImages(null);
+  const nextGalleryImage = () => setGalleryIndex(i => (i + 1) % (galleryImages?.length || 1));
+  const prevGalleryImage = () => setGalleryIndex(i => (i - 1 + (galleryImages?.length || 1)) % (galleryImages?.length || 1));
 
   useEffect(() => {
     const storedPerfil = localStorage.getItem('oficiosya_profesional_perfil');
@@ -419,11 +433,14 @@ function MuroTrabajosContent() {
                       )}
 
                       {/* Imagen */}
-                      <div className={`overflow-hidden rounded-xl bg-gray-100 relative shrink-0 ${expandedJobQuestionsId === job.id ? 'w-full h-32 mb-4' : 'w-full md:w-56 h-48 md:h-auto'}`}>
+                      <div
+                        className={`overflow-hidden rounded-xl bg-gray-100 relative shrink-0 ${job.imagenes?.length > 0 ? 'cursor-pointer' : ''} ${expandedJobQuestionsId === job.id ? 'w-full h-32 mb-4' : 'w-full md:w-56 h-48 md:h-auto'}`}
+                        onClick={(e) => { if (job.imagenes?.length > 0) { e.stopPropagation(); openGallery(job.imagenes, 0); } }}
+                      >
                         <img className="absolute inset-0 w-full h-full object-cover" src={job.imagenes?.[0] || getDefaultImage(job.categoria || job.oficio)} alt={job.titulo} />
                         {job.imagenes?.length > 1 && (
-                          <span className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] font-bold px-2 py-0.5 rounded-md backdrop-blur-sm">
-                            +{job.imagenes.length - 1} foto{job.imagenes.length > 2 ? 's' : ''}
+                          <span className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] font-bold px-2 py-0.5 rounded-md backdrop-blur-sm flex items-center gap-1">
+                            <Images className="w-3 h-3" /> +{job.imagenes.length - 1} foto{job.imagenes.length > 2 ? 's' : ''}
                           </span>
                         )}
                         <div className="absolute inset-0 bg-black/10"></div>
@@ -655,6 +672,24 @@ function MuroTrabajosContent() {
               <button onClick={() => setShowBudgetModal(false)} className="text-white hover:bg-white/10 p-2 rounded-full transition-colors"><ChevronUp className="w-6 h-6 rotate-180" /></button>
             </div>
 
+            {selectedJobForBudget.imagenes?.length > 0 && (
+              <div className="px-6 pt-5 pb-1 bg-gray-50/50 shrink-0">
+                <p className="text-xs font-bold text-gray-500 mb-2">Fotos del trabajo</p>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {selectedJobForBudget.imagenes.map((url: string, idx: number) => (
+                    <button
+                      type="button"
+                      key={idx}
+                      onClick={() => openGallery(selectedJobForBudget.imagenes, idx)}
+                      className="shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-gray-200 hover:opacity-80 transition-opacity"
+                    >
+                      <img src={url} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleSubmitBudget} className="p-6 flex-1 overflow-y-auto space-y-5 bg-gray-50/50">
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">Monto Total Estimado ($)</label>
@@ -738,6 +773,52 @@ function MuroTrabajosContent() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Lightbox de galería de fotos */}
+      {galleryImages && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90"
+          onClick={closeGallery}
+        >
+          <button
+            onClick={closeGallery}
+            className="absolute top-4 right-4 text-white hover:bg-white/10 p-2 rounded-full transition-colors z-10"
+          >
+            <X className="w-7 h-7" />
+          </button>
+
+          {galleryImages.length > 1 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); prevGalleryImage(); }}
+              className="absolute left-2 md:left-6 text-white hover:bg-white/10 p-3 rounded-full transition-colors z-10"
+            >
+              <ChevronLeft className="w-8 h-8" />
+            </button>
+          )}
+
+          <img
+            src={galleryImages[galleryIndex]}
+            alt={`Foto ${galleryIndex + 1} de ${galleryImages.length}`}
+            className="max-w-full max-h-[85vh] object-contain rounded-xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+
+          {galleryImages.length > 1 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); nextGalleryImage(); }}
+              className="absolute right-2 md:right-6 text-white hover:bg-white/10 p-3 rounded-full transition-colors z-10"
+            >
+              <ChevronRight className="w-8 h-8" />
+            </button>
+          )}
+
+          {galleryImages.length > 1 && (
+            <span className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs font-bold px-3 py-1 rounded-full">
+              {galleryIndex + 1} / {galleryImages.length}
+            </span>
+          )}
         </div>
       )}
     </div>

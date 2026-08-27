@@ -237,7 +237,7 @@ function PanelProfesionalContent() {
           </button>
 
           <div className="w-9 h-9 rounded-xl overflow-hidden border-2 border-[#fc8127]/40 cursor-pointer hover:border-[#fc8127] transition-colors shrink-0" onClick={() => router.push('/configuracion-profesional')}>
-            <img src={perfil?.avatar || 'https://i.pravatar.cc/150?u=pro'} alt="Avatar" className="w-full h-full object-cover" />
+            <img src={perfil?.foto_perfil || perfil?.fotoPerfil || perfil?.avatar || 'https://i.pravatar.cc/150?u=' + (perfil?.id || 'pro')} alt="Avatar" className="w-full h-full object-cover" />
           </div>
 
           <button onClick={handleLogout} className="p-2 rounded-xl hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors">
@@ -292,7 +292,7 @@ function PanelProfesionalContent() {
             {/* Avatar + status */}
             <div className="relative shrink-0">
               <img
-                src={perfil?.avatar || 'https://i.pravatar.cc/150?u=pro'}
+                src={perfil?.foto_perfil || perfil?.fotoPerfil || perfil?.avatar || 'https://i.pravatar.cc/150?u=' + (perfil?.id || 'pro')}
                 alt="Avatar"
                 className="w-20 h-20 rounded-2xl object-cover border-2 border-[#fc8127]/50 shadow-xl"
               />

@@ -346,6 +346,15 @@ function CompararPresupuestosContent() {
                             </span>
                           )}
                         </div>
+                        {p.profesional?.rating > 0 && (
+                          <p className="text-xs font-bold text-gray-700 mt-0.5 flex items-center gap-1">
+                            <Star className="w-3.5 h-3.5 text-[#fc8127] fill-current" />
+                            {p.profesional.rating.toFixed(1)}
+                            <span className="text-gray-400 font-medium">
+                              ({p.profesional.totalResenas} {p.profesional.totalResenas === 1 ? 'reseña' : 'reseñas'})
+                            </span>
+                          </p>
+                        )}
                         <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
                           {[p.profesional?.ciudad, p.profesional?.provincia].filter(Boolean).join(', ') || 'Sin ubicación'}

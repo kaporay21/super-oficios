@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   ArrowLeft, Bell, MapPin, Calendar, Star, StarHalf, 
-  Lock, Send, BookmarkPlus, LayoutDashboard, Briefcase, 
+  Lock, BookmarkPlus, LayoutDashboard, Briefcase,
   MessageSquare, User, CheckCircle
 } from 'lucide-react';
 import Logo from '@/components/Logo';
@@ -229,12 +229,6 @@ export default function PerfilPublicoClientePage() {
 
         {/* Call to Action */}
         <div className="mt-10 flex flex-col md:flex-row gap-4 max-w-2xl mx-auto">
-          <button 
-            onClick={() => router.push('/enviar-presupuesto')}
-            className="flex-1 bg-[#fc8127] hover:bg-[#e67320] text-white py-4 px-6 rounded-xl font-bold active:scale-[0.98] transition-all flex justify-center items-center gap-2 shadow-lg"
-          >
-            Enviar Presupuesto <Send className="w-5 h-5" />
-          </button>
           <button className="flex-1 border-2 border-[#00355f] text-[#00355f] hover:bg-blue-50 py-4 px-6 rounded-xl font-bold active:scale-[0.98] transition-all flex justify-center items-center gap-2">
             <BookmarkPlus className="w-5 h-5" /> Guardar Perfil
           </button>

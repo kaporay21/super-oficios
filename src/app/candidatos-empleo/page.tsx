@@ -213,8 +213,12 @@ export default function CandidatosEmpleoPage() {
                       <div className="flex items-center gap-1.5 text-xs text-gray-500 font-semibold mt-0.5">
                         <Star className="w-3.5 h-3.5 text-[#fc8127] fill-current" />
                         <span>{postulacion.candidatoRating || '4.0'}</span>
-                        <span className="mx-1">•</span>
-                        <span>Verificado</span>
+                        {postulacion.candidatoVerificado && (
+                          <>
+                            <span className="mx-1">•</span>
+                            <span>Verificado</span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
