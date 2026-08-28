@@ -50,7 +50,7 @@ export default function BolsaEmpleoPage() {
       // 2. Cargar empleos exclusivamente desde Supabase
       try {
         const jobs = await dbHelper.getJobs();
-        const jobOffers = (jobs || []).filter((j: any) => j.tipo || j.salario || j.esEmpleo);
+        const jobOffers = (jobs || []).filter((j: any) => j.esempleo);
         setEmpleos(jobOffers);
       } catch (e) {
         console.error("Error al cargar empleos desde BD:", e);

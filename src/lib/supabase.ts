@@ -684,11 +684,14 @@ export const dbHelper = {
   async createJob(job: any): Promise<any> {
     const dbJob: any = {
       ...job,
-      empleadoravatar: job.empleadorAvatar || job.empleadoravatar
+      empleadoravatar: job.empleadorAvatar || job.empleadoravatar,
+      // Discriminador real entre pedidos de servicio (muro) y ofertas de
+      // empleo (bolsa de trabajo). Antes se borraba acá porque la columna
+      // no existía; ver sprint0_esempleo.sql.
+      esempleo: job.esEmpleo ?? job.esempleo ?? false,
     };
     delete dbJob.empleadorAvatar;
     delete dbJob.esEmpleo;
-    delete dbJob.esempleo;
 
     // Fotos de referencia de la solicitud.
     // Antes se hacía `delete dbJob.imagen` porque la columna no existía, así que
@@ -704,9 +707,9 @@ export const dbHelper = {
     const { data: { user } } = await supabase.auth.getUser();
     if (user?.id) dbJob.cliente_id = user.id;
 
-    const { data, error } = await supabase.from('trabajos').insert([dbJob]).select().single();
-    if (error) throw error;
-    
+    // Tolerante por si sprint0_esempleo.sql todavía no se corrió.
+    const data = await insertarTolerante('trabajos', dbJob);
+
     // Asynchronously notify professionals in the background (no await so it doesn't block)
     dbHelper.notifyProfessionalsForJob(data).catch(console.error);
 
