@@ -50,8 +50,8 @@ export default function RegistroProfesionalPage() {
       alert('Por favor selecciona al menos un oficio.');
       return;
     }
-    if (!selectedProvincia || !selectedCiudad) {
-      alert('Por favor selecciona tu Provincia y tu Ciudad.');
+    if (!selectedProvincia) {
+      alert('Por favor selecciona tu Provincia.');
       return;
     }
     if (password !== confirmPassword) {
@@ -309,11 +309,10 @@ export default function RegistroProfesionalPage() {
                   </div>
 
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-bold text-gray-700 px-1" htmlFor="ciudad">Ciudad / Localidad</label>
+                    <label className="text-xs font-bold text-gray-700 px-1" htmlFor="ciudad">Ciudad / Localidad (opcional)</label>
                     <div className="relative">
                       <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                      <select 
-                        required
+                      <select
                         id="ciudad"
                         value={selectedCiudad}
                         disabled={!selectedProvincia}
