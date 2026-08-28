@@ -241,7 +241,7 @@ function MiMarcaContent() {
               <QrCode className="w-4 h-4 text-[#fc8127]" /> QR de tu Perfil
             </h3>
             <p className="text-xs text-slate-400 mb-3">Imprimilo en tu vehículo, tarjeta, uniforme o factura.</p>
-            <button onClick={() => router.push(`/perfil-publico-cliente?id=${user?.id}`)}
+            <button onClick={() => router.push(`/profesional/${user?.id}`)}
               className="flex items-center gap-1.5 text-xs font-bold text-[#fc8127] hover:underline">
               Ver perfil público <ExternalLink className="w-3 h-3" />
             </button>
