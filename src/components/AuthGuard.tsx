@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from './AuthContext';
 import { Loader2 } from 'lucide-react';
 import { isEmailAdmin } from '@/lib/supabase';
@@ -22,9 +22,12 @@ function checkIsAdmin(user: any, profile: any): boolean {
 /**
  * AuthGuard component that protects routes with REAL Supabase Auth.
  */
+const RUTA_COMPLETAR_PERFIL = '/completar-perfil-profesional';
+
 export default function AuthGuard({ children, requiredRole }: AuthGuardProps) {
   const { user, profile, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     if (loading) return;
@@ -35,6 +38,21 @@ export default function AuthGuard({ children, requiredRole }: AuthGuardProps) {
     }
 
     const effectiveRole = profile?.rol || (user.user_metadata?.rol) || 'profesional';
+
+    // Perfil de profesional sin oficio o provincia: puede haber quedado así
+    // por un registro que falló a mitad de camino (el auto-heal de
+    // getCurrentProfile crea un perfil vacío para no dejar a nadie afuera).
+    // Se lo manda a completar esos datos antes de dejarlo usar el resto de
+    // la app, en vez de dejarlo pasar con un perfil incompleto.
+    if (
+      effectiveRole === 'profesional' &&
+      !checkIsAdmin(user, profile) &&
+      pathname !== RUTA_COMPLETAR_PERFIL &&
+      (!profile?.oficios || profile.oficios.length === 0 || !profile?.provincia)
+    ) {
+      router.replace(`${RUTA_COMPLETAR_PERFIL}?next=${encodeURIComponent(pathname)}`);
+      return;
+    }
 
     // Check role-based access
     if (requiredRole === 'admin') {
@@ -52,7 +70,7 @@ export default function AuthGuard({ children, requiredRole }: AuthGuardProps) {
         return;
       }
     }
-  }, [user, profile, loading, requiredRole, router]);
+  }, [user, profile, loading, requiredRole, router, pathname]);
 
   // Show loading spinner while checking auth
   if (loading) {
@@ -69,6 +87,19 @@ export default function AuthGuard({ children, requiredRole }: AuthGuardProps) {
   // Not authenticated
   if (!user) {
     return null;
+  }
+
+  // Perfil de profesional incompleto: se está redirigiendo a completarlo.
+  {
+    const effectiveRole = profile?.rol || (user.user_metadata?.rol) || 'profesional';
+    if (
+      effectiveRole === 'profesional' &&
+      !checkIsAdmin(user, profile) &&
+      pathname !== RUTA_COMPLETAR_PERFIL &&
+      (!profile?.oficios || profile.oficios.length === 0 || !profile?.provincia)
+    ) {
+      return null;
+    }
   }
 
   // Role check for admin

@@ -500,7 +500,10 @@ export const dbHelper = {
     if (updates.biografia !== undefined) dbUpdates.biografia = updates.biografia;
     
     const { error } = await supabase.from('perfiles').update(dbUpdates).eq('id', id);
-    if (error) console.error('Error updateProfile:', error);
+    if (error) {
+      console.error('Error updateProfile:', error);
+      throw error;
+    }
   },
 
   // --- AUTHENTICATION REAL ---
