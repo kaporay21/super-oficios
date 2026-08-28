@@ -404,7 +404,7 @@ export const dbHelper = {
         docMatricula: p.nro_matricula || '-',
         avatar: p.foto_perfil || 'https://i.pravatar.cc/150?u=' + p.id,
         fotoPerfil: p.foto_perfil || '',
-        location: p.ciudad && p.provincia ? `${p.ciudad}, ${p.provincia}` : (p.provincia || 'Argentina'),
+        location: p.ciudad && p.provincia ? `${p.ciudad}, ${p.provincia}` : (p.provincia || 'Ubicación no especificada'),
         category: p.oficios && p.oficios.length > 0
           ? p.oficios[0].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
           : '',
@@ -453,7 +453,7 @@ export const dbHelper = {
       docMatricula: data.nro_matricula || '-',
       avatar: data.foto_perfil || 'https://i.pravatar.cc/150?u=' + data.id,
       fotoPerfil: data.foto_perfil || '',
-      location: data.ciudad && data.provincia ? `${data.ciudad}, ${data.provincia}` : (data.provincia || 'Argentina'),
+      location: data.ciudad && data.provincia ? `${data.ciudad}, ${data.provincia}` : (data.provincia || 'Ubicación no especificada'),
       category: data.oficios && data.oficios.length > 0 ? data.oficios[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '',
       experiencia: data.experiencia || '',
       biografia: data.biografia || '',

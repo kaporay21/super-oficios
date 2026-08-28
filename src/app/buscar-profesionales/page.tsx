@@ -375,14 +375,17 @@ function BuscadorContenido() {
             </div>
           </div>
 
-          {/* Botones de Categoría */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-2">
-            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none md:pb-0 flex-1">
+          {/* Botones de Categoría — fila propia con fade de scroll, nunca comparte
+              línea con los filtros: antes se apretaban en una sola fila y la
+              última píldora (Gasista) quedaba cortada justo contra "Solo
+              Verificados" sin ningún indicio visual de que se podía scrollear. */}
+          <div className="relative">
+            <div className="flex gap-2 overflow-x-auto pb-2 pt-1 px-1 -mx-1 scrollbar-none [mask-image:linear-gradient(to_right,black_92%,transparent_100%)]">
               {CATEGORIES.map((cat) => (
                 <button
                   key={cat.id || 'todos'}
                   onClick={() => handleOficioChange(cat.id)}
-                  className={`px-5 py-2 md:py-2.5 rounded-full text-xs font-bold whitespace-nowrap transition-all shadow-sm ${
+                  className={`px-5 py-2 md:py-2.5 rounded-full text-xs font-bold whitespace-nowrap transition-all shadow-sm shrink-0 ${
                     oficio === cat.id
                       ? 'bg-[#fc8127] text-white font-bold'
                       : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
@@ -392,44 +395,44 @@ function BuscadorContenido() {
                 </button>
               ))}
             </div>
+          </div>
 
-            {/* Filtros Rápidos y Ordenamiento */}
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <button
-                id="filtro-verificados"
-                onClick={() => handleVerificadosChange(!soloVerificados)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all border flex items-center gap-1.5 ${
-                  soloVerificados
-                    ? 'bg-green-600 text-white border-green-600 shadow-sm'
-                    : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-                }`}
-              >
-                <CheckCircle className="w-3.5 h-3.5" /> Solo Verificados (DNI)
-              </button>
+          {/* Filtros Rápidos y Ordenamiento — segunda fila, siempre con su propio espacio */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              id="filtro-verificados"
+              onClick={() => handleVerificadosChange(!soloVerificados)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all border flex items-center gap-1.5 ${
+                soloVerificados
+                  ? 'bg-green-600 text-white border-green-600 shadow-sm'
+                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              <CheckCircle className="w-3.5 h-3.5" /> Solo Verificados (DNI)
+            </button>
 
-              <button
-                id="filtro-matriculados"
-                onClick={() => handleMatriculadosChange(!soloMatriculados)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all border flex items-center gap-1.5 ${
-                  soloMatriculados
-                    ? 'bg-[#fc8127] text-white border-[#fc8127] shadow-sm'
-                    : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-                }`}
-              >
-                <Award className="w-3.5 h-3.5" /> Solo Matriculados
-              </button>
+            <button
+              id="filtro-matriculados"
+              onClick={() => handleMatriculadosChange(!soloMatriculados)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all border flex items-center gap-1.5 ${
+                soloMatriculados
+                  ? 'bg-[#fc8127] text-white border-[#fc8127] shadow-sm'
+                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              <Award className="w-3.5 h-3.5" /> Solo Matriculados
+            </button>
 
-              <select
-                id="orden-profesionales"
-                value={ordenarPor}
-                onChange={(e: any) => handleOrdenChange(e.target.value)}
-                className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold text-[#00355f] outline-none cursor-pointer hover:bg-gray-50"
-              >
-                <option value="fecha_registro">Más recientes</option>
-                <option value="rating">Más Valorados</option>
-                <option value="trabajos_realizados">Mayor Experiencia</option>
-              </select>
-            </div>
+            <select
+              id="orden-profesionales"
+              value={ordenarPor}
+              onChange={(e: any) => handleOrdenChange(e.target.value)}
+              className="ml-auto bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold text-[#00355f] outline-none cursor-pointer hover:bg-gray-50"
+            >
+              <option value="fecha_registro">Más recientes</option>
+              <option value="rating">Más Valorados</option>
+              <option value="trabajos_realizados">Mayor Experiencia</option>
+            </select>
           </div>
         </section>
 
