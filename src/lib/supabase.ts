@@ -1172,7 +1172,7 @@ export const dbHelper = {
       .from('mensajes')
       .select('*')
       .eq('conversacion_id', conversacionId)
-      .order('created_at', { ascending: true });
+      .order('fecha', { ascending: true });
 
     if (error) {
       console.warn('Error al cargar mensajes:', error.message || JSON.stringify(error) || error);
@@ -1277,30 +1277,44 @@ export const dbHelper = {
   async getOrdenesTrabajoProfesional(profesionalId: string): Promise<any[]> {
     const { data, error } = await supabase
       .from('ordenes_trabajo')
-      .select('*, perfiles!ordenes_trabajo_cliente_id_fkey(nombre, foto_perfil, telefono)')
+      .select('*')
       .eq('profesional_id', profesionalId)
       .order('created_at', { ascending: false });
     if (error) {
-      console.warn('Error cargando Ã³rdenes de trabajo:', error.message);
+      console.warn('Error cargando órdenes de trabajo:', error.message);
       return [];
     }
-    return data || [];
+    // Sin FK declarada entre ordenes_trabajo y perfiles: se trae el perfil
+    // del cliente aparte (mismo workaround que getPresupuestosPorTrabajo).
+    return Promise.all((data || []).map(async (orden: any) => {
+      const cliente = await dbHelper.getUserProfile(orden.cliente_id);
+      return {
+        ...orden,
+        perfiles: cliente ? { nombre: cliente.nombre, foto_perfil: cliente.fotoPerfil, telefono: cliente.telefono } : null,
+      };
+    }));
   },
 
   /**
-   * Obtiene Ã³rdenes de trabajo de un cliente.
+   * Obtiene órdenes de trabajo de un cliente.
    */
   async getOrdenesTrabajoCliente(clienteId: string): Promise<any[]> {
     const { data, error } = await supabase
       .from('ordenes_trabajo')
-      .select('*, perfiles!ordenes_trabajo_profesional_id_fkey(nombre, foto_perfil, telefono, oficios)')
+      .select('*')
       .eq('cliente_id', clienteId)
       .order('created_at', { ascending: false });
     if (error) {
-      console.warn('Error cargando Ã³rdenes de trabajo del cliente:', error.message);
+      console.warn('Error cargando órdenes de trabajo del cliente:', error.message);
       return [];
     }
-    return data || [];
+    return Promise.all((data || []).map(async (orden: any) => {
+      const profesional = await dbHelper.getUserProfile(orden.profesional_id);
+      return {
+        ...orden,
+        perfiles: profesional ? { nombre: profesional.nombre, foto_perfil: profesional.fotoPerfil, telefono: profesional.telefono, oficios: profesional.oficios } : null,
+      };
+    }));
   },
 
   /**
@@ -2351,13 +2365,13 @@ export const dbHelper = {
     try {
       const { data: msgs } = await supabase
         .from('mensajes')
-        .select('created_at')
+        .select('fecha')
         .or('emisor_id.eq.' + profesionalId + ',receptor_id.eq.' + profesionalId)
-        .order('created_at', { ascending: false })
+        .order('fecha', { ascending: false })
         .limit(1);
 
       if (msgs?.[0]) {
-        const mins = Math.floor((ahora.getTime() - new Date(msgs[0].created_at).getTime()) / 60000);
+        const mins = Math.floor((ahora.getTime() - new Date(msgs[0].fecha).getTime()) / 60000);
         actividades.push({
           tipo: 'mensaje', icono: '💬',
           texto: mins < 60 ? 'Respondiste hace ' + mins + ' min' : 'Ultimo mensaje hace ' + Math.floor(mins / 60) + 'h',

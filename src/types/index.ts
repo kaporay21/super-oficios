@@ -109,5 +109,6 @@ export interface PresupuestoMuro {
     ciudad: string;
     verificado: boolean;
     rating: number;
+    totalResenas: number;
   };
 }

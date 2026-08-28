@@ -346,7 +346,7 @@ function CompararPresupuestosContent() {
                             </span>
                           )}
                         </div>
-                        {p.profesional?.rating > 0 && (
+                        {p.profesional && p.profesional.rating > 0 && (
                           <p className="text-xs font-bold text-gray-700 mt-0.5 flex items-center gap-1">
                             <Star className="w-3.5 h-3.5 text-[#fc8127] fill-current" />
                             {p.profesional.rating.toFixed(1)}

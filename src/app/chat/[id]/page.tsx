@@ -508,7 +508,7 @@ function ChatIDContent() {
                       </div>
                     )}
 
-                    <p className="text-[9px] text-slate-600 text-right">{formatHora(msg.created_at)}</p>
+                    <p className="text-[9px] text-slate-600 text-right">{formatHora(msg.fecha)}</p>
                   </div>
                 </div>
               );
@@ -593,7 +593,7 @@ function ChatIDContent() {
                 }`}>
                   <p>{msg.texto}</p>
                   <div className={`flex items-center gap-1 mt-1 text-[9px] ${isMe ? 'justify-end text-orange-200' : 'justify-start text-slate-500'}`}>
-                    <span>{formatHora(msg.created_at)}</span>
+                    <span>{formatHora(msg.fecha)}</span>
                     {isMe && (
                       <CheckCheck className={`w-3.5 h-3.5 ${msg.leido ? 'text-white' : 'text-orange-200/50'}`} />
                     )}

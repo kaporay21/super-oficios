@@ -320,7 +320,7 @@ export default function BolsaEmpleoPage() {
                       <h3 className="font-extrabold text-gray-900 text-sm leading-snug group-hover:text-[#00355f] transition-colors truncate">
                         {empleo.titulo}
                       </h3>
-                      <p className="text-[11px] text-gray-400 font-semibold mt-0.5">{empleo.empleador} · Profesional verificado</p>
+                      <p className="text-[11px] text-gray-400 font-semibold mt-0.5">{empleo.empleador}</p>
                     </div>
                   </div>
                   <button
@@ -367,7 +367,7 @@ export default function BolsaEmpleoPage() {
                   </div>
                   <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
                     <Clock className="w-3.5 h-3.5 text-gray-400" />
-                    {fechaRelativa(empleo.fecha)}
+                    {fechaRelativa(empleo.fecha || empleo.created_at)}
                   </div>
                   <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
                     <Users className="w-3.5 h-3.5 text-[#00355f]" />
