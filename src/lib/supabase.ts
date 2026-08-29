@@ -498,12 +498,12 @@ export const dbHelper = {
     if (updates.foto_perfil !== undefined) dbUpdates.foto_perfil = updates.foto_perfil;
     if (updates.oficios !== undefined) dbUpdates.oficios = updates.oficios;
     if (updates.biografia !== undefined) dbUpdates.biografia = updates.biografia;
-    
-    const { error } = await supabase.from('perfiles').update(dbUpdates).eq('id', id);
-    if (error) {
-      console.error('Error updateProfile:', error);
-      throw error;
-    }
+    if (updates.portafolio !== undefined) dbUpdates.portafolio = updates.portafolio;
+
+    // Tolerante a columnas que todavía no existen (ej. portafolio antes de
+    // correr sprint0_portafolio.sql): sin esto, un solo campo nuevo tira
+    // abajo el guardado de todo el resto del perfil.
+    await escribirPerfil(dbUpdates, 'update', id);
   },
 
   // --- AUTHENTICATION REAL ---

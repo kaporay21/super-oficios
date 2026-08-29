@@ -101,7 +101,8 @@ export default function EditarPerfilPublicoPage() {
           provincia: updatedProfile.provincia,
           ciudad: updatedProfile.ciudad,
           oficios: updatedProfile.oficios,
-          telefono: updatedProfile.telefono
+          telefono: updatedProfile.telefono,
+          portafolio: updatedProfile.portafolio
         }).catch(err => console.error("Error guardando en Supabase:", err));
       }
 

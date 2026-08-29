@@ -3,9 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, Share2, QrCode, TrendingUp, Eye, MessageSquare,
+  ArrowLeft, Share2, TrendingUp, Eye, MessageSquare,
   Users, Copy, CheckCircle2, Loader2, Star, Award, Zap,
-  Download, ExternalLink, ChevronRight, BarChart2, Heart,
+  Download, ExternalLink, BarChart2, Heart,
   Shield, Globe, MessageCircle
 } from 'lucide-react';
 import AuthGuard from '@/components/AuthGuard';
@@ -32,6 +32,7 @@ function MiMarcaContent() {
   const profileUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/profesional/${user?.id}`
     : '';
+  const tarjetaUrl = profileUrl ? `${profileUrl}/tarjeta` : '';
 
   useEffect(() => {
     if (user?.id) loadData();
@@ -63,7 +64,10 @@ function MiMarcaContent() {
   };
 
   const compartirEn = (red: string) => {
-    const texto = encodeURIComponent(`¡Mirá mi perfil profesional en SuperOficios! ${profileUrl}`);
+    const oficioTexto = profile?.oficios?.[0] ? ` (${profile.oficios[0]})` : '';
+    const texto = encodeURIComponent(
+      `¿Necesitás un profesional de confianza${oficioTexto}? Este es mi perfil en OficiosYa 👇\n${profileUrl}`
+    );
     const urls: Record<string, string> = {
       whatsapp: `https://wa.me/?text=${texto}`,
       facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(profileUrl)}`,
@@ -194,23 +198,40 @@ function MiMarcaContent() {
           </div>
         )}
 
-        {/* Compartir perfil */}
+        {/* Tu tarjeta para compartir */}
         <div className="bg-[#001529] border border-slate-800 rounded-2xl p-5">
           <h3 className="text-sm font-black text-white mb-1 flex items-center gap-2">
-            <Share2 className="w-4 h-4 text-[#fc8127]" /> Compartir tu Perfil
+            <Share2 className="w-4 h-4 text-[#fc8127]" /> Tu tarjeta para compartir
           </h3>
-          <p className="text-xs text-slate-400 mb-4">Cada vez que compartís tu perfil, más clientes pueden encontrarte.</p>
+          <p className="text-xs text-slate-400 mb-4">
+            Con tu foto, tu oficio y tu reputación real. Descargala y posteala en WhatsApp, Instagram o Facebook —
+            el QR y el link llevan directo a tu perfil.
+          </p>
 
-          {/* Link del perfil */}
-          <div className="flex gap-2 mb-4">
-            <div className="flex-1 bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-400 truncate">
-              {profileUrl || '/profesional/tu-perfil'}
+          {tarjetaUrl && (
+            <div className="rounded-2xl overflow-hidden border border-slate-800 mb-4 bg-slate-950/40">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={tarjetaUrl}
+                alt="Tu tarjeta profesional de OficiosYa"
+                className="w-full h-auto block"
+              />
             </div>
+          )}
+
+          <div className="flex gap-2 mb-4">
+            <a
+              href={tarjetaUrl}
+              download="tarjeta-oficiosya.png"
+              className="flex-1 bg-[#fc8127] hover:bg-[#e06d19] text-white text-xs font-bold rounded-xl py-2.5 flex items-center justify-center gap-1.5 transition-all"
+            >
+              <Download className="w-3.5 h-3.5" /> Descargar tarjeta
+            </a>
             <button onClick={copiarLink}
-              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                copiado ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400' : 'bg-[#fc8127] text-white hover:bg-[#e06d19]'
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                copiado ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:bg-slate-800'
               }`}>
-              {copiado ? <><CheckCircle2 className="w-3.5 h-3.5" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar</>}
+              {copiado ? <><CheckCircle2 className="w-3.5 h-3.5" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar link</>}
             </button>
           </div>
 
@@ -229,23 +250,11 @@ function MiMarcaContent() {
               </button>
             ))}
           </div>
-        </div>
 
-        {/* QR del perfil */}
-        <div className="bg-[#001529] border border-slate-800 rounded-2xl p-5 flex items-center gap-4">
-          <div className="w-20 h-20 bg-white rounded-xl flex items-center justify-center shrink-0">
-            <QrCode className="w-12 h-12 text-slate-800" />
-          </div>
-          <div>
-            <h3 className="text-sm font-black text-white flex items-center gap-2 mb-1">
-              <QrCode className="w-4 h-4 text-[#fc8127]" /> QR de tu Perfil
-            </h3>
-            <p className="text-xs text-slate-400 mb-3">Imprimilo en tu vehículo, tarjeta, uniforme o factura.</p>
-            <button onClick={() => router.push(`/profesional/${user?.id}`)}
-              className="flex items-center gap-1.5 text-xs font-bold text-[#fc8127] hover:underline">
-              Ver perfil público <ExternalLink className="w-3 h-3" />
-            </button>
-          </div>
+          <button onClick={() => router.push(`/profesional/${user?.id}`)}
+            className="mt-4 flex items-center gap-1.5 text-xs font-bold text-[#fc8127] hover:underline">
+            Ver perfil público <ExternalLink className="w-3 h-3" />
+          </button>
         </div>
 
         {/* Logros */}
