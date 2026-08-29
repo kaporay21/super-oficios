@@ -12,6 +12,21 @@ import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
 import { dbHelper } from '@/lib/supabase';
 
+// Iconos de marca reales (lucide-react no trae logos de terceros).
+// Cada uno toma el color de marca oficial vía fill, no depende de className.
+const IconoWhatsApp = () => (
+  <svg width={22} height={22} viewBox="0 0 24 24" fill="#25D366"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2zm5.8 14.1c-.24.68-1.4 1.3-1.94 1.38-.5.08-1.12.11-1.81-.11-.42-.13-.95-.31-1.64-.6-2.88-1.24-4.76-4.13-4.9-4.32-.14-.19-1.17-1.56-1.17-2.97s.73-2.11.99-2.4c.26-.29.56-.36.75-.36h.53c.17 0 .4-.03.62.48.24.56.81 1.94.88 2.08.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.29.37-.42.5-.14.14-.28.29-.12.57.16.28.72 1.19 1.55 1.93 1.06.95 1.96 1.24 2.24 1.38.28.14.44.12.6-.07.16-.19.68-.79.87-1.06.19-.28.37-.23.62-.14.26.09 1.64.77 1.92.91.28.14.47.21.53.33.07.12.07.68-.17 1.36z"/></svg>
+);
+const IconoFacebook = () => (
+  <svg width={22} height={22} viewBox="0 0 24 24" fill="#1877F2"><path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5 3.66 9.15 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.5 1.49-3.89 3.77-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.88h2.78l-.44 2.91h-2.34V22c4.78-.79 8.44-4.94 8.44-9.94z"/></svg>
+);
+const IconoX = () => (
+  <svg width={20} height={20} viewBox="0 0 24 24" fill="currentColor" className="text-slate-200"><path d="M18.24 2H21l-6.55 7.49L22.2 22h-6.4l-5.02-6.57L4.98 22H2.2l7-8.01L1.5 2h6.56l4.54 6.01L18.24 2zm-1.12 18h1.77L7 3.9H5.1L17.12 20z"/></svg>
+);
+const IconoLinkedIn = () => (
+  <svg width={22} height={22} viewBox="0 0 24 24" fill="#0A66C2"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.03-1.85-3.03-1.85 0-2.14 1.45-2.14 2.94v5.66H9.34V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.07 2.07 0 1 1 0-4.13 2.07 2.07 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45z"/></svg>
+);
+
 export default function MiMarcaPage() {
   return (
     <AuthGuard requiredRole="profesional">
@@ -28,6 +43,7 @@ function MiMarcaContent() {
   const [logros, setLogros] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiado, setCopiado] = useState(false);
+  const [compartiendo, setCompartiendo] = useState(false);
 
   const profileUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/profesional/${user?.id}`
@@ -61,6 +77,35 @@ function MiMarcaContent() {
     navigator.clipboard.writeText(profileUrl);
     setCopiado(true);
     setTimeout(() => setCopiado(false), 2000);
+  };
+
+  /** Comparte la imagen real de la tarjeta con el menú nativo (WhatsApp, Instagram, etc.); si el navegador no lo soporta, cae a copiar el link. */
+  const compartirTarjeta = async () => {
+    const oficioTexto = profile?.oficios?.[0] ? ` (${profile.oficios[0]})` : '';
+    const texto = `¿Necesitás un profesional de confianza${oficioTexto}? Este es mi perfil en OficiosYa`;
+
+    if (typeof navigator !== 'undefined' && navigator.share && tarjetaUrl) {
+      setCompartiendo(true);
+      try {
+        const res = await fetch(tarjetaUrl);
+        const blob = await res.blob();
+        const file = new File([blob], 'tarjeta-oficiosya.png', { type: blob.type || 'image/png' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'Mi perfil en OficiosYa', text: `${texto}\n${profileUrl}` });
+        } else {
+          await navigator.share({ title: 'Mi perfil en OficiosYa', text: texto, url: profileUrl });
+        }
+        return;
+      } catch {
+        // El usuario cancelo el menu nativo, o el share con archivo fallo: no es un error a mostrar.
+        return;
+      } finally {
+        setCompartiendo(false);
+      }
+    }
+
+    copiarLink();
   };
 
   const compartirEn = (red: string) => {
@@ -220,32 +265,38 @@ function MiMarcaContent() {
           )}
 
           <div className="flex gap-2 mb-4">
+            <button onClick={compartirTarjeta} disabled={compartiendo}
+              className="flex-1 bg-[#fc8127] hover:bg-[#e06d19] disabled:opacity-60 text-white text-xs font-bold rounded-xl py-2.5 flex items-center justify-center gap-1.5 transition-all">
+              {compartiendo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
+              {compartiendo ? 'Preparando...' : 'Compartir tarjeta'}
+            </button>
             <a
               href={tarjetaUrl}
               download="tarjeta-oficiosya.png"
-              className="flex-1 bg-[#fc8127] hover:bg-[#e06d19] text-white text-xs font-bold rounded-xl py-2.5 flex items-center justify-center gap-1.5 transition-all"
+              className="px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border bg-slate-800/60 border-slate-700 text-slate-300 hover:bg-slate-800"
             >
-              <Download className="w-3.5 h-3.5" /> Descargar tarjeta
+              <Download className="w-3.5 h-3.5" />
             </a>
             <button onClick={copiarLink}
               className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
                 copiado ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:bg-slate-800'
               }`}>
-              {copiado ? <><CheckCircle2 className="w-3.5 h-3.5" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar link</>}
+              {copiado ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
           </div>
 
-          {/* Redes sociales */}
+          {/* Redes sociales (comparten el link; para mandar la imagen usa "Compartir tarjeta") */}
+          <p className="text-[10px] text-slate-500 mb-2">O compartí el link directo en:</p>
           <div className="grid grid-cols-4 gap-2">
             {[
-              { red: 'whatsapp', label: 'WhatsApp', color: 'hover:bg-green-500/20 hover:border-green-500/30 hover:text-green-400', icon: '💬' },
-              { red: 'facebook', label: 'Facebook', color: 'hover:bg-blue-500/20 hover:border-blue-500/30 hover:text-blue-400', icon: '📘' },
-              { red: 'twitter', label: 'Twitter/X', color: 'hover:bg-sky-500/20 hover:border-sky-500/30 hover:text-sky-400', icon: '🐦' },
-              { red: 'linkedin', label: 'LinkedIn', color: 'hover:bg-blue-700/20 hover:border-blue-700/30 hover:text-blue-500', icon: '💼' },
+              { red: 'whatsapp', label: 'WhatsApp', color: 'hover:bg-green-500/20 hover:border-green-500/30 hover:text-green-400', Icono: IconoWhatsApp },
+              { red: 'facebook', label: 'Facebook', color: 'hover:bg-blue-500/20 hover:border-blue-500/30 hover:text-blue-400', Icono: IconoFacebook },
+              { red: 'twitter', label: 'Twitter/X', color: 'hover:bg-sky-500/20 hover:border-sky-500/30 hover:text-sky-400', Icono: IconoX },
+              { red: 'linkedin', label: 'LinkedIn', color: 'hover:bg-blue-700/20 hover:border-blue-700/30 hover:text-blue-500', Icono: IconoLinkedIn },
             ].map(r => (
               <button key={r.red} onClick={() => compartirEn(r.red)}
                 className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border border-slate-800 text-slate-400 text-[10px] font-bold transition-all ${r.color}`}>
-                <span className="text-xl">{r.icon}</span>
+                <r.Icono />
                 {r.label}
               </button>
             ))}
