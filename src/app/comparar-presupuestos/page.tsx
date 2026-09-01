@@ -12,6 +12,7 @@ import {
 import Logo from '@/components/Logo';
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
+import { useNotification } from '@/providers/NotificationProvider';
 import { dbHelper } from '@/lib/supabase';
 import type { PresupuestoMuro } from '@/types';
 
@@ -40,6 +41,7 @@ function CompararPresupuestosContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
+  const { unreadNotificationsCount: unreadCount } = useNotification();
 
   const trabajoId = searchParams.get('trabajoId');
   const tituloTrabajo = searchParams.get('titulo') || 'Tu trabajo';
@@ -48,20 +50,14 @@ function CompararPresupuestosContent() {
   const [loading, setLoading] = useState(true);
   const [adjudicandoId, setAdjudicandoId] = useState<string | null>(null);
   const [adjudicado, setAdjudicado] = useState<PresupuestoMuro | null>(null);
+  const [expedienteId, setExpedienteId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [tab, setTab] = useState<TabType>('pendientes');
 
   // Descartar (rechazar)
   const [descartandoId, setDescartandoId] = useState<string | null>(null);
   const [confirmDescartarId, setConfirmDescartarId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (user?.id) {
-      dbHelper.getUnreadNotificationsCount(user.id).then(setUnreadCount).catch(() => {});
-    }
-  }, [user?.id]);
 
   const loadPresupuestos = useCallback(async () => {
     if (!trabajoId || !user?.id) return;
@@ -70,7 +66,11 @@ function CompararPresupuestosContent() {
       const data = await dbHelper.getPresupuestosMuroByTrabajo(trabajoId);
       setPresupuestos(data);
       const ya = data.find(p => p.estado === 'aceptado');
-      if (ya) setAdjudicado(ya);
+      if (ya) {
+        setAdjudicado(ya);
+        const expId = await dbHelper.getTrabajoExpedienteId(trabajoId).catch(() => null);
+        setExpedienteId(expId);
+      }
     } catch (err) {
       console.error('Error cargando presupuestos:', err);
     } finally {
@@ -86,7 +86,7 @@ function CompararPresupuestosContent() {
     if (!user?.id || !trabajoId) return;
     try {
       setAdjudicandoId(presupuesto.id);
-      await dbHelper.adjudicarTrabajo({
+      const { expedienteId: nuevoExpedienteId } = await dbHelper.adjudicarTrabajo({
         trabajoId: Number(trabajoId),
         presupuestoId: presupuesto.id,
         profesionalId: presupuesto.profesionalId,
@@ -96,9 +96,15 @@ function CompararPresupuestosContent() {
         garantia: presupuesto.garantia,
       });
       setAdjudicado(presupuesto);
+      setExpedienteId(nuevoExpedienteId);
       setConfirmId(null);
       await loadPresupuestos();
-      setTimeout(() => router.push(`/orden-trabajo`), 1500);
+      // Antes mandaba a /orden-trabajo, una pantalla exclusiva de
+      // profesionales -- el cliente quedaba expulsado de inmediato sin ver
+      // nunca el estado de su propia contratación.
+      if (nuevoExpedienteId) {
+        setTimeout(() => router.push(`/expediente/${nuevoExpedienteId}`), 1500);
+      }
     } catch (err) {
       console.error('Error adjudicando trabajo:', err);
       alert('Hubo un error al seleccionar este profesional. Intentá de nuevo.');
@@ -491,9 +497,9 @@ function CompararPresupuestosContent() {
                       )}
 
                       {/* Ya adjudicado a este */}
-                      {esElegido && (
+                      {esElegido && expedienteId && (
                         <button
-                          onClick={() => router.push('/orden-trabajo')}
+                          onClick={() => router.push(`/expediente/${expedienteId}`)}
                           className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
                         >
                           <Briefcase className="w-4 h-4" /> Ver Orden de Trabajo

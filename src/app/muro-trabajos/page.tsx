@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Search, Bell, Home, Briefcase, MessageSquare,
-  User, PlusCircle, Grid, Wrench, Zap, Paintbrush,
+  User, Grid, Wrench, Zap, Paintbrush,
   Hammer, Sparkles, MapPin, Clock, LayoutDashboard, Send,
   HelpCircle, ChevronDown, ChevronUp, CheckCircle, Loader2,
   Edit2, BadgeCheck, Users, Lock, TrendingUp, X, ChevronLeft,
@@ -15,6 +15,7 @@ import { PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, Configura
 import Logo from '@/components/Logo';
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
+import { useNotification } from '@/providers/NotificationProvider';
 import { dbHelper, supabase } from '@/lib/supabase';
 import { OFICIOS_CORE } from '@/lib/constants';
 import type { PresupuestoMuro } from '@/types';
@@ -30,11 +31,11 @@ export default function MuroTrabajosPage() {
 function MuroTrabajosContent() {
   const router = useRouter();
   const { user } = useAuth();
+  const { unreadNotificationsCount: unreadCount } = useNotification();
   const [trabajos, setTrabajos] = useState<any[]>([]);
   const [categoriaActiva, setCategoriaActiva] = useState('Todos');
   const [presupuestosCount, setPresupuestosCount] = useState(0);
   const [obrasGanadasCount, setObrasGanadasCount] = useState(0);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   // Mapa: trabajoId → mi oferta existente (PresupuestoMuro | null)
@@ -90,12 +91,6 @@ function MuroTrabajosContent() {
     }
   }, []);
 
-  useEffect(() => {
-    if (user?.id) {
-      dbHelper.getUnreadNotificationsCount(user.id).then(setUnreadCount).catch(() => {});
-    }
-  }, [user?.id]);
-
   const defaultImages: Record<string, string> = {
     'Plomería': '/images/oficio_plomeria_m_1784427462868.png',
     'Electricidad': '/images/oficio_electricidad_m_1784427470881.png',
@@ -141,15 +136,12 @@ function MuroTrabajosContent() {
         setConteoOfertas(countMap);
       }
 
-      // Stats del sidebar
-      const presupuestos = await dbHelper.getPresupuestosEnviados(user.id);
-      setPresupuestosCount(presupuestos ? presupuestos.length : 0);
-
-      if (typeof dbHelper.getObras === 'function') {
-        const obras = await dbHelper.getObras();
-        const ganadas = (obras || []).filter((o: any) => o.estado === 'en-curso' || o.estado === 'finalizada');
-        setObrasGanadasCount(ganadas.length);
-      }
+      // Stats del sidebar -- ofertas y trabajos ganados del Muro real
+      // (presupuestos_muro, no presupuestos_estructurados/obras, que son de
+      // otros flujos y siempre daban 0 acá).
+      const misOfertasMuro = await dbHelper.getPresupuestosEnviadosMuro(user.id);
+      setPresupuestosCount(misOfertasMuro.length);
+      setObrasGanadasCount(misOfertasMuro.filter((o: any) => o.estado === 'aceptado').length);
     } catch (error) {
       console.error("Error al cargar muro de servicios:", error);
     } finally {
@@ -215,9 +207,13 @@ function MuroTrabajosContent() {
   const handleSubmitBudget = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedJobForBudget || !user?.id) return;
+    const clienteId = selectedJobForBudget.cliente_id;
+    if (!clienteId) {
+      alert('Este trabajo no tiene un cliente asociado (dato faltante), no se puede enviar la oferta. Reportalo a soporte.');
+      return;
+    }
     try {
       setIsSubmittingBudget(true);
-      const clienteId = selectedJobForBudget.cliente_id || selectedJobForBudget.empleador_id;
 
       if (modalMode === 'editar' && editingOfertaId) {
         // EDITAR oferta existente
@@ -254,12 +250,21 @@ function MuroTrabajosContent() {
       ]);
       setMisOfertas(prev => ({ ...prev, [String(selectedJobForBudget.id)]: miOferta }));
       setConteoOfertas(prev => ({ ...prev, [String(selectedJobForBudget.id)]: count }));
-      const newCount = await dbHelper.getPresupuestosEnviados(user.id);
-      setPresupuestosCount(newCount.length);
+      const misOfertasMuro = await dbHelper.getPresupuestosEnviadosMuro(user.id);
+      setPresupuestosCount(misOfertasMuro.length);
+      setObrasGanadasCount(misOfertasMuro.filter((o: any) => o.estado === 'aceptado').length);
 
     } catch (err: any) {
       console.error('Error enviando oferta:', err);
-      alert('Hubo un error al enviar la oferta. Inténtalo de nuevo.');
+      // 23505 = violación del UNIQUE(trabajo_id, profesional_id): ya existía
+      // una oferta tuya en este trabajo. Mensaje claro en vez del error crudo
+      // de Postgres que llegaba antes.
+      if (err?.code === '23505') {
+        alert('Ya enviaste una oferta a este trabajo. Recargá la página para editarla.');
+      } else {
+        const detalle = err?.message ? `: ${err.message}` : '';
+        alert(`Hubo un error al enviar la oferta${detalle}. Inténtalo de nuevo.`);
+      }
     } finally {
       setIsSubmittingBudget(false);
     }
@@ -366,14 +371,9 @@ function MuroTrabajosContent() {
       <main className="max-w-7xl mx-auto px-4 md:px-8 pt-24 pb-8 flex-grow w-full space-y-8">
 
         {/* Hero Section */}
-        <section className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div>
-            <h1 className="text-3xl font-extrabold text-[#00355f] mb-2">Muro de Servicios</h1>
-            <p className="text-base text-gray-500 max-w-2xl">Solicitudes publicadas por clientes. Enviá tu oferta para ganar el trabajo.</p>
-          </div>
-          <button onClick={() => router.push('/publicar-trabajo')} className="bg-[#fc8127] text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-md hover:bg-[#e67320] active:scale-95 transition-all w-fit">
-            <PlusCircle className="w-5 h-5" /> Publicar Solicitud
-          </button>
+        <section className="flex flex-col gap-2">
+          <h1 className="text-3xl font-extrabold text-[#00355f] mb-2">Muro de Servicios</h1>
+          <p className="text-base text-gray-500 max-w-2xl">Solicitudes publicadas por clientes. Enviá tu oferta para ganar el trabajo.</p>
         </section>
 
         {/* Categorías */}

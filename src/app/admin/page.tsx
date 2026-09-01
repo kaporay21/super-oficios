@@ -9,7 +9,7 @@ import {
   Edit2, Eye, Shield, UserX, UserCheck, Award, FileText, CheckCircle,
   Activity, Zap, Ban, Clock, TriangleAlert, CreditCard, DollarSign, Wallet,
   Sliders, ListPlus, Target, History, Star, Megaphone, Image, CalendarDays,
-  ToggleLeft, ToggleRight, ChevronRight, Lightbulb, Sparkles
+  ToggleLeft, ToggleRight, ChevronRight, Lightbulb, Sparkles, Gift, Coins
 } from 'lucide-react';
 import Logo from '@/components/Logo';
 import AuthGuard from '@/components/AuthGuard';
@@ -30,10 +30,14 @@ function AdminContent() {
   
   const [clearing, setClearing] = useState(false);
   const handlePurgeAllData = async () => {
-    if (!confirm('⚠️ ¿Estás seguro de BORRAR TODOS LOS DATOS de la plataforma? Esto eliminará usuarios, trabajos, postulaciones, reseñas y chats para dejar la plataforma 100% vacía.')) return;
     setClearing(true);
     try {
       await dbHelper.cleanAllData();
+      await dbHelper.registrarAuditoria({
+        admin_email: user?.email || 'admin',
+        accion: 'Vació TODOS los datos de la plataforma',
+        riesgo: 'Alto',
+      });
       alert('✅ Se borraron todos los datos correctamente. La plataforma quedó en cero.');
       window.location.reload();
     } catch (err) {
@@ -41,6 +45,8 @@ function AdminContent() {
       alert('Ocurrió un error al vaciar los datos.');
     } finally {
       setClearing(false);
+      setShowPurgeModal(false);
+      setPurgeConfirmText('');
     }
   };
   
@@ -48,7 +54,7 @@ function AdminContent() {
   const [activeTab, setActiveTab] = useState<
     'resumen' | 'analiticas' | 'usuarios' | 'verificaciones' | 'trabajos' |
     'marketing' | 'soporte' | 'seguridad' | 'financiero' | 'configuracion' |
-    'feedback' | 'campanas'
+    'feedback' | 'campanas' | 'disputas' | 'premios'
   >('resumen');
 
   // Search & Filter state
@@ -63,6 +69,7 @@ function AdminContent() {
   const [postulaciones, setPostulaciones] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [denuncias, setDenuncias] = useState<any[]>([]);
+  const [reportesUsuarios, setReportesUsuarios] = useState<any[]>([]);
 
   // Sub-tabs and selectors for Bolsa de Empleo
   const [jobSubTab, setJobSubTab] = useState<'muro' | 'bolsa'>('muro');
@@ -93,9 +100,38 @@ function AdminContent() {
     tipo: 'Campaña', activa: true
   });
 
+  // Premios (tienda de canje) state
+  const [premios, setPremios] = useState<any[]>([]);
+  const [canjesAdmin, setCanjesAdmin] = useState<any[]>([]);
+  const [premioForm, setPremioForm] = useState({ nombre: '', descripcion: '', costoPuntos: '', imagenUrl: '', stock: '' });
+
   // Feedbacks state
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+
+  // Centro de Disputas
+  const [disputas, setDisputas] = useState<any[]>([]);
+  const [resolvingDisputaId, setResolvingDisputaId] = useState<string | null>(null);
+  const [disputaResolucionTexto, setDisputaResolucionTexto] = useState('');
+  const [disputaResolucionEstado, setDisputaResolucionEstado] = useState('acuerdo');
+
+  // Suspender cuenta (requiere motivo)
+  const [suspendReasonFor, setSuspendReasonFor] = useState<string | null>(null);
+  const [suspendReasonText, setSuspendReasonText] = useState('');
+
+  // Eliminar cuenta puntual (requiere motivo + escribir el nombre)
+  const [showDeleteAccountForm, setShowDeleteAccountForm] = useState(false);
+  const [deleteAccountReason, setDeleteAccountReason] = useState('');
+  const [deleteAccountConfirmText, setDeleteAccountConfirmText] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
+  // Eliminar trabajo (requiere motivo)
+  const [jobToDelete, setJobToDelete] = useState<any | null>(null);
+  const [deleteJobReason, setDeleteJobReason] = useState('');
+
+  // Vaciar DB (requiere escribir frase de confirmación)
+  const [showPurgeModal, setShowPurgeModal] = useState(false);
+  const [purgeConfirmText, setPurgeConfirmText] = useState('');
 
   // Initialize data
   useEffect(() => {
@@ -121,6 +157,9 @@ function AdminContent() {
           mensaje: t.mensaje,
           nombre: t.usuario?.nombre || 'Usuario',
           email: t.usuario?.email || '',
+          usuarioId: t.usuario_id || null,
+          profesionalId: t.profesional_id || null,
+          profesionalNombre: t.profesional?.nombre || '',
           fecha: t.created_at ? new Date(t.created_at).toLocaleDateString('es-AR') : 'Reciente',
           estado: t.estado || 'Recibida',
           respuesta: t.respuesta_admin || ''
@@ -154,10 +193,24 @@ function AdminContent() {
     };
     loadPostulaciones();
 
-    // 5. Load announcements from Supabase (stored as sistema notifications with no user filter)
-    // We'll track sent campaigns in state from users' notifications.
-    // For now: load from admin's own notification list as reference
-    setAnnouncements([]);
+    // 5. Historial real de campañas masivas (antes vivía solo en useState y
+    // se vaciaba en cada recarga, aunque el envío en sí ya funcionaba).
+    const loadAnnouncements = async () => {
+      try {
+        const data = await dbHelper.getCampanasMasivasHistorial();
+        setAnnouncements(data.map((c: any) => ({
+          id: c.id,
+          titulo: c.titulo,
+          mensaje: c.mensaje,
+          destinatarios: c.destinatarios,
+          fecha: new Date(c.created_at).toLocaleDateString('es-AR'),
+          enviados: c.enviados,
+        })));
+      } catch (err) {
+        console.error('Error al cargar historial de campañas:', err);
+      }
+    };
+    loadAnnouncements();
 
     // 6. Load denuncias/reportes (tickets of type Denuncia)
     const loadDenuncias = async () => {
@@ -181,6 +234,43 @@ function AdminContent() {
       }
     };
     loadDenuncias();
+
+    // 6b. Load reportes de usuarios (tabla real reportes, cliente<->profesional)
+    const loadReportesUsuarios = async () => {
+      try {
+        const data = await dbHelper.getReportes();
+        setReportesUsuarios(data);
+      } catch (err) {
+        console.error('Error al cargar reportes de usuarios:', err);
+      }
+    };
+    loadReportesUsuarios();
+
+    // 6c. Load campañas/banners (antes vivían solo en estado local)
+    const loadCampanas = async () => {
+      try {
+        const data = await dbHelper.getCampanasAdmin();
+        setCampaigns(data);
+      } catch (err) {
+        console.error('Error al cargar campañas:', err);
+      }
+    };
+    loadCampanas();
+
+    // 6d. Load premios de la tienda de canje + canjes pendientes
+    const loadPremios = async () => {
+      try {
+        const [premiosData, canjesData] = await Promise.all([
+          dbHelper.getPremiosAdmin(),
+          dbHelper.getCanjesAdmin(),
+        ]);
+        setPremios(premiosData);
+        setCanjesAdmin(canjesData);
+      } catch (err) {
+        console.error('Error al cargar premios:', err);
+      }
+    };
+    loadPremios();
 
     // 7. Load feedbacks (sugerencias)
     const loadFeedbacks = async () => {
@@ -215,6 +305,17 @@ function AdminContent() {
       }
     };
     loadAuditLogs();
+
+    // 9. Load disputas (Centro de Resolución cliente <-> profesional)
+    const loadDisputas = async () => {
+      try {
+        const data = await dbHelper.getDisputasAdmin();
+        setDisputas(data);
+      } catch (err) {
+        console.error('Error al cargar disputas:', err);
+      }
+    };
+    loadDisputas();
   }, []);
 
   // Update lists
@@ -231,16 +332,21 @@ function AdminContent() {
   };
 
   // User Actions
-  const handleToggleStatus = async (id: string, currentStatus: string) => {
+  const handleToggleStatus = async (id: string, currentStatus: string, motivo?: string) => {
     const nextStatus = currentStatus === 'Activo' ? 'Suspendido' : 'Activo';
-    const updated = users.map(u => u.id === id ? { ...u, status: nextStatus } : u);
+    const updated = users.map(u => u.id === id ? { ...u, status: nextStatus, motivoEstado: motivo || '' } : u);
     saveUsers(updated);
     if (selectedUser?.id === id) {
-      setSelectedUser({ ...selectedUser, status: nextStatus });
+      setSelectedUser({ ...selectedUser, status: nextStatus, motivoEstado: motivo || '' });
     }
 
     try {
-      await dbHelper.updateUserStatus(id, nextStatus);
+      await dbHelper.updateUserStatus(id, nextStatus, motivo);
+      await dbHelper.registrarAuditoria({
+        admin_email: user?.email || 'admin',
+        accion: `${nextStatus === 'Suspendido' ? 'Suspendió' : 'Reactivó'} la cuenta de ${updated.find(u => u.id === id)?.email || id}${motivo ? ` — Motivo: ${motivo}` : ''}`,
+        riesgo: nextStatus === 'Suspendido' ? 'Alto' : 'Medio',
+      });
     } catch (e) {
       console.error("Error al suspender/habilitar usuario en BD:", e);
     }
@@ -253,21 +359,41 @@ function AdminContent() {
       setSelectedUser({ ...selectedUser, plan: newPlan });
     }
 
-    // Sincronizar el plan en el perfil del profesional
-    const targetUser = updated.find(u => u.id === id);
-    if (targetUser && targetUser.email === 'roberto@gmail.com') {
-      const storedProfile = localStorage.getItem('oficiosya_profesional_perfil');
-      if (storedProfile) {
-        const parsed = JSON.parse(storedProfile);
-        parsed.plan = newPlan;
-        localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(parsed));
-      }
-    }
-
     try {
       await dbHelper.updateUserPlan(id, newPlan);
+      await dbHelper.registrarAuditoria({
+        admin_email: user?.email || 'admin',
+        accion: `Cambió el plan de ${updated.find(u => u.id === id)?.email || id} a "${newPlan}"`,
+        riesgo: 'Bajo',
+      });
     } catch (e) {
       console.error("Error al actualizar plan en BD:", e);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!selectedUser || !deleteAccountReason.trim()) return;
+    if (deleteAccountConfirmText.trim().toLowerCase() !== (selectedUser.name || '').trim().toLowerCase()) return;
+    setDeletingAccount(true);
+    try {
+      await dbHelper.deleteUserAccount(selectedUser.id, deleteAccountReason.trim());
+      await dbHelper.registrarAuditoria({
+        admin_email: user?.email || 'admin',
+        accion: `Eliminó permanentemente la cuenta de ${selectedUser.email} — Motivo: ${deleteAccountReason.trim()}`,
+        riesgo: 'Alto',
+      });
+      setUsers(prev => prev.map(u => u.id === selectedUser.id
+        ? { ...u, status: 'Eliminado', name: 'Usuario eliminado', email: `eliminado-${u.id}@oficiosya.local`, motivoEstado: deleteAccountReason.trim() }
+        : u));
+      setSelectedUser(null);
+      setShowDeleteAccountForm(false);
+      setDeleteAccountReason('');
+      setDeleteAccountConfirmText('');
+    } catch (e) {
+      console.error('Error al eliminar cuenta:', e);
+      alert('Ocurrió un error al eliminar la cuenta.');
+    } finally {
+      setDeletingAccount(false);
     }
   };
 
@@ -288,6 +414,12 @@ function AdminContent() {
         titulo: '✅ Identidad Verificada',
         descripcion: '¡Felicitaciones! Tu identidad (DNI) fue revisada y aprobada por el equipo de OficiosYa. Ahora tenés el sello de profesional verificado.',
       });
+      await dbHelper.registrarAuditoria({
+        admin_email: user?.email || 'admin',
+        accion: `Aprobó la verificación de DNI de ${updated.find(u => u.id === id)?.email || id}`,
+        riesgo: 'Bajo',
+      });
+      await dbHelper.registrarPuntos(id, 'verificacion_dni', 100, 'Tu identidad fue verificada');
       alert('✅ Insignia de Identidad Verificada (DNI) otorgada con éxito.');
     } catch (e) {
       console.error("Error al validar DNI en BD:", e);
@@ -310,6 +442,12 @@ function AdminContent() {
         titulo: '🏆 Certificados Aprobados',
         descripcion: '¡Tu expediente y certificados fueron aprobados! Ya contás con el sello de Profesional Matriculado / Certificado en tu perfil.',
       });
+      await dbHelper.registrarAuditoria({
+        admin_email: user?.email || 'admin',
+        accion: `Aprobó certificados/matrícula de ${updated.find(u => u.id === id)?.email || id}`,
+        riesgo: 'Bajo',
+      });
+      await dbHelper.registrarPuntos(id, 'verificacion_matricula', 50, 'Tu matrícula fue aprobada');
       alert('🏆 Insignia de Profesional Matriculado / Certificado otorgada con éxito.');
     } catch (e) {
       console.error("Error al validar certificados en BD:", e);
@@ -323,22 +461,50 @@ function AdminContent() {
 
     try {
       await dbHelper.updateUserVerification(id, false, 'Pendiente', false, 'Pendiente');
+      await dbHelper.crearNotificacion({
+        usuario_id: id,
+        tipo: 'sistema',
+        titulo: 'Verificación rechazada',
+        descripcion: 'Tu solicitud de verificación fue rechazada. Revisá que el DNI y los certificados sean legibles y volvé a intentarlo, o contactanos desde Soporte.',
+      });
+      await dbHelper.registrarAuditoria({
+        admin_email: user?.email || 'admin',
+        accion: `Rechazó la verificación de ${id}`,
+        riesgo: 'Medio',
+      });
       alert('Solicitud rechazada.');
     } catch (e) {
       console.error("Error al rechazar verificación en BD:", e);
     }
   };
 
-  // Moderation actions
-  const handleDeleteJob = async (id: number | string) => {
-    if (!confirm('¿Estás seguro de que deseas eliminar este trabajo por infracción de normas?')) return;
-    const updated = jobs.filter(j => j.id !== id);
+  // Moderation actions — pide motivo y notifica al dueño del trabajo antes de borrar
+  const handleConfirmDeleteJob = async () => {
+    if (!jobToDelete || !deleteJobReason.trim()) return;
+    const job = jobToDelete;
+    const updated = jobs.filter(j => j.id !== job.id);
     saveJobs(updated);
+    setJobToDelete(null);
 
     try {
-      await dbHelper.deleteJob(id);
+      await dbHelper.deleteJob(job.id);
+      if (job.cliente_id) {
+        await dbHelper.crearNotificacion({
+          usuario_id: job.cliente_id,
+          tipo: 'sistema',
+          titulo: '🗑️ Tu publicación fue eliminada',
+          descripcion: `"${job.titulo}" fue eliminada por un administrador. Motivo: ${deleteJobReason.trim()}`,
+        });
+      }
+      await dbHelper.registrarAuditoria({
+        admin_email: user?.email || 'admin',
+        accion: `Eliminó el trabajo "${job.titulo}" (#${job.id}) — Motivo: ${deleteJobReason.trim()}`,
+        riesgo: 'Medio',
+      });
     } catch (e) {
       console.error("Error al eliminar trabajo en BD:", e);
+    } finally {
+      setDeleteJobReason('');
     }
   };
 
@@ -378,17 +544,23 @@ function AdminContent() {
       );
       await Promise.all(promises);
 
-      // Track in local state for the history panel
-      const newAnnouncement = {
-        id: Date.now().toString(),
+      // Persistimos el envío para que el historial sobreviva a un refresh
+      // (antes solo quedaba en useState y se perdía).
+      const guardada = await dbHelper.registrarCampanaMasiva({
         titulo: marketingTitle,
         mensaje: marketingBody,
         destinatarios: marketingTarget,
-        fecha: new Date().toLocaleDateString('es-AR'),
-        tipo: 'Promo',
         enviados: targetUsers.length,
-      };
-      setAnnouncements(prev => [newAnnouncement, ...prev]);
+        adminEmail: user?.email,
+      });
+      setAnnouncements(prev => [{
+        id: guardada.id,
+        titulo: guardada.titulo,
+        mensaje: guardada.mensaje,
+        destinatarios: guardada.destinatarios,
+        fecha: new Date(guardada.created_at).toLocaleDateString('es-AR'),
+        enviados: guardada.enviados,
+      }, ...prev]);
 
       setMarketingSuccess(true);
       setMarketingTitle('');
@@ -457,17 +629,140 @@ function AdminContent() {
     }
   };
 
+  const [escalandoTicketId, setEscalandoTicketId] = useState<string | null>(null);
+  const handleEscalarADisputa = async (ticketId: string) => {
+    setEscalandoTicketId(ticketId);
+    try {
+      await dbHelper.escalarTicketADisputa(ticketId);
+      setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, estado: 'Escalado' } : t));
+      const disputasActualizadas = await dbHelper.getDisputasAdmin();
+      setDisputas(disputasActualizadas);
+      await dbHelper.registrarAuditoria({
+        admin_email: user?.email || 'admin',
+        accion: `Escaló el ticket #${ticketId.slice(0, 6)} a una disputa`,
+        riesgo: 'Medio',
+      });
+      setActiveTab('disputas');
+    } catch (e: any) {
+      console.error('Error al escalar ticket:', e);
+      alert(e?.message || 'No se pudo escalar este ticket a disputa.');
+    } finally {
+      setEscalandoTicketId(null);
+    }
+  };
+
+  const handleActualizarReporte = async (id: string, nuevoEstado: string) => {
+    try {
+      await dbHelper.updateReporteEstado(id, nuevoEstado);
+      setReportesUsuarios(prev => prev.map(r => r.id === id ? { ...r, estado: nuevoEstado } : r));
+      await dbHelper.registrarAuditoria({
+        admin_email: user?.email || 'admin',
+        accion: `Marcó el reporte #${id.slice(0, 6)} como "${nuevoEstado}"`,
+        riesgo: 'Medio',
+      });
+    } catch (e) {
+      console.error('Error al actualizar reporte:', e);
+    }
+  };
+
+  // Centro de Disputas
+  const handleResolveDisputa = async (id: string) => {
+    if (!disputaResolucionTexto.trim()) return;
+    try {
+      await dbHelper.resolverDisputaAdmin(id, disputaResolucionTexto.trim(), disputaResolucionEstado);
+      setDisputas(prev => prev.map(d => d.id === id ? { ...d, estado: disputaResolucionEstado, resolucion_admin: disputaResolucionTexto.trim() } : d));
+      await dbHelper.registrarAuditoria({
+        admin_email: user?.email || 'admin',
+        accion: `Resolvió la disputa #${id.slice(0, 8)} como "${disputaResolucionEstado}"`,
+        riesgo: 'Medio',
+      });
+      setResolvingDisputaId(null);
+      setDisputaResolucionTexto('');
+    } catch (e) {
+      console.error('Error al resolver disputa:', e);
+      alert('Ocurrió un error al resolver la disputa.');
+    }
+  };
+
   // Campaign actions
-  const handleCreateCampaign = (e: React.FormEvent) => {
+  const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!campaignForm.nombre) return;
-    const newCampaign = {
-      id: Date.now().toString(),
-      ...campaignForm,
-      fechaCreacion: new Date().toLocaleDateString('es-AR'),
-    };
-    setCampaigns(prev => [newCampaign, ...prev]);
-    setCampaignForm({ nombre: '', banner: '', fechaInicio: '', fechaFin: '', categoria: 'Todos', beneficio: '', botonTexto: '', botonUrl: '', tipo: 'Campaña', activa: true });
+    try {
+      const nueva = await dbHelper.createCampanaAdmin({
+        nombre: campaignForm.nombre,
+        tipo: campaignForm.tipo,
+        categoria: campaignForm.categoria,
+        beneficio: campaignForm.beneficio,
+        banner_url: campaignForm.banner,
+        boton_texto: campaignForm.botonTexto,
+        boton_url: campaignForm.botonUrl,
+        fecha_inicio: campaignForm.fechaInicio || undefined,
+        fecha_fin: campaignForm.fechaFin || undefined,
+      });
+      setCampaigns(prev => [nueva, ...prev]);
+      setCampaignForm({ nombre: '', banner: '', fechaInicio: '', fechaFin: '', categoria: 'Todos', beneficio: '', botonTexto: '', botonUrl: '', tipo: 'Campaña', activa: true });
+      await dbHelper.registrarAuditoria({
+        admin_email: user?.email || 'admin',
+        accion: `Creó la campaña "${campaignForm.nombre}"`,
+        riesgo: 'Bajo',
+      });
+    } catch (err) {
+      console.error('Error al crear campaña:', err);
+      alert('Ocurrió un error al crear la campaña.');
+    }
+  };
+
+  const handleToggleCampana = async (id: string, activaActual: boolean) => {
+    setCampaigns(prev => prev.map(c => c.id === id ? { ...c, activa: !activaActual } : c));
+    try {
+      await dbHelper.toggleCampanaActiva(id, !activaActual);
+    } catch (err) {
+      console.error('Error al cambiar estado de campaña:', err);
+    }
+  };
+
+  // Premios (tienda de canje) actions
+  const handleCreatePremio = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!premioForm.nombre || !premioForm.costoPuntos) return;
+    try {
+      const nuevo = await dbHelper.createPremioAdmin({
+        nombre: premioForm.nombre,
+        descripcion: premioForm.descripcion,
+        costoPuntos: Number(premioForm.costoPuntos),
+        imagenUrl: premioForm.imagenUrl,
+        stock: premioForm.stock ? Number(premioForm.stock) : null,
+      });
+      setPremios(prev => [nuevo, ...prev]);
+      setPremioForm({ nombre: '', descripcion: '', costoPuntos: '', imagenUrl: '', stock: '' });
+      await dbHelper.registrarAuditoria({
+        admin_email: user?.email || 'admin',
+        accion: `Creó el premio "${premioForm.nombre}"`,
+        riesgo: 'Bajo',
+      });
+    } catch (err) {
+      console.error('Error al crear premio:', err);
+      alert('Ocurrió un error al crear el premio.');
+    }
+  };
+
+  const handleTogglePremio = async (id: string, activoActual: boolean) => {
+    setPremios(prev => prev.map(p => p.id === id ? { ...p, activo: !activoActual } : p));
+    try {
+      await dbHelper.togglePremioActivo(id, !activoActual);
+    } catch (err) {
+      console.error('Error al cambiar estado de premio:', err);
+    }
+  };
+
+  const handleMarcarEntregado = async (id: string) => {
+    setCanjesAdmin(prev => prev.map(c => c.id === id ? { ...c, estado: 'entregado' } : c));
+    try {
+      await dbHelper.marcarCanjeEntregado(id);
+    } catch (err) {
+      console.error('Error al marcar canje entregado:', err);
+    }
   };
 
   return (
@@ -539,6 +834,11 @@ function AdminContent() {
           {/* SECCIÓN: PLATAFORMA */}
           <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest px-3 pt-4 pb-1">Plataforma</p>
 
+          <button onClick={() => setActiveTab('disputas')} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'disputas' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
+            <div className="flex items-center gap-3"><ShieldAlert className="w-4 h-4 shrink-0" /> Centro de Disputas</div>
+            {disputas.filter(d => d.estado === 'escalado_admin').length > 0 && <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse">{disputas.filter(d => d.estado === 'escalado_admin').length}</span>}
+          </button>
+
           <button onClick={() => setActiveTab('seguridad')} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'seguridad' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
             <div className="flex items-center gap-3"><Shield className="w-4 h-4 shrink-0" /> Centro de Seguridad</div>
             {denuncias.filter(d => d.estado === 'Recibida').length > 0 && <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse">{denuncias.filter(d => d.estado === 'Recibida').length}</span>}
@@ -546,6 +846,11 @@ function AdminContent() {
 
           <button onClick={() => setActiveTab('financiero')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'financiero' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
             <Wallet className="w-4 h-4 shrink-0" /> Finanzas y Planes
+          </button>
+
+          <button onClick={() => setActiveTab('premios')} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'premios' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
+            <div className="flex items-center gap-3"><Gift className="w-4 h-4 shrink-0" /> Tienda de Canje</div>
+            {canjesAdmin.filter(c => c.estado === 'pendiente').length > 0 && <span className="bg-orange-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">{canjesAdmin.filter(c => c.estado === 'pendiente').length}</span>}
           </button>
 
           <button onClick={() => setActiveTab('configuracion')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'configuracion' ? 'bg-[#fc8127] text-white shadow-md' : 'text-blue-100 hover:bg-white/10'}`}>
@@ -556,7 +861,7 @@ function AdminContent() {
 
         {/* Footer del sidebar */}
         <div className="p-3 border-t border-white/10 space-y-1.5">
-          <button onClick={handlePurgeAllData} disabled={clearing} className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-600/80 hover:bg-red-600 text-white rounded-xl text-xs font-bold transition-colors">
+          <button onClick={() => setShowPurgeModal(true)} disabled={clearing} className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-600/80 hover:bg-red-600 text-white rounded-xl text-xs font-bold transition-colors">
             <Trash2 className="w-3.5 h-3.5" /> {clearing ? 'Borrando...' : 'Vaciar DB'}
           </button>
           <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-blue-200 hover:bg-white/10 transition-colors text-xs font-bold">
@@ -574,19 +879,21 @@ function AdminContent() {
            activeTab === 'analiticas' ? 'Métricas Analíticas y Tráfico' : 
            activeTab === 'trabajos' ? 'Moderación de Solicitudes' : 
            activeTab === 'usuarios' ? 'Gestión de Usuarios' : 
+           activeTab === 'disputas' ? 'Centro de Disputas ⚖️' :
            activeTab === 'seguridad' ? 'Centro de Seguridad y Denuncias' :
            activeTab === 'financiero' ? 'Panel Financiero y Suscripciones' :
            activeTab === 'configuracion' ? 'Configuración Global de la App' :
            activeTab === 'feedback' ? 'Centro de Feedback ⭐' :
            activeTab === 'campanas' ? 'Campañas y Banners ✨' :
+           activeTab === 'premios' ? 'Tienda de Canje 🎁' :
            activeTab === 'marketing' ? 'Notificaciones Masivas 📢' :
            activeTab === 'soporte' ? 'Buzón de Soporte 💬' :
            activeTab === 'verificaciones' ? 'Verificaciones de Identidad' :
            activeTab}
           </h2>
           <div className="flex items-center gap-4">
-            <button 
-              onClick={handlePurgeAllData}
+            <button
+              onClick={() => setShowPurgeModal(true)}
               disabled={clearing}
               className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 rounded-xl text-xs font-bold transition-colors"
             >
@@ -949,6 +1256,7 @@ function AdminContent() {
                         <option value="Activo">Activos</option>
                         <option value="Inactivo">Inactivos</option>
                         <option value="Suspendido">Suspendidos</option>
+                        <option value="Eliminado">Eliminados</option>
                       </select>
                     </div>
                   </div>
@@ -1118,7 +1426,7 @@ function AdminContent() {
                             <p className="text-[10px] text-gray-400 mt-2 font-bold">{job.ubicacion || job.ciudad} · {job.tiempo || 'Reciente'}</p>
                           </div>
                           <button 
-                            onClick={() => handleDeleteJob(job.id)}
+                            onClick={() => setJobToDelete(job)}
                             className="bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 font-bold text-xs px-3 py-2 rounded-xl transition-all flex items-center gap-1 shrink-0"
                           >
                             <Trash2 className="w-3.5 h-3.5" /> Eliminar Trabajo
@@ -1160,7 +1468,7 @@ function AdminContent() {
                                   <Users className="w-3.5 h-3.5" /> Postulantes ({jobApps.length})
                                 </button>
                                 <button 
-                                  onClick={() => handleDeleteJob(job.id)}
+                                  onClick={() => setJobToDelete(job)}
                                   className="bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 font-bold text-xs px-3 py-2 rounded-xl transition-all flex items-center gap-1"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" /> Eliminar
@@ -1302,7 +1610,7 @@ function AdminContent() {
                   <h3 className="text-base font-bold text-[#00355f]">Historial de Campañas</h3>
                   <div className="divide-y divide-gray-100 space-y-3 max-h-[450px] overflow-y-auto">
                     {announcements.length === 0 ? (
-                      <p className="text-xs text-gray-400 py-4 text-center">Aún no se han enviado campañas en esta sesión.</p>
+                      <p className="text-xs text-gray-400 py-4 text-center">Todavía no se envió ninguna campaña.</p>
                     ) : (
                       announcements.map(ann => (
                         <div key={ann.id} className="pt-3 space-y-1">
@@ -1396,6 +1704,11 @@ function AdminContent() {
                           <p className="font-extrabold text-sm text-gray-900 mt-2">
                             {ticket.nombre} <span className="font-normal text-xs text-gray-400">({ticket.email})</span>
                           </p>
+                          {ticket.profesionalNombre && (
+                            <span className="inline-block mt-1.5 text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                              ⚖️ Sobre: {ticket.profesionalNombre}
+                            </span>
+                          )}
                         </div>
                         <span className="text-[10px] text-gray-400 font-bold">{ticket.fecha}</span>
                       </div>
@@ -1403,6 +1716,22 @@ function AdminContent() {
                       <p className="text-sm text-gray-700 bg-white/70 p-3.5 rounded-xl border border-gray-100 leading-relaxed">
                         {ticket.mensaje}
                       </p>
+
+                      {ticket.profesionalId && ticket.estado !== 'Escalado' && (
+                        <button
+                          onClick={() => handleEscalarADisputa(ticket.id)}
+                          disabled={escalandoTicketId === ticket.id}
+                          className="mt-3 text-xs bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-black px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5"
+                        >
+                          <ShieldAlert className="w-3.5 h-3.5" />
+                          {escalandoTicketId === ticket.id ? 'Escalando...' : 'Escalar a disputa'}
+                        </button>
+                      )}
+                      {ticket.estado === 'Escalado' && (
+                        <button onClick={() => setActiveTab('disputas')} className="mt-3 text-xs text-amber-700 font-bold hover:underline">
+                          Ya escalado — ver en Centro de Disputas →
+                        </button>
+                      )}
 
                       {ticket.archivoBase64 && (
                         <div className="mt-3">
@@ -1479,6 +1808,125 @@ function AdminContent() {
                     </div>
                   ))
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: CENTRO DE DISPUTAS (Centro de Resolución cliente <-> profesional) */}
+          {activeTab === 'disputas' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-5 rounded-3xl border bg-red-50 border-red-200 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm"><ShieldAlert className="w-6 h-6 text-red-500" /></div>
+                  <div>
+                    <p className="text-xs font-bold text-gray-500 uppercase">Esperando intervención</p>
+                    <p className="text-2xl font-black text-gray-900">{disputas.filter(d => d.estado === 'escalado_admin').length}</p>
+                  </div>
+                </div>
+                <div className="p-5 rounded-3xl border bg-yellow-50 border-yellow-200 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm"><Clock className="w-6 h-6 text-yellow-500" /></div>
+                  <div>
+                    <p className="text-xs font-bold text-gray-500 uppercase">En proceso (entre partes)</p>
+                    <p className="text-2xl font-black text-gray-900">{disputas.filter(d => d.estado === 'en_proceso').length}</p>
+                  </div>
+                </div>
+                <div className="p-5 rounded-3xl border bg-green-50 border-green-200 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm"><CheckCircle2 className="w-6 h-6 text-green-600" /></div>
+                  <div>
+                    <p className="text-xs font-bold text-gray-500 uppercase">Resueltas</p>
+                    <p className="text-2xl font-black text-gray-900">{disputas.filter(d => d.estado?.startsWith('resuelto') || d.estado === 'acuerdo' || d.estado === 'rechazado').length}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-gray-200 bg-gray-50/50">
+                  <h3 className="text-lg font-bold text-[#00355f]">Mediaciones y Reclamos</h3>
+                  <p className="text-xs text-gray-500">Casos abiertos por clientes desde "Centro de Resolución" en su perfil. Los marcados "Intervención OficiosYa" pidieron explícitamente que decida un admin.</p>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {disputas.length === 0 ? (
+                    <div className="text-center py-16">
+                      <ShieldAlert className="w-10 h-10 text-green-400 mx-auto mb-3" />
+                      <p className="text-sm font-bold text-gray-500">Sin disputas activas</p>
+                      <p className="text-xs text-gray-400 mt-1">Cuando un cliente abra una mediación aparecerá acá.</p>
+                    </div>
+                  ) : (
+                    disputas.map(d => (
+                      <div key={d.id} className="p-5 space-y-3">
+                        <div className="flex flex-col md:flex-row justify-between items-start gap-3">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
+                                d.estado === 'escalado_admin' ? 'bg-red-100 text-red-700 animate-pulse' :
+                                d.estado === 'en_proceso' ? 'bg-yellow-100 text-yellow-700' :
+                                d.estado === 'rechazado' ? 'bg-gray-200 text-gray-600' : 'bg-green-100 text-green-700'
+                              }`}>{d.estado?.replace('_', ' ') || 'en proceso'}</span>
+                              <span className="text-[10px] font-bold text-gray-500">{d.tipo_solucion}</span>
+                              {d.monto_reclamado ? <span className="text-[10px] font-black text-[#fc8127]">${Number(d.monto_reclamado).toLocaleString()}</span> : null}
+                              <span className="text-[10px] text-gray-400">{d.created_at ? new Date(d.created_at).toLocaleDateString('es-AR') : ''}</span>
+                            </div>
+                            <p className="text-sm font-bold text-gray-900">
+                              {d.cliente?.nombre || 'Cliente'} <span className="text-gray-400 font-normal">vs.</span> {d.profesional?.nombre || 'Profesional'}
+                            </p>
+                            <p className="text-xs text-gray-600 leading-relaxed max-w-2xl">{d.descripcion}</p>
+                            {d.descripcion_profesional ? (
+                              <div className="mt-2 p-3 bg-blue-50 border border-blue-100 rounded-xl max-w-2xl">
+                                <p className="text-xs font-bold text-blue-800">Versión del profesional:</p>
+                                <p className="text-xs text-gray-600 mt-1 italic">"{d.descripcion_profesional}"</p>
+                              </div>
+                            ) : !d.resolucion_admin && (
+                              <p className="text-[11px] text-gray-400 italic mt-1">El profesional todavía no dio su versión.</p>
+                            )}
+                            {d.resolucion_admin && (
+                              <div className="mt-2 p-3 bg-green-50 border border-green-100 rounded-xl">
+                                <p className="text-xs font-bold text-green-800">Resolución:</p>
+                                <p className="text-xs text-gray-600 mt-1 italic">"{d.resolucion_admin}"</p>
+                              </div>
+                            )}
+                          </div>
+                          {!d.resolucion_admin && (
+                            <button
+                              onClick={() => { setResolvingDisputaId(resolvingDisputaId === d.id ? null : d.id); setDisputaResolucionTexto(''); }}
+                              className="text-xs bg-[#00355f] text-white font-bold px-3.5 py-2 rounded-xl hover:bg-[#0f4c81] transition-colors shrink-0"
+                            >
+                              {resolvingDisputaId === d.id ? 'Cancelar' : 'Resolver caso'}
+                            </button>
+                          )}
+                        </div>
+
+                        {resolvingDisputaId === d.id && (
+                          <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl space-y-3">
+                            <select
+                              value={disputaResolucionEstado}
+                              onChange={e => setDisputaResolucionEstado(e.target.value)}
+                              className="w-full sm:w-64 p-2.5 bg-white border border-gray-200 rounded-xl text-xs font-bold focus:outline-none"
+                            >
+                              <option value="acuerdo">Acuerdo entre las partes</option>
+                              <option value="resuelto_cliente">A favor del cliente</option>
+                              <option value="resuelto_profesional">A favor del profesional</option>
+                              <option value="rechazado">Reclamo rechazado</option>
+                            </select>
+                            <textarea
+                              rows={3}
+                              value={disputaResolucionTexto}
+                              onChange={e => setDisputaResolucionTexto(e.target.value)}
+                              placeholder="Explicá la resolución — se les notifica textualmente a ambas partes."
+                              className="w-full p-2.5 border border-gray-200 rounded-xl text-xs focus:ring-1 focus:ring-[#00355f] focus:outline-none bg-white"
+                            />
+                            <button
+                              onClick={() => handleResolveDisputa(d.id)}
+                              disabled={!disputaResolucionTexto.trim()}
+                              className="text-xs bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl transition-colors"
+                            >
+                              Confirmar resolución y notificar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1636,6 +2084,64 @@ function AdminContent() {
                             Ver usuario
                           </button>
                         </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Reportes de Usuarios (tabla real "reportes", distinta de las denuncias de Soporte) */}
+              <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-gray-200 bg-gray-50/50 flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-bold text-[#00355f]">Reportes de Usuarios</h3>
+                    <p className="text-xs text-gray-500">Reportes bidireccionales enviados desde el chat (cliente ↔ profesional).</p>
+                  </div>
+                  <span className="text-xs font-bold bg-red-100 text-red-700 px-3 py-1.5 rounded-full">
+                    {reportesUsuarios.length} total
+                  </span>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {reportesUsuarios.length === 0 ? (
+                    <div className="text-center py-16">
+                      <Shield className="w-10 h-10 text-green-400 mx-auto mb-3" />
+                      <p className="text-sm font-bold text-gray-500">Sin reportes activos</p>
+                      <p className="text-xs text-gray-400 mt-1">Nadie reportó a otro usuario todavía.</p>
+                    </div>
+                  ) : (
+                    reportesUsuarios.map(r => (
+                      <div key={r.id} className="p-5 flex items-start justify-between gap-4 hover:bg-gray-50 transition-colors">
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 bg-red-100 rounded-xl flex items-center justify-center shrink-0">
+                            <TriangleAlert className="w-4 h-4 text-red-600" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{r.tipo}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                r.estado === 'resuelto' ? 'bg-green-100 text-green-700' :
+                                r.estado === 'en_revision' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'
+                              }`}>{r.estado}</span>
+                              <span className="text-[10px] text-gray-400">{r.created_at ? new Date(r.created_at).toLocaleDateString('es-AR') : ''}</span>
+                            </div>
+                            <p className="text-sm font-bold text-gray-900">
+                              {r.reportador?.nombre || 'Usuario'} <span className="font-normal text-xs text-gray-400">reportó a</span> {r.reportado?.nombre || 'Usuario'}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-1 line-clamp-2">{r.descripcion}</p>
+                          </div>
+                        </div>
+                        {r.estado !== 'resuelto' && (
+                          <div className="flex flex-col items-end gap-2 shrink-0">
+                            {r.estado === 'pendiente' && (
+                              <button onClick={() => handleActualizarReporte(r.id, 'en_revision')} className="text-[11px] bg-blue-50 text-blue-700 border border-blue-200 font-bold px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
+                                Poner en revisión
+                              </button>
+                            )}
+                            <button onClick={() => handleActualizarReporte(r.id, 'resuelto')} className="text-[11px] bg-[#00355f] text-white font-bold px-3 py-1.5 rounded-lg hover:bg-[#0f4c81] transition-colors">
+                              Marcar resuelto
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ))
                   )}
@@ -2075,8 +2581,8 @@ function AdminContent() {
                       campaigns.map(camp => (
                         <div key={camp.id} className="p-4 flex items-start justify-between gap-3 hover:bg-gray-50">
                           <div className="flex items-start gap-3">
-                            {camp.banner ? (
-                              <img src={camp.banner} alt="banner" className="w-14 h-14 rounded-xl object-cover border border-gray-200 shrink-0" />
+                            {camp.banner_url ? (
+                              <img src={camp.banner_url} alt="banner" className="w-14 h-14 rounded-xl object-cover border border-gray-200 shrink-0" />
                             ) : (
                               <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#fc8127] to-[#00355f] flex items-center justify-center shrink-0">
                                 <Sparkles className="w-6 h-6 text-white" />
@@ -2089,16 +2595,136 @@ function AdminContent() {
                               </div>
                               <p className="text-xs font-bold text-gray-900">{camp.nombre}</p>
                               {camp.beneficio && <p className="text-[10px] text-gray-500 line-clamp-1 mt-0.5">{camp.beneficio}</p>}
-                              {camp.fechaInicio && <p className="text-[9px] text-gray-400 mt-0.5">📅 {camp.fechaInicio} → {camp.fechaFin}</p>}
+                              {camp.fecha_inicio && <p className="text-[9px] text-gray-400 mt-0.5">📅 {camp.fecha_inicio} → {camp.fecha_fin}</p>}
                             </div>
                           </div>
-                          <button onClick={() => setCampaigns(prev => prev.map(c => c.id === camp.id ? { ...c, activa: !c.activa } : c))} className={`shrink-0 p-1 rounded-lg transition-colors ${camp.activa ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100'}`}>
+                          <button onClick={() => handleToggleCampana(camp.id, camp.activa)} className={`shrink-0 p-1 rounded-lg transition-colors ${camp.activa ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100'}`}>
                             {camp.activa ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6" />}
                           </button>
                         </div>
                       ))
                     )}
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'premios' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Crear Premio */}
+                <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-[#fc8127]/10 rounded-2xl flex items-center justify-center">
+                      <Gift className="w-5 h-5 text-[#fc8127]" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-[#00355f]">Nuevo Premio</h3>
+                      <p className="text-xs text-gray-500">Cargá premios que los profesionales puedan canjear con sus puntos.</p>
+                    </div>
+                  </div>
+                  <form onSubmit={handleCreatePremio} className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Nombre del Premio *</label>
+                        <input value={premioForm.nombre} onChange={e => setPremioForm(p => ({ ...p, nombre: e.target.value }))} placeholder="ej: Remera OficiosYa" required className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#fc8127]" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Costo en Puntos *</label>
+                        <input type="number" min={1} value={premioForm.costoPuntos} onChange={e => setPremioForm(p => ({ ...p, costoPuntos: e.target.value }))} placeholder="ej: 200" required className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#fc8127]" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Stock (vacío = ilimitado)</label>
+                        <input type="number" min={0} value={premioForm.stock} onChange={e => setPremioForm(p => ({ ...p, stock: e.target.value }))} placeholder="ej: 10" className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#fc8127]" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">URL de Imagen</label>
+                        <input value={premioForm.imagenUrl} onChange={e => setPremioForm(p => ({ ...p, imagenUrl: e.target.value }))} placeholder="https://..." className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#fc8127]" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Descripción</label>
+                        <textarea rows={2} value={premioForm.descripcion} onChange={e => setPremioForm(p => ({ ...p, descripcion: e.target.value }))} placeholder="ej: Remera oficial de OficiosYa, talles a elección" className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#fc8127] resize-none" />
+                      </div>
+                    </div>
+                    <button type="submit" className="w-full py-3 bg-[#fc8127] hover:bg-[#e67320] text-white font-bold rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
+                      <Gift className="w-4 h-4" /> Crear Premio
+                    </button>
+                  </form>
+                </div>
+
+                {/* Lista de Premios */}
+                <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden flex flex-col max-h-[700px]">
+                  <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+                    <h3 className="text-base font-bold text-[#00355f]">Premios Creados</h3>
+                    <span className="text-[10px] font-black bg-[#fc8127]/10 text-[#fc8127] px-2 py-1 rounded-full">{premios.filter(p => p.activo).length} activos</span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
+                    {premios.length === 0 ? (
+                      <div className="text-center py-16">
+                        <Gift className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                        <p className="text-sm font-bold text-gray-400">No hay premios creados</p>
+                        <p className="text-xs text-gray-400 mt-1">Creá tu primer premio con el formulario.</p>
+                      </div>
+                    ) : (
+                      premios.map(premio => (
+                        <div key={premio.id} className="p-4 flex items-start justify-between gap-3 hover:bg-gray-50">
+                          <div className="flex items-start gap-3">
+                            {premio.imagen_url ? (
+                              <img src={premio.imagen_url} alt="premio" className="w-14 h-14 rounded-xl object-cover border border-gray-200 shrink-0" />
+                            ) : (
+                              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#fc8127] to-[#00355f] flex items-center justify-center shrink-0">
+                                <Gift className="w-6 h-6 text-white" />
+                              </div>
+                            )}
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-[9px] font-black bg-[#00355f]/10 text-[#00355f] px-2 py-0.5 rounded-full">{premio.costo_puntos} pts</span>
+                                {premio.stock !== null && <span className="text-[9px] font-bold text-gray-500">Stock: {premio.stock}</span>}
+                              </div>
+                              <p className="text-xs font-bold text-gray-900">{premio.nombre}</p>
+                              {premio.descripcion && <p className="text-[10px] text-gray-500 line-clamp-1 mt-0.5">{premio.descripcion}</p>}
+                            </div>
+                          </div>
+                          <button onClick={() => handleTogglePremio(premio.id, premio.activo)} className={`shrink-0 p-1 rounded-lg transition-colors ${premio.activo ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100'}`}>
+                            {premio.activo ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6" />}
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Canjes pendientes */}
+              <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+                  <h3 className="text-base font-bold text-[#00355f]">Canjes de Profesionales</h3>
+                  <span className="text-[10px] font-black bg-orange-100 text-orange-600 px-2 py-1 rounded-full">{canjesAdmin.filter(c => c.estado === 'pendiente').length} pendientes</span>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {canjesAdmin.length === 0 ? (
+                    <div className="text-center py-16">
+                      <Coins className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                      <p className="text-sm font-bold text-gray-400">Todavía no hay canjes</p>
+                    </div>
+                  ) : (
+                    canjesAdmin.map(canje => (
+                      <div key={canje.id} className="p-4 flex items-center justify-between gap-3 hover:bg-gray-50">
+                        <div>
+                          <p className="text-xs font-bold text-gray-900">{canje.premio?.nombre || 'Premio'} — {canje.puntos_gastados} pts</p>
+                          <p className="text-[10px] text-gray-500 mt-0.5">{canje.profesional?.nombre || canje.profesional?.email || 'Profesional'} · {new Date(canje.created_at).toLocaleDateString('es-AR')}</p>
+                        </div>
+                        {canje.estado === 'entregado' ? (
+                          <span className="text-[10px] font-black bg-green-100 text-green-700 px-2 py-1 rounded-full shrink-0">Entregado</span>
+                        ) : (
+                          <button onClick={() => handleMarcarEntregado(canje.id)} className="text-[10px] font-black bg-[#fc8127]/10 text-[#fc8127] hover:bg-[#fc8127]/20 px-3 py-1.5 rounded-full transition-colors shrink-0">
+                            Marcar entregado
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
@@ -2134,11 +2760,18 @@ function AdminContent() {
               {/* Controles de estado */}
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-gray-500">Estado de cuenta:</span>
-                <button 
-                  onClick={() => handleToggleStatus(selectedUser.id, selectedUser.status)}
+                <button
+                  onClick={() => {
+                    if (selectedUser.status === 'Activo') {
+                      setSuspendReasonFor(selectedUser.id);
+                      setSuspendReasonText('');
+                    } else {
+                      handleToggleStatus(selectedUser.id, selectedUser.status);
+                    }
+                  }}
                   className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
-                    selectedUser.status === 'Activo' 
-                      ? 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-200' 
+                    selectedUser.status === 'Activo'
+                      ? 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-200'
                       : 'bg-green-600 text-white hover:bg-green-700'
                   }`}
                 >
@@ -2153,6 +2786,35 @@ function AdminContent() {
                   )}
                 </button>
               </div>
+
+              {selectedUser.status === 'Suspendido' && selectedUser.motivoEstado && (
+                <p className="text-[11px] text-gray-500 -mt-2 bg-red-50 border border-red-100 rounded-xl p-2.5">
+                  <b className="text-red-700">Motivo de suspensión:</b> {selectedUser.motivoEstado}
+                </p>
+              )}
+
+              {suspendReasonFor === selectedUser.id && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-2xl space-y-2">
+                  <label className="text-[11px] font-bold text-red-700">Motivo de la suspensión (se le notifica al usuario):</label>
+                  <textarea
+                    rows={2}
+                    value={suspendReasonText}
+                    onChange={e => setSuspendReasonText(e.target.value)}
+                    placeholder="Ej: incumplimiento reiterado de trabajos acordados"
+                    className="w-full p-2 border border-red-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-red-400"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => setSuspendReasonFor(null)} className="text-[11px] text-gray-500 font-bold px-3 py-1.5 hover:underline">Cancelar</button>
+                    <button
+                      onClick={async () => { await handleToggleStatus(selectedUser.id, 'Activo', suspendReasonText.trim()); setSuspendReasonFor(null); }}
+                      disabled={!suspendReasonText.trim()}
+                      className="text-[11px] bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold px-4 py-1.5 rounded-lg transition-colors"
+                    >
+                      Confirmar suspensión
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Controles de Plan (Solo profesionales) */}
               {selectedUser.role === 'Profesional' && (
@@ -2175,14 +2837,115 @@ function AdminContent() {
                   </div>
                 </div>
               )}
+
+              {/* Zona de peligro: baja permanente de la cuenta */}
+              <div className="pt-3 border-t border-dashed border-gray-200">
+                {!showDeleteAccountForm ? (
+                  <button
+                    onClick={() => { setShowDeleteAccountForm(true); setDeleteAccountReason(''); setDeleteAccountConfirmText(''); }}
+                    className="w-full py-2 text-xs font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Eliminar cuenta permanentemente
+                  </button>
+                ) : (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-2xl space-y-2.5">
+                    <p className="text-[11px] font-bold text-red-700">Esta acción es irreversible. La cuenta queda inhabilitada y sus datos identificables se anonimizan.</p>
+                    <textarea
+                      rows={2}
+                      value={deleteAccountReason}
+                      onChange={e => setDeleteAccountReason(e.target.value)}
+                      placeholder="Motivo de la baja..."
+                      className="w-full p-2 border border-red-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-red-400"
+                    />
+                    <div>
+                      <label className="text-[10px] font-bold text-red-700">Escribí <b>{selectedUser.name}</b> para confirmar:</label>
+                      <input
+                        type="text"
+                        value={deleteAccountConfirmText}
+                        onChange={e => setDeleteAccountConfirmText(e.target.value)}
+                        className="w-full mt-1 p-2 border border-red-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-red-400"
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => setShowDeleteAccountForm(false)} className="text-[11px] text-gray-500 font-bold px-3 py-1.5 hover:underline">Cancelar</button>
+                      <button
+                        onClick={handleDeleteAccount}
+                        disabled={deletingAccount || !deleteAccountReason.trim() || deleteAccountConfirmText.trim().toLowerCase() !== (selectedUser.name || '').trim().toLowerCase()}
+                        className="text-[11px] bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold px-4 py-1.5 rounded-lg transition-colors"
+                      >
+                        {deletingAccount ? 'Eliminando...' : 'Eliminar definitivamente'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <button 
-              onClick={() => setSelectedUser(null)}
+            <button
+              onClick={() => { setSelectedUser(null); setShowDeleteAccountForm(false); setSuspendReasonFor(null); }}
               className="w-full py-3 bg-gray-150 text-gray-800 rounded-xl font-bold text-sm hover:bg-gray-200 transition-colors"
             >
               Listo
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: ELIMINAR TRABAJO (requiere motivo) ── */}
+      {jobToDelete && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white p-6 rounded-3xl max-w-md w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-bold text-[#00355f]">Eliminar trabajo</h3>
+            <p className="text-xs text-gray-500">"{jobToDelete.titulo}" se va a eliminar y se le va a avisar al dueño de la publicación por qué.</p>
+            <textarea
+              rows={3}
+              value={deleteJobReason}
+              onChange={e => setDeleteJobReason(e.target.value)}
+              placeholder="Motivo (ej: infringe normas de la plataforma)"
+              className="w-full p-2.5 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-red-400"
+            />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => { setJobToDelete(null); setDeleteJobReason(''); }} className="text-xs text-gray-500 font-bold px-4 py-2 hover:underline">Cancelar</button>
+              <button
+                onClick={handleConfirmDeleteJob}
+                disabled={!deleteJobReason.trim()}
+                className="text-xs bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl transition-colors"
+              >
+                Eliminar trabajo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: VACIAR TODA LA PLATAFORMA (requiere frase de confirmación) ── */}
+      {showPurgeModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white p-6 rounded-3xl max-w-md w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-2">
+              <TriangleAlert className="w-6 h-6 text-red-600" />
+              <h3 className="text-lg font-bold text-red-700">Vaciar toda la plataforma</h3>
+            </div>
+            <p className="text-xs text-gray-600">Esto borra <b>usuarios, trabajos, postulaciones, reseñas y chats de todos</b>. No se puede deshacer.</p>
+            <div>
+              <label className="text-[11px] font-bold text-gray-500">Escribí <b>BORRAR TODO</b> para confirmar:</label>
+              <input
+                type="text"
+                value={purgeConfirmText}
+                onChange={e => setPurgeConfirmText(e.target.value)}
+                className="w-full mt-1 p-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-red-400"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => { setShowPurgeModal(false); setPurgeConfirmText(''); }} className="text-xs text-gray-500 font-bold px-4 py-2 hover:underline">Cancelar</button>
+              <button
+                onClick={handlePurgeAllData}
+                disabled={clearing || purgeConfirmText !== 'BORRAR TODO'}
+                className="text-xs bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl transition-colors"
+              >
+                {clearing ? 'Borrando...' : 'Vaciar plataforma'}
+              </button>
+            </div>
           </div>
         </div>
       )}

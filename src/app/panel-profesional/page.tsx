@@ -18,6 +18,7 @@ import { dbHelper, supabase } from '@/lib/supabase';
 import confetti from 'canvas-confetti';
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
+import { useNotification } from '@/providers/NotificationProvider';
 
 export default function PanelProfesionalPage() {
   return (
@@ -45,6 +46,7 @@ const CHAT_BADGE: Record<string, { label: string; cls: string }> = {
 function PanelProfesionalContent() {
   const router = useRouter();
   const { profile: authProfile, user } = useAuth();
+  const { unreadNotificationsCount } = useNotification();
 
   const [perfil, setPerfil] = useState<any>(null);
   const [isAvailable, setIsAvailable] = useState(true);
@@ -182,8 +184,13 @@ function PanelProfesionalContent() {
     : 100;
 
   // ── Slugs / URL pública ────────────────────────────────────────────────────
+  // Antes armaba un link a un dominio y una ruta (/p/<id truncado>) que
+  // nunca existieron -- la única ruta pública real es /profesional/[id]
+  // (ver mi-marca/page.tsx, que ya arma el link así).
   const slugPerfil = perfil?.slug || '';
-  const urlPublica = slugPerfil ? `superoficios.com/${slugPerfil}` : `superoficios.com/p/${perfil?.id?.slice(0, 8)}`;
+  const urlPublica = typeof window !== 'undefined' && perfil?.id
+    ? `${window.location.host}/profesional/${perfil.id}`
+    : 'oficiosya.com';
 
   const handleLogout = async () => {
     await dbHelper.logout();
@@ -233,7 +240,9 @@ function PanelProfesionalContent() {
 
           <button onClick={() => router.push('/notificaciones')} className="relative p-2 rounded-xl hover:bg-white/10 text-slate-300 transition-colors">
             <Bell className="w-5 h-5" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-[#0d1f3c]" />
+            {unreadNotificationsCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-[#0d1f3c]" />
+            )}
           </button>
 
           <div className="w-9 h-9 rounded-xl overflow-hidden border-2 border-[#fc8127]/40 cursor-pointer hover:border-[#fc8127] transition-colors shrink-0" onClick={() => router.push('/configuracion-profesional')}>
@@ -256,6 +265,7 @@ function PanelProfesionalContent() {
           { key: 'finanzas', icon: TrendingUp, label: 'Finanzas', action: () => router.push('/mis-finanzas') },
           { key: 'marca', icon: Zap, label: 'Mi Marca', action: () => router.push('/mi-marca') },
           { key: 'crecimiento', icon: Trophy, label: 'Nivel', action: () => router.push('/centro-crecimiento') },
+          { key: 'disputas', icon: AlertTriangle, label: 'Reclamos', action: () => router.push('/mis-disputas') },
         ].map(item => (
           <button
             key={item.key}
@@ -382,7 +392,7 @@ function PanelProfesionalContent() {
               <p className="text-[11px] text-slate-400 mt-0.5">Gestión integral — órdenes, marca, finanzas y crecimiento</p>
             </div>
             <span className="text-[10px] font-black bg-[#fc8127]/20 text-[#fc8127] border border-[#fc8127]/30 px-2.5 py-1 rounded-full uppercase tracking-wider">
-              SuperOficios PRO
+              OficiosYa PRO
             </span>
           </div>
 
@@ -531,8 +541,14 @@ function PanelProfesionalContent() {
                 {/* Acciones para ganar puntos */}
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { accion: 'Compartir perfil', pts: '+50', icon: '🔗', fn: () => { navigator.clipboard.writeText(`https://${urlPublica}`); } },
-                    { accion: 'Invitar colega',   pts: '+100', icon: '👥', fn: () => router.push('/mi-marca') },
+                    { accion: 'Compartir perfil', pts: '+50', icon: '🔗', fn: () => {
+                      navigator.clipboard.writeText(`https://${urlPublica}`);
+                      if (perfil?.id) {
+                        dbHelper.otorgarPuntosUnaVez(perfil.id, 'compartir_perfil', 50, 'Compartiste tu perfil');
+                        dbHelper.desbloquearLogro(perfil.id, 'compartir_perfil', 'Compartí tu perfil', 'Compartiste tu link de perfil');
+                      }
+                    } },
+                    { accion: 'Invitar colega',   pts: '+100', icon: '👥', fn: () => router.push('/mi-marca#referidos') },
                     { accion: 'Completar perfil', pts: '+50', icon: '✅', fn: () => router.push('/editar-perfil-publico') },
                     { accion: 'Ver misiones',     pts: '→',   icon: '🎯', fn: () => router.push('/centro-crecimiento') },
                   ].map((item, i) => (
@@ -862,7 +878,7 @@ function PanelProfesionalContent() {
           <div className="bg-[#0d1f3c] border border-white/20 p-6 rounded-3xl max-w-md w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <h3 className="text-base font-black text-white flex items-center gap-2">
-                <HelpCircle className="w-4 h-4 text-[#fc8127]" /> Soporte SuperOficios
+                <HelpCircle className="w-4 h-4 text-[#fc8127]" /> Soporte OficiosYa
               </h3>
               <button onClick={() => setShowSupportModal(false)} className="text-slate-400 hover:text-white p-1">
                 <X className="w-4 h-4" />

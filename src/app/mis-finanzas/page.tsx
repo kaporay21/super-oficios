@@ -23,6 +23,7 @@ function MisFinanzasContent() {
   const { user, profile } = useAuth();
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user?.id) loadStats();
@@ -31,11 +32,13 @@ function MisFinanzasContent() {
   const loadStats = async () => {
     if (!user?.id) return;
     setLoading(true);
+    setError(null);
     try {
       const data = await dbHelper.getEstadisticasFinancieras(user.id);
       setStats(data);
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Error cargando estadísticas financieras:', err);
+      setError('No pudimos cargar tus estadísticas. Probá recargar la página.');
     } finally {
       setLoading(false);
     }
@@ -67,6 +70,11 @@ function MisFinanzasContent() {
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-5">
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-xs font-bold text-red-400">
+            {error}
+          </div>
+        )}
         {/* Aviso aclaratorio */}
         <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-3 flex items-start gap-2">
           <Star className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />

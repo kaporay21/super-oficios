@@ -15,6 +15,7 @@ import Logo from '@/components/Logo';
 import { dbHelper } from '@/lib/supabase';
 import { OFICIOS_CORE, PROVINCIAS_CORE } from '@/lib/constants';
 import { useAuth } from '@/components/AuthContext';
+import { useNotification } from '@/providers/NotificationProvider';
 
 const PROVINCIAS = ['Todas', ...PROVINCIAS_CORE];
 const OFICIOS = ['Todos', ...OFICIOS_CORE];
@@ -24,6 +25,7 @@ const TIPOS = ['Todos', 'Permanente', 'Por obra', 'Temporal', 'Part-time'];
 export default function BolsaEmpleoPage() {
   const router = useRouter();
   const { profile: authProfile } = useAuth();
+  const { unreadNotificationsCount } = useNotification();
   const [empleos, setEmpleos] = useState<any[]>([]);
   const [busqueda, setBusqueda] = useState('');
   const [provinciaFiltro, setProvinciaFiltro] = useState('Todas');
@@ -33,6 +35,7 @@ export default function BolsaEmpleoPage() {
   const [guardados, setGuardados] = useState<number[]>([]);
   const [postulados, setPostulados] = useState<number[]>([]);
   const [mostrandoExito, setMostrandoExito] = useState<number | null>(null);
+  const [errorPostulacion, setErrorPostulacion] = useState<string | null>(null);
 
   const [perfil, setPerfil] = useState<any>(null);
 
@@ -96,6 +99,8 @@ export default function BolsaEmpleoPage() {
       empleoId: empleo.id,
       tituloEmpleo: empleo.titulo,
       empleador: empleo.empleador,
+      empleador_id: empleo.cliente_id,
+      candidato_id: authProfile?.id,
       candidato: nombrePro,
       candidatoAvatar: avatarPro,
       candidatoRating: authProfile?.rating || perfil?.rating || 0,
@@ -109,8 +114,9 @@ export default function BolsaEmpleoPage() {
     };
     
     try {
-      await dbHelper.createPostulacion(nuevaPostulacion);
-      
+      setErrorPostulacion(null);
+      await dbHelper.createPostulacion(nuevaPostulacion, authProfile?.plan || 'Gratis');
+
       setPostulados([...postulados, empleo.id]);
       setMostrandoExito(empleo.id);
       setTimeout(() => setMostrandoExito(null), 2500);
@@ -128,9 +134,9 @@ export default function BolsaEmpleoPage() {
       const nStored = localStorage.getItem('oficiosya_notificaciones');
       const nExisting = nStored ? JSON.parse(nStored) : [];
       localStorage.setItem('oficiosya_notificaciones', JSON.stringify([notif, ...nExisting]));
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error al postularse:", error);
-      alert("Hubo un error al enviar tu postulación. Intenta nuevamente.");
+      setErrorPostulacion(error?.message || "Hubo un error al enviar tu postulación. Intentá nuevamente.");
     }
   };
 
@@ -169,7 +175,9 @@ export default function BolsaEmpleoPage() {
           <Tooltip text="Notificaciones" position="bottom">
             <button onClick={() => router.push('/notificaciones')} className="p-2 rounded-full hover:bg-gray-100 transition-colors relative">
               <Bell className="w-5 h-5 text-gray-600" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+              )}
             </button>
           </Tooltip>
           <Tooltip text="Mis postulaciones" position="bottom">
@@ -181,6 +189,22 @@ export default function BolsaEmpleoPage() {
       </header>
 
       <main className="flex-grow w-full pt-16 pb-8">
+
+        {errorPostulacion && (
+          <div className="max-w-5xl mx-auto px-6 md:px-12 pt-4">
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start justify-between gap-3">
+              <p className="text-xs font-bold text-red-700">{errorPostulacion}</p>
+              <div className="flex items-center gap-3 shrink-0">
+                {errorPostulacion.includes('límite') && (
+                  <button onClick={() => router.push('/planes')} className="text-xs font-black text-[#00355f] hover:underline whitespace-nowrap">
+                    Ver planes →
+                  </button>
+                )}
+                <button onClick={() => setErrorPostulacion(null)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Hero Header fotográfico Inmersivo FULL WIDTH */}
         <div className="relative mb-8 w-full h-[380px] md:h-[450px] overflow-hidden group">

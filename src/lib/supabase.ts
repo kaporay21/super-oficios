@@ -46,7 +46,15 @@ export async function getCurrentProfile() {
   if (!user) return null;
 
   let { data: profile } = await supabase.from('perfiles').select('*').eq('id', user.id).maybeSingle();
-  
+
+  // Cuentas viejas (probablemente altas por Google) tienen la foto real en
+  // `fotoperfil` (sin guión bajo, columna huérfana que el resto de la app
+  // ya no lee) mientras `foto_perfil` quedó en null -- sin esto mostraban
+  // el placeholder genérico aunque tuvieran foto real guardada.
+  if (profile && !profile.foto_perfil && (profile as any).fotoperfil) {
+    profile.foto_perfil = (profile as any).fotoperfil;
+  }
+
   if (!profile && !isEmailAdmin(user.email)) {
     try {
       let stored: any = null;
@@ -63,7 +71,8 @@ export async function getCurrentProfile() {
         oficios: stored?.oficios || [],
         rol: stored?.rol || (stored?.oficios && stored.oficios.length > 0 ? 'profesional' : 'cliente'),
         provincia: stored?.provincia || '',
-        ciudad: stored?.ciudad || ''
+        ciudad: stored?.ciudad || '',
+        plan: stored?.plan || 'Gratis'
       };
 
       await supabase.from('perfiles').upsert(fallbackProfile);
@@ -257,7 +266,8 @@ export const dbHelper = {
       email: p.email,
       role: isEmailAdmin(p.email) || p.rol === 'admin' ? 'Admin' : (p.rol === 'profesional' ? 'Profesional' : 'Cliente'),
       plan: p.plan || 'Gratis',
-      status: 'Activo',
+      status: p.estado_cuenta || 'Activo',
+      motivoEstado: p.motivo_estado || '',
       date: p.created_at ? new Date(p.created_at).toLocaleDateString() : 'Reciente',
       verificacion: p.verificado ? 'Verificado' : (p.rol === 'profesional' ? 'Pendiente' : 'Sin Solicitud'),
       trade: p.oficios && p.oficios.length > 0 ? p.oficios.join(', ') : '',
@@ -265,16 +275,18 @@ export const dbHelper = {
       totalResenas: Number(p.total_resenas) || 0,
       fotoVerificada: !!p.foto_verificada_en,
       docMatricula: '-',
-      avatar: p.foto_perfil || 'https://i.pravatar.cc/150?u=' + p.id,
+      avatar: p.foto_perfil || p.fotoperfil || 'https://i.pravatar.cc/150?u=' + p.id,
       location: p.ciudad && p.provincia ? `${p.ciudad}, ${p.provincia}` : (p.provincia || ''),
       category: p.oficios && p.oficios.length > 0 ? p.oficios[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '',
       telefono: p.telefono || '',
       provincia: p.provincia || '',
       ciudad: p.ciudad || '',
       oficios: p.oficios || [],
-      fotoPerfil: p.foto_perfil || '',
+      fotoPerfil: p.foto_perfil || p.fotoperfil || '',
       nombre: p.nombre,
       rol: isEmailAdmin(p.email) ? 'admin' : p.rol,
+      cobraPresupuesto: !!p.cobra_presupuesto,
+      aceptaPagosSemanales: !!p.acepta_pagos_semanales,
     }));
   },
 
@@ -320,7 +332,8 @@ export const dbHelper = {
       let query = supabase
         .from('perfiles')
         .select('*', { count: 'exact' })
-        .eq('rol', 'profesional');
+        .eq('rol', 'profesional')
+        .eq('estado_cuenta', 'Activo');
 
       // ── Filtro por Oficio ──────────────────────────────────────────
       // Usamos 'cs' (contains) ya que `oficios` es un array en Supabase (tipo text[])
@@ -350,6 +363,12 @@ export const dbHelper = {
       }
 
       // ── Ordenamiento ───────────────────────────────────────────────
+      // Prioridad de plan primero (Master > Pro > Gratis) en todos los
+      // criterios -- antes el badge "Master" era solo visual, ningún
+      // order() real lo priorizaba. plan_prioridad es una columna numérica
+      // porque ordenar por texto (plan) no da el orden correcto.
+      query = query.order('plan_prioridad', { ascending: false });
+
       // Antes las tres opciones caían al mismo order('created_at'): el
       // selector "Más Valorados" no ordenaba nada. Ahora `rating` y
       // `total_resenas` son columnas reales (ver sprint0_desbloqueo.sql).
@@ -402,8 +421,8 @@ export const dbHelper = {
         // No alcanza con tener `avatar`, que siempre trae un fallback.
         fotoVerificada: !!p.foto_verificada_en,
         docMatricula: p.nro_matricula || '-',
-        avatar: p.foto_perfil || 'https://i.pravatar.cc/150?u=' + p.id,
-        fotoPerfil: p.foto_perfil || '',
+        avatar: p.foto_perfil || p.fotoperfil || 'https://i.pravatar.cc/150?u=' + p.id,
+        fotoPerfil: p.foto_perfil || p.fotoperfil || '',
         location: p.ciudad && p.provincia ? `${p.ciudad}, ${p.provincia}` : (p.provincia || 'Ubicación no especificada'),
         category: p.oficios && p.oficios.length > 0
           ? p.oficios[0].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -417,6 +436,8 @@ export const dbHelper = {
         oficios: p.oficios || [],
         nombre: p.nombre,
         nroMatricula: p.nro_matricula || '',
+        cobraPresupuesto: !!p.cobra_presupuesto,
+        aceptaPagosSemanales: !!p.acepta_pagos_semanales,
       }));
 
       return { data: profesionales, count: totalCount, totalPages, error: null };
@@ -440,7 +461,7 @@ export const dbHelper = {
       role: isEmailAdmin(data.email) || data.rol === 'admin' ? 'Admin' : (data.rol === 'profesional' ? 'Profesional' : 'Cliente'),
       rol: isEmailAdmin(data.email) ? 'admin' : data.rol,
       plan: data.plan || 'Gratis',
-      status: 'Activo',
+      status: data.estado_cuenta || 'Activo',
       date: data.created_at ? new Date(data.created_at).toLocaleDateString() : 'Reciente',
       verificacion: data.verificado ? 'Verificado' : (data.rol === 'profesional' ? 'Pendiente' : 'Sin Solicitud'),
       estadoDNI: data.estado_dni || (data.verificado ? 'Validado' : 'Pendiente'),
@@ -451,8 +472,8 @@ export const dbHelper = {
       totalResenas: Number(data.total_resenas) || 0,
       fotoVerificada: !!data.foto_verificada_en,
       docMatricula: data.nro_matricula || '-',
-      avatar: data.foto_perfil || 'https://i.pravatar.cc/150?u=' + data.id,
-      fotoPerfil: data.foto_perfil || '',
+      avatar: data.foto_perfil || data.fotoperfil || 'https://i.pravatar.cc/150?u=' + data.id,
+      fotoPerfil: data.foto_perfil || data.fotoperfil || '',
       location: data.ciudad && data.provincia ? `${data.ciudad}, ${data.provincia}` : (data.provincia || 'Ubicación no especificada'),
       category: data.oficios && data.oficios.length > 0 ? data.oficios[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '',
       experiencia: data.experiencia || '',
@@ -467,11 +488,14 @@ export const dbHelper = {
       certificados: data.certificados || [],
       portafolio: data.portafolio || [],
       oficios: data.oficios || [],
+      cobraPresupuesto: !!data.cobra_presupuesto,
+      aceptaPagosSemanales: !!data.acepta_pagos_semanales,
     };
   },
 
   async updateUserPlan(id: string, plan: string): Promise<void> {
-    const { error } = await supabase.from('perfiles').update({ plan }).eq('id', id);
+    const plan_prioridad = plan === 'Master' ? 2 : plan === 'Pro' ? 1 : 0;
+    const { error } = await supabase.from('perfiles').update({ plan, plan_prioridad }).eq('id', id);
     if (error) throw error;
   },
 
@@ -485,8 +509,45 @@ export const dbHelper = {
     if (error) throw error;
   },
 
-  async updateUserStatus(id: string, status: string): Promise<void> {
-    console.log(`Status update for ${id}: ${status}`);
+  async updateUserStatus(id: string, status: string, motivo?: string): Promise<void> {
+    const { error } = await supabase
+      .from('perfiles')
+      .update({ estado_cuenta: status, motivo_estado: motivo ?? null })
+      .eq('id', id);
+    if (error) throw error;
+
+    await dbHelper.crearNotificacion({
+      usuario_id: id,
+      tipo: 'sistema',
+      titulo: status === 'Suspendido' ? '⛔ Tu cuenta fue suspendida' : '✅ Tu cuenta fue reactivada',
+      descripcion: status === 'Suspendido'
+        ? `Un administrador suspendió tu cuenta. Motivo: ${motivo || 'No especificado'}. Si creés que es un error, contactanos desde Soporte.`
+        : 'Tu cuenta fue reactivada por un administrador y ya podés volver a usarla con normalidad.',
+    });
+  },
+
+  /**
+   * Baja permanente de una cuenta puntual. No se hace DELETE real sobre
+   * `perfiles` porque no hay certeza de que las FK de trabajos/reseñas/
+   * mensajes tengan ON DELETE CASCADE en la base real (no hay acceso
+   * service_role para confirmarlo) — un DELETE a mitad de camino podría
+   * romper el historial de la otra parte de un trabajo ya finalizado.
+   * En cambio: se anonimizan los datos identificables y se marca
+   * estado_cuenta = 'Eliminado', que login() usa para bloquear el acceso.
+   */
+  async deleteUserAccount(id: string, motivo: string): Promise<void> {
+    const { error } = await supabase
+      .from('perfiles')
+      .update({
+        estado_cuenta: 'Eliminado',
+        motivo_estado: motivo,
+        nombre: 'Usuario eliminado',
+        email: `eliminado-${id}@oficiosya.local`,
+        telefono: null,
+        foto_perfil: '',
+      })
+      .eq('id', id);
+    if (error) throw error;
   },
 
   async updateProfile(id: string, updates: any): Promise<void> {
@@ -499,6 +560,8 @@ export const dbHelper = {
     if (updates.oficios !== undefined) dbUpdates.oficios = updates.oficios;
     if (updates.biografia !== undefined) dbUpdates.biografia = updates.biografia;
     if (updates.portafolio !== undefined) dbUpdates.portafolio = updates.portafolio;
+    if (updates.cobra_presupuesto !== undefined) dbUpdates.cobra_presupuesto = updates.cobra_presupuesto;
+    if (updates.acepta_pagos_semanales !== undefined) dbUpdates.acepta_pagos_semanales = updates.acepta_pagos_semanales;
 
     // Tolerante a columnas que todavía no existen (ej. portafolio antes de
     // correr sprint0_portafolio.sql): sin esto, un solo campo nuevo tira
@@ -536,7 +599,18 @@ export const dbHelper = {
     } else if (profile && isEmailAdmin(userEmail)) {
       profile = { ...profile, rol: 'admin' };
     }
-    
+
+    // Cuentas suspendidas o eliminadas por un admin no pueden volver a entrar.
+    if (profile?.estado_cuenta === 'Suspendido' || profile?.estado_cuenta === 'Eliminado') {
+      await supabase.auth.signOut();
+      const motivo = profile.motivo_estado ? ` Motivo: ${profile.motivo_estado}.` : '';
+      throw new Error(
+        profile.estado_cuenta === 'Suspendido'
+          ? `Tu cuenta fue suspendida por un administrador.${motivo} Contactanos desde Soporte si creés que es un error.`
+          : 'Esta cuenta fue dada de baja.'
+      );
+    }
+
     return { user: data.user, profile };
   },
 
@@ -575,19 +649,33 @@ export const dbHelper = {
     phone: string, 
     password: string, 
     oficios: string[], 
-    provincia?: string, 
+    provincia?: string,
     ciudad?: string,
-    extraData?: { apellido?: string; fechaNacimiento?: string; pais?: string; experiencia?: string; fotoPerfil?: string }
+    extraData?: { apellido?: string; fechaNacimiento?: string; pais?: string; experiencia?: string; fotoPerfil?: string },
+    codigoReferido?: string
   ): Promise<any> {
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
-    
+
     if (data.user) {
       // La foto llega como data-URL desde CameraCaptureModal: la subimos a
       // Storage antes de escribir el perfil para no guardar el base64 crudo.
       const fotoPerfil = extraData?.fotoPerfil
         ? await subirRostroAStorage(data.user.id, extraData.fotoPerfil)
         : '';
+
+      // Si vino un código de referido válido en la URL de registro, lo
+      // resolvemos al id del referente para dejar la trazabilidad en
+      // referido_por y acreditarle los puntos de "Invitar colega".
+      let referenteId: string | null = null;
+      if (codigoReferido?.trim()) {
+        const { data: referente } = await supabase
+          .from('perfiles')
+          .select('id')
+          .eq('codigo_referido', codigoReferido.trim().toUpperCase())
+          .maybeSingle();
+        referenteId = referente?.id || null;
+      }
 
       const baseProfile: any = {
         id: data.user.id,
@@ -602,6 +690,7 @@ export const dbHelper = {
         // El registro exige captura con cámara en vivo, así que si vino foto
         // queda sellada como verificada. Es lo que habilita el badge real.
         foto_verificada_en: fotoPerfil ? new Date().toISOString() : null,
+        referido_por: referenteId,
       };
 
       // Datos que el formulario ya pedía y hasta ahora se descartaban: el
@@ -616,6 +705,10 @@ export const dbHelper = {
         pais: extraData?.pais?.trim() || null,
         experiencia: extraData?.experiencia?.trim() || null,
       }, 'upsert');
+
+      if (referenteId) {
+        await dbHelper.otorgarPuntosUnaVez(referenteId, `referido_${data.user.id}`, 100, `Invitaste a ${fullName}`);
+      }
     }
     return data;
   },
@@ -692,9 +785,12 @@ export const dbHelper = {
       // empleo (bolsa de trabajo). Antes se borraba acá porque la columna
       // no existía; ver sprint0_esempleo.sql.
       esempleo: job.esEmpleo ?? job.esempleo ?? false,
+      // Vínculo opcional con Mi Hogar: de acá sale el "Historial" de la propiedad.
+      propiedad_id: job.propiedadId || job.propiedad_id || null,
     };
     delete dbJob.empleadorAvatar;
     delete dbJob.esEmpleo;
+    delete dbJob.propiedadId;
 
     // Fotos de referencia de la solicitud.
     // Antes se hacía `delete dbJob.imagen` porque la columna no existía, así que
@@ -848,6 +944,7 @@ export const dbHelper = {
       idPostulacion: p.id || p.idpostulacion,
       empleoId: p.empleoid,
       tituloEmpleo: p.tituloempleo,
+      candidatoId: p.candidato_id,
       candidato: p.candidato,
       candidatoAvatar: p.candidatoavatar,
       candidatoRating: p.candidatorating,
@@ -861,11 +958,38 @@ export const dbHelper = {
   },
 
   async updatePostulacion(id: number | string, nuevoEstado: string, _empleadorName: string): Promise<void> {
-    const { error } = await supabase.from('postulaciones').update({ estado: nuevoEstado }).eq('id', id);
+    const { data, error } = await supabase.from('postulaciones').update({ estado: nuevoEstado }).eq('id', id).select('candidato_id, tituloempleo').maybeSingle();
     if (error) throw error;
+
+    // El candidato antes no se enteraba nunca de que le habían aceptado o
+    // rechazado su postulación salvo que entrara a revisar manualmente.
+    if (data?.candidato_id) {
+      dbHelper.crearNotificacion({
+        usuario_id: data.candidato_id,
+        tipo: 'trabajo',
+        titulo: nuevoEstado === 'Aceptado' ? '🎉 ¡Te aceptaron!' : 'Actualización de tu postulación',
+        descripcion: `Tu postulación a "${data.tituloempleo || 'el empleo'}" ahora está: ${nuevoEstado}.`,
+      }).catch((e: any) => console.warn('Error notificando cambio de postulación:', e));
+    }
   },
 
-  async createPostulacion(postulacion: any): Promise<any> {
+  async createPostulacion(postulacion: any, planCandidato?: string): Promise<any> {
+    // Límite real por plan (5 Gratis / 15 Pro / ilimitadas Master), como
+    // ya promete /planes pero nunca se aplicaba. postulaciones no tiene un
+    // id de candidato confiable todavía -- se cuenta igual que el resto
+    // del archivo lo hace hoy, por nombre (getMisPostulaciones).
+    if (planCandidato && planCandidato !== 'Master') {
+      const limite = planCandidato === 'Pro' ? 15 : 5;
+      const inicioMes = new Date();
+      inicioMes.setDate(1);
+      inicioMes.setHours(0, 0, 0, 0);
+      const existentes = await dbHelper.getMisPostulaciones(postulacion.candidato).catch(() => []);
+      const esteMes = existentes.filter(p => p.fecha && new Date(p.fecha) >= inicioMes).length;
+      if (esteMes >= limite) {
+        throw new Error(`Alcanzaste el límite de ${limite} postulaciones este mes de tu plan ${planCandidato}. Mejorá tu plan para postular sin límite.`);
+      }
+    }
+
     const dbPostulacion = {
       ...postulacion,
       idpostulacion: postulacion.idPostulacion || Date.now(),
@@ -886,7 +1010,21 @@ export const dbHelper = {
 
     // Tolerante a columnas que no existen todavía en el esquema real
     // (oficio, tipo, provincia, candidatoverificado no están creadas).
-    return insertarTolerante('postulaciones', dbPostulacion);
+    const creada = await insertarTolerante('postulaciones', dbPostulacion);
+
+    // El empleador no se enteraba nunca de una postulación nueva salvo que
+    // entrara a revisar manualmente.
+    if (postulacion.empleador_id) {
+      dbHelper.crearNotificacion({
+        usuario_id: postulacion.empleador_id,
+        tipo: 'trabajo',
+        titulo: '👷 Nuevo postulante',
+        descripcion: `${postulacion.candidato || 'Un candidato'} se postuló a "${postulacion.tituloEmpleo}".`,
+        referencia_id: String(postulacion.empleoId || ''),
+      }).catch((e: any) => console.warn('Error notificando postulación:', e));
+    }
+
+    return creada;
   },
 
   async getMisPostulaciones(candidatoName: string): Promise<any[]> {
@@ -897,6 +1035,7 @@ export const dbHelper = {
       idPostulacion: p.id || p.idpostulacion,
       empleoId: p.empleoid,
       tituloEmpleo: p.tituloempleo,
+      candidatoId: p.candidato_id,
       candidato: p.candidato,
       candidatoAvatar: p.candidatoavatar,
       candidatoRating: p.candidatorating,
@@ -915,35 +1054,33 @@ export const dbHelper = {
   },
 
   // --- REVIEWS ---
+  /**
+   * Las reseñas reales viven en resenas_inteligentes (ver
+   * createResenaInteligente, en perfil-cliente): la vieja tabla `reviews`
+   * ya no la escribe nadie, así que esto normaliza resenas_inteligentes al
+   * shape que ya consumían el perfil público y el panel-profesional, en
+   * vez de seguir leyendo una tabla muerta.
+   */
   async getReviewsForProfessional(professionalId: string): Promise<any[]> {
-    const { data, error } = await supabase
-      .from('reviews')
-      .select('*')
-      .eq('professional_id', professionalId)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    
-    return (data || []).map(r => ({
+    const data = await dbHelper.getResenasProfesional(professionalId);
+    return data.map((r: any) => ({
       id: r.id,
-      profesionalId: r.professional_id,
-      clienteNombre: r.client_name,
-      clienteAvatar: 'https://i.pravatar.cc/150?u=' + r.client_name,
-      rating: r.rating,
-      texto: r.review_text,
-      trabajoTitulo: 'Servicio realizado',
-      fecha: r.created_at ? r.created_at.split('T')[0] : new Date().toISOString().split('T')[0]
+      profesionalId: r.profesional_id,
+      clienteNombre: r.perfiles?.nombre || 'Cliente',
+      clienteAvatar: r.perfiles?.foto_perfil || 'https://i.pravatar.cc/150?u=' + r.cliente_id,
+      clienteCiudad: r.perfiles?.ciudad || '',
+      clienteProvincia: r.perfiles?.provincia || '',
+      rating: r.rating_promedio,
+      texto: r.comentario || '',
+      trabajoTitulo: r.ordenes_trabajo?.titulo || 'Servicio realizado',
+      fecha: r.created_at ? r.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
     }));
   },
 
-  async createReview(review: { professional_id: string; job_id: number | string; client_name: string; rating: number; review_text: string }): Promise<void> {
-    const { error } = await supabase.from('reviews').insert([review]);
-    if (error) throw error;
-  },
-
   // --- CLIENTES (CRM) ---
-  async getClientes(): Promise<any[]> {
+  async getClientes(profesionalId: string): Promise<any[]> {
     try {
-      const { data, error } = await supabase.from('clientes').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('clientes').select('*').eq('profesional_id', profesionalId).order('created_at', { ascending: false });
       if (error) throw error;
       return (data || []).map(c => ({
         id: c.id,
@@ -959,10 +1096,11 @@ export const dbHelper = {
     }
   },
 
-  async saveCliente(cliente: any): Promise<void> {
+  async saveCliente(cliente: any, profesionalId: string): Promise<void> {
     try {
       await supabase.from('clientes').upsert([{
         id: cliente.id,
+        profesional_id: profesionalId,
         nombre: cliente.nombre,
         initials: cliente.initials,
         color: cliente.color,
@@ -984,9 +1122,9 @@ export const dbHelper = {
   },
 
   // --- OBRAS (CRM) ---
-  async getObras(): Promise<any[]> {
+  async getObras(profesionalId: string): Promise<any[]> {
     try {
-      const { data, error } = await supabase.from('obras').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('obras').select('*').eq('profesional_id', profesionalId).order('created_at', { ascending: false });
       if (error) throw error;
       return (data || []).map(o => ({
         id: o.id,
@@ -1004,10 +1142,11 @@ export const dbHelper = {
     }
   },
 
-  async saveObra(obra: any): Promise<void> {
+  async saveObra(obra: any, profesionalId: string): Promise<void> {
     try {
       await supabase.from('obras').upsert([{
         id: obra.id,
+        profesional_id: profesionalId,
         cliente_id: obra.clienteId,
         nombre: obra.nombre,
         direccion: obra.direccion,
@@ -1031,9 +1170,9 @@ export const dbHelper = {
   },
 
   // --- PRESUPUESTOS ---
-  async getPresupuestos(): Promise<any[]> {
+  async getPresupuestos(profesionalId: string): Promise<any[]> {
     try {
-      const { data, error } = await supabase.from('presupuestos').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('presupuestos_obra').select('*').eq('profesional_id', profesionalId).order('created_at', { ascending: false });
       if (error) throw error;
       return (data || []).map(p => ({
         id: p.id,
@@ -1053,10 +1192,11 @@ export const dbHelper = {
     }
   },
 
-  async savePresupuesto(presupuesto: any): Promise<void> {
+  async savePresupuesto(presupuesto: any, profesionalId: string): Promise<void> {
     try {
-      await supabase.from('presupuestos').upsert([{
+      await supabase.from('presupuestos_obra').upsert([{
         id: presupuesto.id,
+        profesional_id: profesionalId,
         nombre: presupuesto.nombre,
         cliente: presupuesto.cliente,
         telefono: presupuesto.telefono,
@@ -1075,9 +1215,32 @@ export const dbHelper = {
 
   async deletePresupuesto(id: string): Promise<void> {
     try {
-      await supabase.from('presupuestos').delete().eq('id', id);
+      await supabase.from('presupuestos_obra').delete().eq('id', id);
     } catch (err) {
       console.warn('Error deleting presupuesto from Supabase:', err);
+    }
+  },
+
+  // --- CALCULADORAS PERSONALIZADAS (Presupuestador de Obras) ---
+  async getCalculadoras(profesionalId: string): Promise<any[] | null> {
+    try {
+      const { data, error } = await supabase.from('calculadoras_profesional').select('datos').eq('profesional_id', profesionalId).maybeSingle();
+      if (error) throw error;
+      return data ? data.datos : null;
+    } catch {
+      return null;
+    }
+  },
+
+  async saveCalculadoras(profesionalId: string, calculadoras: any[]): Promise<void> {
+    try {
+      await supabase.from('calculadoras_profesional').upsert([{
+        profesional_id: profesionalId,
+        datos: calculadoras,
+        updated_at: new Date().toISOString(),
+      }], { onConflict: 'profesional_id' });
+    } catch (err) {
+      console.warn('Error syncing calculadoras to Supabase:', err);
     }
   },
 
@@ -1101,6 +1264,14 @@ export const dbHelper = {
     }
 
     if (existing) return existing;
+
+    // No dejamos iniciar una conversación nueva con una cuenta suspendida o
+    // eliminada -- las conversaciones ya existentes siguen accesibles arriba,
+    // esto solo bloquea el primer contacto con alguien sancionado.
+    const { data: destino } = await supabase.from('perfiles').select('estado_cuenta').eq('id', userId2).maybeSingle();
+    if (destino && destino.estado_cuenta && destino.estado_cuenta !== 'Activo') {
+      throw new Error('Esta cuenta no está disponible para recibir mensajes.');
+    }
 
     // Crear nueva conversación
     const { data: newConv, error: createError } = await supabase
@@ -1192,6 +1363,17 @@ export const dbHelper = {
    * Envía un mensaje en una conversación.
    */
   async enviarMensaje(conversacionId: string, emisorId: string, receptorId: string, texto: string): Promise<any> {
+    // Para la misión "Respuesta rápida" del Índice de Confianza: se mira
+    // el mensaje anterior ANTES de insertar el nuevo, para saber si esto
+    // es una respuesta real (el anterior era del receptor).
+    const { data: anterior } = await supabase
+      .from('mensajes')
+      .select('emisor_id, fecha')
+      .eq('conversacion_id', conversacionId)
+      .order('fecha', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
     const { data, error } = await supabase
       .from('mensajes')
       .insert([{
@@ -1206,11 +1388,21 @@ export const dbHelper = {
 
     if (error) throw error;
 
+    if (anterior && anterior.emisor_id === receptorId && anterior.fecha) {
+      const minutos = Math.max(0, Math.round((Date.now() - new Date(anterior.fecha).getTime()) / 60000));
+      supabase.from('perfiles').update({ tiempo_respuesta_minutos: minutos }).eq('id', emisorId).eq('rol', 'profesional')
+        .then(({ error: err }) => { if (err) console.warn('Error al guardar tiempo de respuesta:', err); });
+    }
+
     // Update conversation's ultimo_mensaje
     await supabase.from('conversaciones')
       .update({
         ultimo_mensaje: texto.startsWith('📄') ? 'Presupuesto enviado' : texto.substring(0, 100),
-        ultimo_mensaje_fecha: new Date().toISOString()
+        ultimo_mensaje_fecha: new Date().toISOString(),
+        // Cada mensaje nuevo reinicia el reloj de los recordatorios de
+        // "sin responder" -- ahora quien tiene que contestar es el otro.
+        recordatorio_1_enviado: null,
+        recordatorio_2_enviado: null,
       })
       .eq('id', conversacionId);
 
@@ -1240,6 +1432,18 @@ export const dbHelper = {
       .eq('conversacion_id', conversacionId)
       .eq('receptor_id', receptorId)
       .eq('leido', false);
+
+    // Cada mensaje también crea su propia fila en `notificaciones`
+    // (tipo 'mensaje') para el contador global de la campana -- sin esto
+    // quedaba marcada "no leída" para siempre aunque el chat ya se hubiera
+    // leído acá.
+    await supabase
+      .from('notificaciones')
+      .update({ leida: true })
+      .eq('usuario_id', receptorId)
+      .eq('tipo', 'mensaje')
+      .eq('referencia_id', conversacionId)
+      .eq('leida', false);
   },
 
 
@@ -1331,6 +1535,22 @@ export const dbHelper = {
     if (fechaFin) updates.fecha_fin = fechaFin;
     const { error } = await supabase.from('ordenes_trabajo').update(updates).eq('id', id);
     if (error) throw error;
+
+    if (estado === 'finalizado' || estado === 'con_garantia') {
+      const { data: orden } = await supabase.from('ordenes_trabajo').select('cliente_id, profesional_id, titulo').eq('id', id).maybeSingle();
+      if (orden?.cliente_id) {
+        await dbHelper.crearNotificacion({
+          usuario_id: orden.cliente_id,
+          tipo: 'trabajo',
+          titulo: '🎉 Tu trabajo fue finalizado',
+          descripcion: `"${orden.titulo}" ya está terminado. Contanos cómo te fue dejando una reseña.`,
+          referencia_id: id,
+        });
+      }
+      if (orden?.profesional_id) {
+        await dbHelper.registrarPuntos(orden.profesional_id, 'trabajo_finalizado', 20, `Finalizaste "${orden.titulo}"`);
+      }
+    }
   },
 
   // ============================================================
@@ -1358,6 +1578,34 @@ export const dbHelper = {
       .select()
       .single();
     if (error) throw error;
+
+    // El rating público de perfiles nunca se actualizaba solo (ni esta
+    // función ni la vieja createReview lo tocaban) — se recalcula acá para
+    // que la reseña realmente se refleje en búsqueda, perfil y tarjeta.
+    const { data: todasLasResenas } = await supabase
+      .from('resenas_inteligentes')
+      .select('rating_promedio')
+      .eq('profesional_id', resena.profesional_id);
+    if (todasLasResenas && todasLasResenas.length > 0) {
+      const promedio = todasLasResenas.reduce((acc, r) => acc + Number(r.rating_promedio || 0), 0) / todasLasResenas.length;
+      await supabase
+        .from('perfiles')
+        .update({ rating: Math.round(promedio * 10) / 10, total_resenas: todasLasResenas.length })
+        .eq('id', resena.profesional_id);
+    }
+
+    await dbHelper.crearNotificacion({
+      usuario_id: resena.profesional_id,
+      tipo: 'sistema',
+      titulo: '⭐ Recibiste una reseña nueva',
+      descripcion: resena.comentario || 'Un cliente calificó tu trabajo.',
+    });
+
+    await dbHelper.registrarPuntos(resena.profesional_id, 'resena_recibida', 25, 'Recibiste una reseña nueva');
+    if (todasLasResenas && todasLasResenas.length === 1) {
+      await dbHelper.desbloquearLogro(resena.profesional_id, 'primera_resena', 'Primera reseña', 'Recibiste tu primera reseña verificada de un cliente');
+    }
+
     return data;
   },
 
@@ -1367,7 +1615,7 @@ export const dbHelper = {
   async getResenasProfesional(profesionalId: string): Promise<any[]> {
     const { data, error } = await supabase
       .from('resenas_inteligentes')
-      .select('*, perfiles!resenas_inteligentes_cliente_id_fkey(nombre, foto_perfil)')
+      .select('*, perfiles!resenas_inteligentes_cliente_id_fkey(nombre, foto_perfil, ciudad, provincia), ordenes_trabajo(titulo)')
       .eq('profesional_id', profesionalId)
       .order('created_at', { ascending: false });
     if (error) {
@@ -1375,6 +1623,23 @@ export const dbHelper = {
       return [];
     }
     return data || [];
+  },
+
+  /**
+   * Trae una reseña puntual con los datos del cliente y del profesional,
+   * para armar la tarjeta compartible (ver resenaImagen.tsx).
+   */
+  async getResenaParaTarjeta(resenaId: string): Promise<any> {
+    const { data, error } = await supabase
+      .from('resenas_inteligentes')
+      .select('*, cliente:perfiles!resenas_inteligentes_cliente_id_fkey(nombre, foto_perfil), profesional:perfiles!resenas_inteligentes_profesional_id_fkey(nombre, foto_perfil, oficios)')
+      .eq('id', resenaId)
+      .maybeSingle();
+    if (error) {
+      console.warn('Error cargando reseña para tarjeta:', error.message);
+      return null;
+    }
+    return data;
   },
 
   /**
@@ -1389,6 +1654,18 @@ export const dbHelper = {
       .in('estado', ['finalizado', 'con_garantia'])
       .limit(1);
     return (data?.length || 0) > 0;
+  },
+
+  /**
+   * IDs de órdenes de trabajo que el cliente ya calificó, para no
+   * mostrarle de nuevo el botón "Calificar trabajo" en sus expedientes.
+   */
+  async getOrdenesTrabajoResenadas(clienteId: string): Promise<string[]> {
+    const { data } = await supabase
+      .from('resenas_inteligentes')
+      .select('orden_trabajo_id')
+      .eq('cliente_id', clienteId);
+    return (data || []).map(r => r.orden_trabajo_id).filter(Boolean);
   },
 
   // ============================================================
@@ -1631,16 +1908,27 @@ export const dbHelper = {
    * Obtiene el historial completo de trabajos de una propiedad.
    */
   async getHistorialPropiedad(propiedadId: string): Promise<any[]> {
+    // El vínculo real es trabajos.propiedad_id (el cliente lo elige al publicar,
+    // ver publicar-trabajo/page.tsx). De ahí se llega al expediente/orden para
+    // mostrar profesional, garantía y estado.
     const { data, error } = await supabase
-      .from('ordenes_trabajo')
-      .select('*, perfiles!ordenes_trabajo_profesional_id_fkey(nombre, foto_perfil, oficios)')
+      .from('trabajos')
+      .select('id, titulo, created_at, expedientes_trabajo!expediente_id(garantia, profesional:perfiles!profesional_id(nombre, foto_perfil, oficios), ordenes_trabajo(estado))')
       .eq('propiedad_id', propiedadId)
+      .not('expediente_id', 'is', null)
       .order('created_at', { ascending: false });
     if (error) {
       console.warn('Error cargando historial de propiedad:', error.message);
       return [];
     }
-    return data || [];
+    return (data || []).map((t: any) => ({
+      id: t.id,
+      titulo: t.titulo,
+      created_at: t.created_at,
+      garantia: t.expedientes_trabajo?.garantia,
+      estado: t.expedientes_trabajo?.ordenes_trabajo?.estado || 'pendiente',
+      perfiles: t.expedientes_trabajo?.profesional,
+    }));
   },
 
   // ============================================================
@@ -1683,14 +1971,17 @@ export const dbHelper = {
   },
 
   /**
-   * Calcula el nivel de plataforma según trabajos completados.
-   * Bronce: 0-9, Plata: 10-49, Oro: 50-99, Platino: 100+
+   * Calcula el nivel de plataforma según los puntos reales del profesional
+   * (mismos umbrales que registrarPuntos/panel-profesional -- antes este
+   * criterio se calculaba por trabajos completados y el de panel-profesional
+   * por puntos: dos "niveles" distintos para la misma persona en dos
+   * pantallas. Ahora es un solo criterio en toda la app).
    */
-  getNivelPlataforma(totalTrabajos: number): { nivel: string; emoji: string; siguiente: number } {
-    if (totalTrabajos >= 100) return { nivel: 'Platino', emoji: 'ðŸ’Ž', siguiente: 0 };
-    if (totalTrabajos >= 50) return { nivel: 'Oro', emoji: 'ðŸ¥‡', siguiente: 100 };
-    if (totalTrabajos >= 10) return { nivel: 'Plata', emoji: 'ðŸ¥ˆ', siguiente: 50 };
-    return { nivel: 'Bronce', emoji: 'ðŸ¥‰', siguiente: 10 };
+  getNivelPlataforma(puntosTotal: number): { nivel: string; emoji: string; siguiente: number } {
+    if (puntosTotal >= 1000) return { nivel: 'Platino', emoji: '💎', siguiente: 0 };
+    if (puntosTotal >= 500) return { nivel: 'Oro', emoji: '🥇', siguiente: 1000 };
+    if (puntosTotal >= 200) return { nivel: 'Plata', emoji: '🥈', siguiente: 500 };
+    return { nivel: 'Bronce', emoji: '🥉', siguiente: 200 };
   },
 
   // ============================================================
@@ -2181,12 +2472,25 @@ export const dbHelper = {
     return data;
   },
 
+  /**
+   * Agrega una foto (antes/después) a la galería del expediente -- ya
+   * existían las columnas y la lectura, faltaba el único flujo de carga.
+   */
+  async agregarFotoExpediente(expedienteId: string, tipo: 'antes' | 'despues', url: string): Promise<void> {
+    const columna = tipo === 'antes' ? 'fotos_antes' : 'fotos_despues';
+    const { data: actual } = await supabase.from('expedientes_trabajo').select(columna).eq('id', expedienteId).maybeSingle();
+    const fotos = [...((actual as any)?.[columna] || []), url];
+    const { error } = await supabase.from('expedientes_trabajo').update({ [columna]: fotos }).eq('id', expedienteId);
+    if (error) throw error;
+  },
+
   async getExpedientesCliente(clienteId: string) {
     const { data, error } = await supabase
       .from('expedientes_trabajo')
       .select(`
         *,
-        profesional:perfiles!profesional_id(nombre, foto_perfil, oficio_principal)
+        profesional:perfiles!profesional_id(nombre, foto_perfil, oficios),
+        ordenes_trabajo(estado)
       `)
       .eq('cliente_id', clienteId)
       .order('created_at', { ascending: false });
@@ -2205,14 +2509,29 @@ export const dbHelper = {
     asunto?: string;
     mensaje: string;
     adjuntos?: string[];
+    profesional_id?: string;
   }) {
     const randomNum = Math.floor(100000 + Math.random() * 900000);
     const codigo_ticket = `#SO-${randomNum}`;
+
+    // tickets_soporte se creó para el formulario viejo de /soporte y tiene
+    // id/nombre/email/tipo como NOT NULL sin default — este flujo nuevo
+    // identifica al usuario por usuario_id, así que hay que completar esos
+    // campos a mano con los datos del perfil o el insert falla siempre.
+    const { data: perfil } = await supabase
+      .from('perfiles')
+      .select('nombre, email')
+      .eq('id', payload.usuario_id)
+      .maybeSingle();
 
     const { data, error } = await supabase
       .from('tickets_soporte')
       .insert({
         ...payload,
+        id: Date.now().toString(),
+        nombre: perfil?.nombre || 'Usuario',
+        email: perfil?.email || '',
+        tipo: payload.categoria,
         codigo_ticket,
         estado: 'Recibida'
       })
@@ -2237,7 +2556,7 @@ export const dbHelper = {
   async getTodosLosTicketsAdmin() {
     const { data, error } = await supabase
       .from('tickets_soporte')
-      .select('*, usuario:perfiles!usuario_id(nombre, email, rol)')
+      .select('*, usuario:perfiles!usuario_id(nombre, email, rol), profesional:perfiles!profesional_id(nombre, email)')
       .order('created_at', { ascending: false });
 
     if (error) return [];
@@ -2257,7 +2576,84 @@ export const dbHelper = {
       .single();
 
     if (error) throw error;
+
+    if (respuesta && data?.usuario_id) {
+      await dbHelper.crearNotificacion({
+        usuario_id: data.usuario_id,
+        tipo: 'sistema',
+        titulo: '💬 Te respondieron tu consulta',
+        descripcion: respuesta,
+      });
+    }
+
     return data;
+  },
+
+  /**
+   * Convierte un ticket de Soporte ya vinculado a un profesional en un caso
+   * real del Centro de Disputas, para que entre al mismo flujo de dos
+   * partes + resolución que notifica a ambas (en vez de quedar aislado
+   * como texto libre sin dueño).
+   */
+  async escalarTicketADisputa(ticketId: string) {
+    const { data: ticket, error: ticketError } = await supabase
+      .from('tickets_soporte')
+      .select('*')
+      .eq('id', ticketId)
+      .single();
+    if (ticketError) throw ticketError;
+    if (!ticket.usuario_id || !ticket.profesional_id) {
+      throw new Error('Este ticket no tiene un profesional vinculado, no se puede escalar.');
+    }
+
+    const disputa = await dbHelper.crearDisputaResolucion({
+      cliente_id: ticket.usuario_id,
+      profesional_id: ticket.profesional_id,
+      tipo_solucion: 'Intervención OficiosYa',
+      descripcion: ticket.mensaje,
+    });
+
+    // El admin ya decidió intervenir directamente, no hace falta pasar por 'en_proceso'.
+    await supabase.from('disputas_resolucion').update({ estado: 'escalado_admin' }).eq('id', disputa.id);
+
+    await supabase.from('tickets_soporte').update({ estado: 'Escalado' }).eq('id', ticketId);
+
+    await dbHelper.crearNotificacion({
+      usuario_id: ticket.profesional_id,
+      tipo: 'alerta',
+      titulo: '⚖️ Un cliente abrió un reclamo sobre un trabajo tuyo',
+      descripcion: 'OficiosYa está revisando un caso que te involucra. Contá tu versión desde "Reclamos" en tu panel antes de que se resuelva.',
+      referencia_id: disputa.id,
+    });
+
+    return disputa;
+  },
+
+  async getDisputasProfesional(profesionalId: string) {
+    const { data } = await supabase
+      .from('disputas_resolucion')
+      .select('*, cliente:perfiles!cliente_id(nombre)')
+      .eq('profesional_id', profesionalId)
+      .order('created_at', { ascending: false });
+
+    return data || [];
+  },
+
+  async responderDisputaProfesional(id: string, texto: string): Promise<void> {
+    const { data, error } = await supabase
+      .from('disputas_resolucion')
+      .update({ descripcion_profesional: texto, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+
+    await dbHelper.crearNotificacion({
+      usuario_id: data.cliente_id,
+      tipo: 'sistema',
+      titulo: '📩 El profesional respondió tu reclamo',
+      descripcion: 'Ya dio su versión de lo ocurrido. El equipo de OficiosYa va a resolver el caso a la brevedad.',
+    });
   },
 
   // ============================================================
@@ -2276,15 +2672,15 @@ export const dbHelper = {
       .from('disputas_resolucion')
       .insert({
         ...payload,
-        estado: payload.tipo_solucion === 'Intervención SuperOficios' ? 'escalado_admin' : 'en_proceso'
+        estado: payload.tipo_solucion === 'Intervención OficiosYa' ? 'escalado_admin' : 'en_proceso'
       })
       .select()
       .single();
 
     if (error) throw error;
 
-    // Si solicita intervención de SuperOficios, auto-genera ticket admin de prioridad alta
-    if (payload.tipo_solucion === 'Intervención SuperOficios') {
+    // Si solicita intervención de OficiosYa, auto-genera ticket admin de prioridad alta
+    if (payload.tipo_solucion === 'Intervención OficiosYa') {
       await dbHelper.crearTicketSoporte({
         usuario_id: payload.cliente_id,
         categoria: 'Reclamo',
@@ -2304,6 +2700,35 @@ export const dbHelper = {
       .order('created_at', { ascending: false });
 
     return data || [];
+  },
+
+  async getDisputasAdmin(): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('disputas_resolucion')
+      .select('*, cliente:perfiles!cliente_id(nombre,email), profesional:perfiles!profesional_id(nombre,email)')
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('Error getDisputasAdmin:', error);
+      return [];
+    }
+    return data || [];
+  },
+
+  async resolverDisputaAdmin(id: string, resolucionAdmin: string, nuevoEstado: string): Promise<void> {
+    const { data: disputa, error } = await supabase
+      .from('disputas_resolucion')
+      .update({ estado: nuevoEstado, resolucion_admin: resolucionAdmin, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+
+    const titulo = '⚖️ Disputa resuelta por OficiosYa';
+    const descripcion = `Resolución: ${resolucionAdmin}`;
+    await Promise.all([
+      dbHelper.crearNotificacion({ usuario_id: disputa.cliente_id, tipo: 'sistema', titulo, descripcion }),
+      dbHelper.crearNotificacion({ usuario_id: disputa.profesional_id, tipo: 'sistema', titulo, descripcion }),
+    ]);
   },
 
 
@@ -2466,6 +2891,131 @@ export const dbHelper = {
     } catch (err) { console.warn('registrarPuntos error:', err); }
   },
 
+  /**
+   * Igual que registrarPuntos, pero solo la primera vez que se dispara esta
+   * `accion` para este profesional -- registrarPuntos en sí no es
+   * idempotente, así que sin esto un botón como "Compartir perfil" daría
+   * puntos infinitos con cada click.
+   */
+  async otorgarPuntosUnaVez(profesionalId: string, accion: string, puntos: number, descripcion?: string): Promise<void> {
+    try {
+      const { data: existente } = await supabase
+        .from('transacciones_puntos')
+        .select('id')
+        .eq('profesional_id', profesionalId)
+        .eq('accion', accion)
+        .maybeSingle();
+      if (existente) return;
+      await dbHelper.registrarPuntos(profesionalId, accion, puntos, descripcion);
+    } catch (err) { console.warn('otorgarPuntosUnaVez error:', err); }
+  },
+
+  async registrarVistaPerfil(profesionalId: string, visitanteId?: string): Promise<void> {
+    try {
+      await supabase.from('profile_views').insert({ profesional_id: profesionalId, visitante_id: visitanteId || null });
+    } catch (err) { console.warn('registrarVistaPerfil error:', err); }
+  },
+
+  // ============================================================
+  // TIENDA DE CANJE DE PUNTOS
+  // ============================================================
+
+  async getPremiosCanje(): Promise<any[]> {
+    try {
+      const { data, error } = await supabase.from('premios_canje').select('*').eq('activo', true).order('costo_puntos', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      console.warn('getPremiosCanje error:', err);
+      return [];
+    }
+  },
+
+  async canjearPremio(profesionalId: string, premioId: string): Promise<void> {
+    const { data: premio, error: errPremio } = await supabase.from('premios_canje').select('*').eq('id', premioId).single();
+    if (errPremio || !premio) throw new Error('El premio ya no está disponible.');
+    if (premio.stock !== null && premio.stock <= 0) throw new Error('Este premio se agotó.');
+
+    const puntos = await dbHelper.getOrCreatePuntosProfesional(profesionalId);
+    const saldo = (puntos?.puntos_totales || 0) - (puntos?.puntos_canjeados || 0);
+    if (saldo < premio.costo_puntos) throw new Error('No te alcanzan los puntos para este premio.');
+
+    const { error: errInsert } = await supabase.from('canjes_profesional').insert({
+      profesional_id: profesionalId, premio_id: premioId, puntos_gastados: premio.costo_puntos,
+    });
+    if (errInsert) throw errInsert;
+
+    await supabase.from('puntos_profesional')
+      .update({ puntos_canjeados: (puntos?.puntos_canjeados || 0) + premio.costo_puntos })
+      .eq('profesional_id', profesionalId);
+
+    if (premio.stock !== null) {
+      await supabase.from('premios_canje').update({ stock: premio.stock - 1 }).eq('id', premioId);
+    }
+  },
+
+  async getMisCanjes(profesionalId: string): Promise<any[]> {
+    try {
+      const { data, error } = await supabase
+        .from('canjes_profesional')
+        .select('*, premio:premios_canje(nombre, imagen_url)')
+        .eq('profesional_id', profesionalId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      console.warn('getMisCanjes error:', err);
+      return [];
+    }
+  },
+
+  async getPremiosAdmin(): Promise<any[]> {
+    try {
+      const { data, error } = await supabase.from('premios_canje').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      console.warn('getPremiosAdmin error:', err);
+      return [];
+    }
+  },
+
+  async createPremioAdmin(premio: { nombre: string; descripcion?: string; costoPuntos: number; imagenUrl?: string; stock?: number | null }): Promise<any> {
+    const { data, error } = await supabase.from('premios_canje').insert({
+      nombre: premio.nombre,
+      descripcion: premio.descripcion || null,
+      costo_puntos: premio.costoPuntos,
+      imagen_url: premio.imagenUrl || null,
+      stock: premio.stock ?? null,
+    }).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  async togglePremioActivo(id: string, activo: boolean): Promise<void> {
+    const { error } = await supabase.from('premios_canje').update({ activo }).eq('id', id);
+    if (error) throw error;
+  },
+
+  async getCanjesAdmin(): Promise<any[]> {
+    try {
+      const { data, error } = await supabase
+        .from('canjes_profesional')
+        .select('*, premio:premios_canje(nombre), profesional:perfiles!canjes_profesional_profesional_id_fkey(nombre, email)')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      console.warn('getCanjesAdmin error:', err);
+      return [];
+    }
+  },
+
+  async marcarCanjeEntregado(id: string): Promise<void> {
+    const { error } = await supabase.from('canjes_profesional').update({ estado: 'entregado' }).eq('id', id);
+    if (error) throw error;
+  },
+
   // ============================================================
   // CONVERSACIONES RECIENTES - Para Panel Profesional
   // ============================================================
@@ -2588,6 +3138,52 @@ export const dbHelper = {
     }
   },
 
+  // --- CAMPAÑAS Y BANNERS (admin) ---
+  async getCampanasAdmin(): Promise<any[]> {
+    const { data, error } = await supabase.from('campanas_admin').select('*').order('created_at', { ascending: false });
+    if (error) { console.warn('Error getCampanasAdmin:', error); return []; }
+    return data || [];
+  },
+
+  async createCampanaAdmin(campana: {
+    nombre: string; tipo: string; categoria: string; beneficio?: string;
+    banner_url?: string; boton_texto?: string; boton_url?: string;
+    fecha_inicio?: string; fecha_fin?: string;
+  }): Promise<any> {
+    const { data, error } = await supabase.from('campanas_admin').insert([campana]).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  async toggleCampanaActiva(id: string, activa: boolean): Promise<void> {
+    const { error } = await supabase.from('campanas_admin').update({ activa }).eq('id', id);
+    if (error) throw error;
+  },
+
+  // --- Historial de Notificaciones Masivas (distinto de Campañas/Banners) ---
+  async getCampanasMasivasHistorial(): Promise<any[]> {
+    try {
+      const { data, error } = await supabase.from('campanas_masivas_historial').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } catch (e) {
+      console.warn('Error getCampanasMasivasHistorial:', e);
+      return [];
+    }
+  },
+
+  async registrarCampanaMasiva(campana: { titulo: string; mensaje: string; destinatarios: string; enviados: number; adminEmail?: string }): Promise<any> {
+    const { data, error } = await supabase.from('campanas_masivas_historial').insert({
+      titulo: campana.titulo,
+      mensaje: campana.mensaje,
+      destinatarios: campana.destinatarios,
+      enviados: campana.enviados,
+      admin_email: campana.adminEmail || null,
+    }).select().single();
+    if (error) throw error;
+    return data;
+  },
+
   async registrarAuditoria(log: {
     admin_email: string;
     accion: string;
@@ -2612,9 +3208,10 @@ export const dbHelper = {
       // Find all professionals
       const { data: professionals, error } = await supabase
         .from('perfiles')
-        .select('id, oficios, nombre')
-        .eq('rol', 'profesional');
-        
+        .select('id, oficios, nombre, provincia, estado_cuenta')
+        .eq('rol', 'profesional')
+        .eq('estado_cuenta', 'Activo');
+
       if (error || !professionals) return;
 
       const categoryMatches = (oficios: any[]) => {
@@ -2624,7 +3221,16 @@ export const dbHelper = {
         return oficios.some(o => typeof o === 'string' && o.toLowerCase().trim() === jobCat);
       };
 
-      const matchedPros = professionals.filter(p => categoryMatches(p.oficios));
+      // Antes notificaba a TODO el país con el oficio, aunque el texto
+      // prometiera "en tu zona" -- ahora exige también que la provincia
+      // coincida con la del trabajo (si el trabajo trae provincia).
+      const jobProvincia = jobData.provincia?.toLowerCase().trim() || '';
+      const zoneMatches = (provincia: any) => {
+        if (!jobProvincia) return true;
+        return typeof provincia === 'string' && provincia.toLowerCase().trim() === jobProvincia;
+      };
+
+      const matchedPros = professionals.filter(p => categoryMatches(p.oficios) && zoneMatches(p.provincia));
 
       if (matchedPros.length > 0) {
         const notificationsToInsert = matchedPros.map(p => ({
@@ -2673,13 +3279,13 @@ export const dbHelper = {
    */
   async getCountOfertasTrabajo(trabajoId: number | string): Promise<number> {
     try {
-      const { count, error } = await supabase
-        .from('presupuestos_muro')
-        .select('*', { count: 'exact', head: true })
-        .eq('trabajo_id', Number(trabajoId))
-        .eq('estado', 'pendiente');
+      // RLS de presupuestos_muro solo deja ver filas propias, así que un
+      // SELECT directo siempre da 0 o 1 para un profesional que mira la
+      // competencia. Esta función de Postgres cuenta sin exponer ninguna
+      // columna de las ofertas ajenas (ver sprint0_fix_contador_ofertas.sql).
+      const { data, error } = await supabase.rpc('contar_ofertas_pendientes_trabajo', { p_trabajo_id: Number(trabajoId) });
       if (error) throw error;
-      return count || 0;
+      return data || 0;
     } catch (e) {
       console.warn('Error getCountOfertasTrabajo:', e);
       return 0;
@@ -2904,7 +3510,7 @@ export const dbHelper = {
     tituloTrabajo: string;
     monto: number;
     garantia?: string;
-  }): Promise<{ ordenId: string }> {
+  }): Promise<{ ordenId: string; expedienteId: string }> {
     // 1. Marcar presupuesto seleccionado como aceptado
     await supabase
       .from('presupuestos_muro')
@@ -2937,6 +3543,37 @@ export const dbHelper = {
       monto,
     });
 
+    // 4b. Crear el Expediente del Trabajo (Carpeta Digital) -- antes solo lo
+    // creaba el otro camino de aceptar presupuesto (el del chat), así que un
+    // trabajo adjudicado desde acá (el camino principal) nunca aparecía en
+    // "Expedientes" del cliente y nunca se podía calificar. Nos aseguramos
+    // además de que exista una conversación para poder linkear el chat desde
+    // el expediente.
+    // presupuesto_id NO se manda: esa columna tiene una FK real hacia
+    // presupuestos_estructurados (el sistema de presupuestos del chat, no
+    // el del Muro) -- confirmado en vivo, un id de presupuestos_muro la
+    // viola. La columna es nullable, así que la dejamos sin usar acá.
+    const conversacion = await dbHelper.getOrCreateConversation(clienteId, profesionalId).catch(() => null);
+    const { data: expediente } = await supabase
+      .from('expedientes_trabajo')
+      .insert({
+        orden_trabajo_id: orden.id,
+        conversacion_id: conversacion?.id || null,
+        cliente_id: clienteId,
+        profesional_id: profesionalId,
+        titulo: tituloTrabajo,
+        costo_total: monto,
+        garantia: garantia || 'sin_garantia',
+      })
+      .select()
+      .single();
+
+    // 4c. Guardar el link trabajo -> expediente, para poder encontrarlo
+    // después (ej. si el cliente vuelve a entrar a comparar-presupuestos).
+    if (expediente?.id) {
+      await supabase.from('trabajos').update({ expediente_id: expediente.id }).eq('id', trabajoId);
+    }
+
     // 5. Notificar al profesional ganador
     await supabase.from('notificaciones').insert([{
       usuario_id: profesionalId,
@@ -2966,7 +3603,94 @@ export const dbHelper = {
       await supabase.from('notificaciones').insert(notifs);
     }
 
-    return { ordenId: orden.id };
+    return { ordenId: orden.id, expedienteId: expediente?.id };
+  },
+
+  /** Dado un trabajo del Muro ya adjudicado, encuentra su Expediente Digital. */
+  async getTrabajoExpedienteId(trabajoId: number | string): Promise<string | null> {
+    const { data } = await supabase.from('trabajos').select('expediente_id').eq('id', trabajoId).maybeSingle();
+    return data?.expediente_id || null;
+  },
+
+  // ============================================================
+  // FAVORITOS (cliente guarda profesionales para volver rápido)
+  // ============================================================
+
+  /** Solo los ids -- para marcar el corazón en tarjetas sin N+1 queries. */
+  async getFavoritosIds(clienteId: string): Promise<string[]> {
+    try {
+      const { data, error } = await supabase.from('favoritos_profesional').select('profesional_id').eq('cliente_id', clienteId);
+      if (error) throw error;
+      return (data || []).map((f: any) => f.profesional_id);
+    } catch (e) {
+      console.warn('Error getFavoritosIds:', e);
+      return [];
+    }
+  },
+
+  /** Con datos completos del profesional -- para la pestaña "Favoritos". */
+  async getFavoritosProfesionales(clienteId: string): Promise<any[]> {
+    try {
+      const { data, error } = await supabase
+        .from('favoritos_profesional')
+        .select('id, created_at, profesional:perfiles!profesional_id(id, nombre, foto_perfil, oficios, provincia, ciudad, verificado, rating, total_resenas, estado_cuenta)')
+        .eq('cliente_id', clienteId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      // Un profesional suspendido/eliminado no debería seguir apareciendo
+      // como favorito activo, mismo criterio que el resto de la app.
+      return (data || []).filter((f: any) => f.profesional?.estado_cuenta === 'Activo' || !f.profesional?.estado_cuenta);
+    } catch (e) {
+      console.warn('Error getFavoritosProfesionales:', e);
+      return [];
+    }
+  },
+
+  async toggleFavorito(clienteId: string, profesionalId: string, marcar: boolean): Promise<void> {
+    if (marcar) {
+      const { error } = await supabase.from('favoritos_profesional').insert({ cliente_id: clienteId, profesional_id: profesionalId });
+      if (error && error.code !== '23505') throw error; // 23505 = ya era favorito, no pasa nada
+    } else {
+      const { error } = await supabase.from('favoritos_profesional').delete().eq('cliente_id', clienteId).eq('profesional_id', profesionalId);
+      if (error) throw error;
+    }
+  },
+
+  // ============================================================
+  // RESUMEN DE PENDIENTES (widget "cosas pendientes" del home cliente)
+  // ============================================================
+
+  async getResumenPendientesCliente(clienteId: string): Promise<{ ofertasNuevas: number; preguntasSinResponder: number; trabajosSinResena: number }> {
+    try {
+      const { data: trabajos } = await supabase.from('trabajos').select('id').eq('cliente_id', clienteId);
+      const trabajoIds = (trabajos || []).map((t: any) => t.id);
+
+      let ofertasNuevas = 0;
+      let preguntasSinResponder = 0;
+      if (trabajoIds.length > 0) {
+        const [ofertasRes, preguntasRes] = await Promise.all([
+          supabase.from('presupuestos_muro').select('id', { count: 'exact', head: true }).in('trabajo_id', trabajoIds).eq('estado', 'pendiente'),
+          supabase.from('preguntas_trabajo').select('id', { count: 'exact', head: true }).in('trabajo_id', trabajoIds).is('respuesta', null),
+        ]);
+        ofertasNuevas = ofertasRes.count || 0;
+        preguntasSinResponder = preguntasRes.count || 0;
+      }
+
+      // Mismo criterio que la pestaña Expedientes: finalizado/con_garantia y
+      // todavía sin reseña.
+      const [expedientes, resenadas] = await Promise.all([
+        dbHelper.getExpedientesCliente(clienteId),
+        dbHelper.getOrdenesTrabajoResenadas(clienteId),
+      ]);
+      const trabajosSinResena = expedientes.filter((exp: any) =>
+        ['finalizado', 'con_garantia'].includes(exp.ordenes_trabajo?.estado) && !resenadas.includes(exp.orden_trabajo_id)
+      ).length;
+
+      return { ofertasNuevas, preguntasSinResponder, trabajosSinResena };
+    } catch (e) {
+      console.warn('Error getResumenPendientesCliente:', e);
+      return { ofertasNuevas: 0, preguntasSinResponder: 0, trabajosSinResena: 0 };
+    }
   },
 
   /**

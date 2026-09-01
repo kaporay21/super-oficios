@@ -44,11 +44,18 @@ function MiMarcaContent() {
   const [loading, setLoading] = useState(true);
   const [copiado, setCopiado] = useState(false);
   const [compartiendo, setCompartiendo] = useState(false);
+  const [copiadoReferido, setCopiadoReferido] = useState(false);
+  const [compartiendoReferido, setCompartiendoReferido] = useState(false);
+  const [compartiendoHistoria, setCompartiendoHistoria] = useState(false);
 
   const profileUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/profesional/${user?.id}`
     : '';
   const tarjetaUrl = profileUrl ? `${profileUrl}/tarjeta` : '';
+  const historiaUrl = profileUrl ? `${profileUrl}/historia` : '';
+  const referidoUrl = typeof window !== 'undefined' && profile?.codigo_referido
+    ? `${window.location.origin}/registro-profesional?ref=${profile.codigo_referido}`
+    : '';
 
   useEffect(() => {
     if (user?.id) loadData();
@@ -77,6 +84,10 @@ function MiMarcaContent() {
     navigator.clipboard.writeText(profileUrl);
     setCopiado(true);
     setTimeout(() => setCopiado(false), 2000);
+    if (user?.id) {
+      dbHelper.otorgarPuntosUnaVez(user.id, 'compartir_perfil', 50, 'Compartiste tu perfil');
+      dbHelper.desbloquearLogro(user.id, 'compartir_perfil', 'Compartí tu perfil', 'Compartiste tu link de perfil');
+    }
   };
 
   /** Comparte la imagen real de la tarjeta con el menú nativo (WhatsApp, Instagram, etc.); si el navegador no lo soporta, cae a copiar el link. */
@@ -96,12 +107,72 @@ function MiMarcaContent() {
         } else {
           await navigator.share({ title: 'Mi perfil en OficiosYa', text: texto, url: profileUrl });
         }
+        if (user?.id) {
+          dbHelper.otorgarPuntosUnaVez(user.id, 'compartir_perfil', 50, 'Compartiste tu perfil');
+          dbHelper.desbloquearLogro(user.id, 'compartir_perfil', 'Compartí tu perfil', 'Compartiste tu link de perfil');
+        }
         return;
       } catch {
         // El usuario cancelo el menu nativo, o el share con archivo fallo: no es un error a mostrar.
         return;
       } finally {
         setCompartiendo(false);
+      }
+    }
+
+    copiarLink();
+  };
+
+  const copiarReferido = () => {
+    if (!referidoUrl) return;
+    navigator.clipboard.writeText(referidoUrl);
+    setCopiadoReferido(true);
+    setTimeout(() => setCopiadoReferido(false), 2000);
+  };
+
+  const compartirReferido = async () => {
+    if (!referidoUrl) return;
+    const texto = '¿Sos profesional de oficios? Sumate a OficiosYa con mi link y empezá a recibir clientes.';
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      setCompartiendoReferido(true);
+      try {
+        await navigator.share({ title: 'Sumate a OficiosYa', text: texto, url: referidoUrl });
+        return;
+      } catch {
+        return;
+      } finally {
+        setCompartiendoReferido(false);
+      }
+    }
+    copiarReferido();
+  };
+
+  /** Igual que compartirTarjeta, pero con la imagen vertical 9:16 pensada para historias. */
+  const compartirHistoria = async () => {
+    const oficioTexto = profile?.oficios?.[0] ? ` (${profile.oficios[0]})` : '';
+    const texto = `¿Necesitás un profesional de confianza${oficioTexto}? Este es mi perfil en OficiosYa`;
+
+    if (typeof navigator !== 'undefined' && navigator.share && historiaUrl) {
+      setCompartiendoHistoria(true);
+      try {
+        const res = await fetch(historiaUrl);
+        const blob = await res.blob();
+        const file = new File([blob], 'historia-oficiosya.png', { type: blob.type || 'image/png' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'Mi perfil en OficiosYa', text: `${texto}\n${profileUrl}` });
+        } else {
+          await navigator.share({ title: 'Mi perfil en OficiosYa', text: texto, url: profileUrl });
+        }
+        if (user?.id) {
+          dbHelper.otorgarPuntosUnaVez(user.id, 'compartir_perfil', 50, 'Compartiste tu perfil');
+          dbHelper.desbloquearLogro(user.id, 'compartir_perfil', 'Compartí tu perfil', 'Compartiste tu link de perfil');
+        }
+        return;
+      } catch {
+        return;
+      } finally {
+        setCompartiendoHistoria(false);
       }
     }
 
@@ -264,12 +335,19 @@ function MiMarcaContent() {
             </div>
           )}
 
-          <div className="flex gap-2 mb-4">
+          <div className="flex gap-2 mb-2">
             <button onClick={compartirTarjeta} disabled={compartiendo}
               className="flex-1 bg-[#fc8127] hover:bg-[#e06d19] disabled:opacity-60 text-white text-xs font-bold rounded-xl py-2.5 flex items-center justify-center gap-1.5 transition-all">
               {compartiendo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
               {compartiendo ? 'Preparando...' : 'Compartir tarjeta'}
             </button>
+            <button onClick={compartirHistoria} disabled={compartiendoHistoria}
+              className="flex-1 bg-slate-800/60 hover:bg-slate-800 disabled:opacity-60 text-white text-xs font-bold rounded-xl py-2.5 flex items-center justify-center gap-1.5 transition-all border border-slate-700">
+              {compartiendoHistoria ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
+              {compartiendoHistoria ? 'Preparando...' : 'Compartir como Historia'}
+            </button>
+          </div>
+          <div className="flex gap-2 mb-4">
             <a
               href={tarjetaUrl}
               download="tarjeta-oficiosya.png"
@@ -306,6 +384,32 @@ function MiMarcaContent() {
             className="mt-4 flex items-center gap-1.5 text-xs font-bold text-[#fc8127] hover:underline">
             Ver perfil público <ExternalLink className="w-3 h-3" />
           </button>
+        </div>
+
+        {/* Invitá a un colega */}
+        <div id="referidos" className="bg-[#001529] border border-slate-800 rounded-2xl p-5">
+          <h3 className="text-sm font-black text-white mb-1 flex items-center gap-2">
+            <Users className="w-4 h-4 text-[#fc8127]" /> Invitá a un colega
+          </h3>
+          <p className="text-xs text-slate-400 mb-4">
+            Sumás <span className="text-amber-400 font-bold">+100 puntos</span> cada vez que un colega se registra como profesional con tu link.
+          </p>
+          <div className="flex items-center gap-2 bg-slate-800/40 border border-slate-700 rounded-xl px-3 py-2.5 mb-3">
+            <p className="text-xs font-bold text-white truncate flex-1">{referidoUrl}</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={compartirReferido} disabled={compartiendoReferido}
+              className="flex-1 bg-[#fc8127] hover:bg-[#e06d19] disabled:opacity-60 text-white text-xs font-bold rounded-xl py-2.5 flex items-center justify-center gap-1.5 transition-all">
+              {compartiendoReferido ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
+              {compartiendoReferido ? 'Abriendo...' : 'Compartir invitación'}
+            </button>
+            <button onClick={copiarReferido}
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                copiadoReferido ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:bg-slate-800'
+              }`}>
+              {copiadoReferido ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            </button>
+          </div>
         </div>
 
         {/* Logros */}

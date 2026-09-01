@@ -246,7 +246,7 @@ function PropiedadDetalleContent() {
               <div className="text-center py-12">
                 <Clock className="w-10 h-10 text-slate-700 mx-auto mb-3" />
                 <p className="text-sm text-slate-400">No hay trabajos registrados en esta propiedad aún.</p>
-                <p className="text-xs text-slate-600 mt-1">Los trabajos aparecerán cuando un profesional los vincule a esta dirección.</p>
+                <p className="text-xs text-slate-600 mt-1">Al publicar un trabajo nuevo, elegí esta propiedad y va a aparecer acá.</p>
               </div>
             ) : historial.map(trabajo => (
               <div key={trabajo.id} className="bg-[#001529] border border-slate-800 rounded-xl p-4 space-y-2">

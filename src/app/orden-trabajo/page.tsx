@@ -92,7 +92,10 @@ function OrdenTrabajoContent() {
           .in('id', ids);
         setClientes(perfs || []);
       }
-    } catch { /* no hay conversaciones */ }
+    } catch (err: any) {
+      console.error('Error al cargar clientes:', err);
+      setError(err?.message || 'No pudimos cargar tus contactos.');
+    }
   };
 
   const handleCrear = async (e: React.FormEvent) => {

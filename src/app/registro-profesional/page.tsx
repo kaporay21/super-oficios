@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Bell, Menu, CheckCircle, TrendingUp, DollarSign, 
@@ -35,6 +35,12 @@ export default function RegistroProfesionalPage() {
   const [selectedCiudad, setSelectedCiudad] = useState('');
   const [fotoPerfil, setFotoPerfil] = useState<string | null>(null);
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [codigoReferido, setCodigoReferido] = useState('');
+
+  useEffect(() => {
+    const ref = new URLSearchParams(window.location.search).get('ref');
+    if (ref) setCodigoReferido(ref);
+  }, []);
 
   const handleOficioToggle = (oficio: string) => {
     if (selectedOficios.includes(oficio)) {
@@ -74,9 +80,10 @@ export default function RegistroProfesionalPage() {
         telefono, 
         password, 
         selectedOficios, 
-        selectedProvincia, 
+        selectedProvincia,
         selectedCiudad,
-        { apellido, fechaNacimiento, pais, experiencia, fotoPerfil }
+        { apellido, fechaNacimiento, pais, experiencia, fotoPerfil },
+        codigoReferido || undefined
       );
       
       setTimeout(() => {

@@ -7,7 +7,7 @@ import {
   HelpCircle, LogOut, ChevronRight, MapPin, CheckCircle2,
   Clock, Plus, Star, Search, AlertCircle, Loader2, Send,
   Wrench, ShieldCheck, DollarSign, Calendar, ArrowLeft,
-  X, Save, FileCheck, Check, Sparkles, MessageCircle, FilePlus, Filter
+  X, Save, FileCheck, Check, Sparkles, MessageCircle, FilePlus, Filter, Heart, RefreshCw
 } from 'lucide-react';
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
@@ -22,19 +22,35 @@ export default function PerfilClientePage() {
   );
 }
 
-type TabType = 'resumen' | 'hogar' | 'expedientes' | 'mensajes' | 'soporte';
+type TabType = 'resumen' | 'hogar' | 'expedientes' | 'mensajes' | 'soporte' | 'favoritos';
 
 function PerfilClienteContent() {
   const router = useRouter();
   const { user, profile: authProfile, loading: authLoading } = useAuth();
   
   const [activeTab, setActiveTab] = useState<TabType>('resumen');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const tab = new URLSearchParams(window.location.search).get('tab') as TabType | null;
+    if (tab && ['resumen', 'hogar', 'expedientes', 'mensajes', 'soporte', 'favoritos'].includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, []);
   const [propiedades, setPropiedades] = useState<any[]>([]);
   const [expedientes, setExpedientes] = useState<any[]>([]);
   const [conversaciones, setConversaciones] = useState<any[]>([]);
   const [tickets, setTickets] = useState<any[]>([]);
   const [disputas, setDisputas] = useState<any[]>([]);
-  
+  const [ordenesResenadas, setOrdenesResenadas] = useState<string[]>([]);
+  const [favoritos, setFavoritos] = useState<any[]>([]);
+  const [recontratandoId, setRecontratandoId] = useState<string | null>(null);
+
+  // Formulario de reseña (Calificar trabajo)
+  const [resenandoExpId, setResenandoExpId] = useState<string | null>(null);
+  const [resenaForm, setResenaForm] = useState({ puntualidad: 5, resolvioProblema: 5, dejoLimpio: 5, volveriaContratar: true, comentario: '' });
+  const [enviandoResena, setEnviandoResena] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,8 +59,10 @@ function PerfilClienteContent() {
   const [ticketForm, setTicketForm] = useState({
     categoria: 'Ayuda',
     asunto: '',
-    mensaje: ''
+    mensaje: '',
+    profesionalId: ''
   });
+  const CATEGORIAS_SOBRE_PROFESIONAL = ['Reclamo', 'Denunciar usuario'];
   const [enviandoTicket, setEnviandoTicket] = useState(false);
   const [ticketSuccessMsg, setTicketSuccessMsg] = useState<string | null>(null);
 
@@ -53,7 +71,8 @@ function PerfilClienteContent() {
   const [disputaForm, setDisputaForm] = useState({
     tipo_solucion: 'Hablar con profesional',
     descripcion: '',
-    monto_reclamado: ''
+    monto_reclamado: '',
+    profesionalId: ''
   });
   const [enviandoDisputa, setEnviandoDisputa] = useState(false);
 
@@ -69,18 +88,22 @@ function PerfilClienteContent() {
     setLoading(true);
     setError(null);
     try {
-      const [propsData, expsData, convsData, tixData, dispData] = await Promise.all([
+      const [propsData, expsData, convsData, tixData, dispData, resenadasData, favoritosData] = await Promise.all([
         dbHelper.getPropiedades(user.id),
         dbHelper.getExpedientesCliente(user.id),
         dbHelper.getConversaciones(user.id),
         dbHelper.getTicketsSoporteUsuario(user.id),
-        dbHelper.getDisputasCliente(user.id)
+        dbHelper.getDisputasCliente(user.id),
+        dbHelper.getOrdenesTrabajoResenadas(user.id),
+        dbHelper.getFavoritosProfesionales(user.id)
       ]);
       setPropiedades(propsData);
       setExpedientes(expsData);
       setConversaciones(convsData);
       setTickets(tixData);
       setDisputas(dispData);
+      setOrdenesResenadas(resenadasData);
+      setFavoritos(favoritosData);
     } catch (err: any) {
       console.warn('Error al cargar datos del cliente:', err);
       setError('Ocurrió un inconveniente al actualizar tus datos.');
@@ -99,11 +122,12 @@ function PerfilClienteContent() {
         usuario_id: user.id,
         categoria: ticketForm.categoria,
         asunto: ticketForm.asunto || ticketForm.categoria,
-        mensaje: ticketForm.mensaje
+        mensaje: ticketForm.mensaje,
+        profesional_id: ticketForm.profesionalId || undefined,
       });
       setTickets(prev => [nuevo, ...prev]);
       setTicketSuccessMsg(`¡Ticket ${nuevo.codigo_ticket} generado con éxito! El equipo de soporte lo revisará en breve.`);
-      setTicketForm({ categoria: 'Ayuda', asunto: '', mensaje: '' });
+      setTicketForm({ categoria: 'Ayuda', asunto: '', mensaje: '', profesionalId: '' });
       setShowFormTicket(false);
     } catch (err: any) {
       setError(err?.message || 'Error al enviar la consulta.');
@@ -114,23 +138,72 @@ function PerfilClienteContent() {
 
   const handleCrearDisputa = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.id || !disputaForm.descripcion.trim()) return;
+    if (!user?.id || !disputaForm.descripcion.trim() || !disputaForm.profesionalId) return;
     setEnviandoDisputa(true);
     try {
       const nueva = await dbHelper.crearDisputaResolucion({
         cliente_id: user.id,
-        profesional_id: expedientes[0]?.profesional_id || user.id,
+        profesional_id: disputaForm.profesionalId,
         tipo_solucion: disputaForm.tipo_solucion,
         descripcion: disputaForm.descripcion,
         monto_reclamado: disputaForm.monto_reclamado ? parseFloat(disputaForm.monto_reclamado) : undefined
       });
       setDisputas(prev => [nueva, ...prev]);
       setShowFormDisputa(false);
-      setDisputaForm({ tipo_solucion: 'Hablar con profesional', descripcion: '', monto_reclamado: '' });
+      setDisputaForm({ tipo_solucion: 'Hablar con profesional', descripcion: '', monto_reclamado: '', profesionalId: '' });
     } catch (err: any) {
       setError(err?.message || 'Error al iniciar la mediación.');
     } finally {
       setEnviandoDisputa(false);
+    }
+  };
+
+  const handleCrearResena = async (exp: any) => {
+    if (!user?.id || !exp.orden_trabajo_id) return;
+    setEnviandoResena(true);
+    try {
+      await dbHelper.createResenaInteligente({
+        orden_trabajo_id: exp.orden_trabajo_id,
+        profesional_id: exp.profesional_id,
+        cliente_id: user.id,
+        puntualidad: resenaForm.puntualidad,
+        resolvio_problema: resenaForm.resolvioProblema,
+        dejo_limpio: resenaForm.dejoLimpio,
+        volveria_contratar: resenaForm.volveriaContratar,
+        comentario: resenaForm.comentario.trim() || undefined,
+      });
+      setOrdenesResenadas(prev => [...prev, exp.orden_trabajo_id]);
+      setResenandoExpId(null);
+      setResenaForm({ puntualidad: 5, resolvioProblema: 5, dejoLimpio: 5, volveriaContratar: true, comentario: '' });
+    } catch (err: any) {
+      setError(err?.message || 'Error al enviar la reseña.');
+    } finally {
+      setEnviandoResena(false);
+    }
+  };
+
+  const handleRecontratar = async (profesionalId: string) => {
+    if (!user?.id || !profesionalId || recontratandoId) return;
+    setRecontratandoId(profesionalId);
+    try {
+      const conv = await dbHelper.getOrCreateConversation(user.id, profesionalId);
+      if (conv?.id) router.push(`/chat/${conv.id}`);
+    } catch (err: any) {
+      setError(err?.message || 'No pudimos abrir el chat. Intentá de nuevo en un momento.');
+    } finally {
+      setRecontratandoId(null);
+    }
+  };
+
+  const handleQuitarFavorito = async (profesionalId: string) => {
+    if (!user?.id) return;
+    const prev = favoritos;
+    setFavoritos(f => f.filter(fav => fav.profesional?.id !== profesionalId));
+    try {
+      await dbHelper.toggleFavorito(user.id, profesionalId, false);
+    } catch (err) {
+      setFavoritos(prev);
+      console.error('Error al quitar favorito:', err);
     }
   };
 
@@ -236,7 +309,7 @@ function PerfilClienteContent() {
                 <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full text-xs font-bold text-emerald-400">
                   <CheckCircle2 className="w-3.5 h-3.5" /> Cliente Verificado
                 </div>
-                <h1 className="text-2xl md:text-3xl font-black text-white">{authProfile?.nombre || 'Gonzalo Humacata'}</h1>
+                <h1 className="text-2xl md:text-3xl font-black text-white">{authProfile?.nombre || 'Cliente'}</h1>
                 <p className="text-xs text-slate-400 flex items-center justify-center sm:justify-start gap-1">
                   <MapPin className="w-3.5 h-3.5 text-[#fc8127]" /> {authProfile?.ciudad ? `${authProfile.ciudad}, ${authProfile.provincia}` : 'Argentina'}
                 </p>
@@ -270,6 +343,7 @@ function PerfilClienteContent() {
             { id: 'resumen', label: 'Resumen General', icon: <User className="w-4 h-4" /> },
             { id: 'hogar', label: `Mi Hogar (${propiedades.length})`, icon: <Building className="w-4 h-4" /> },
             { id: 'expedientes', label: `Expedientes (${expedientes.length})`, icon: <Folder className="w-4 h-4" /> },
+            { id: 'favoritos', label: `Favoritos (${favoritos.length})`, icon: <Heart className="w-4 h-4" /> },
             { id: 'mensajes', label: `Mensajes (${conversaciones.length})`, icon: <MessageSquare className="w-4 h-4" /> },
             { id: 'soporte', label: `Soporte & Resolución`, icon: <ShieldAlert className="w-4 h-4" /> },
           ].map(tab => (
@@ -487,8 +561,21 @@ function PerfilClienteContent() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {expedientes.map(exp => (
+              <div className="space-y-6">
+                {[
+                  { key: 'curso', titulo: 'En curso', lista: expedientes.filter(exp => !['finalizado', 'con_garantia'].includes(exp.ordenes_trabajo?.estado)) },
+                  { key: 'fin', titulo: 'Finalizados', lista: expedientes.filter(exp => ['finalizado', 'con_garantia'].includes(exp.ordenes_trabajo?.estado)) },
+                ].filter(grupo => grupo.lista.length > 0).map(grupo => (
+                <div key={grupo.key} className="space-y-3">
+                  <h4 className="text-xs font-black text-slate-500 uppercase tracking-wide">{grupo.titulo}</h4>
+                {grupo.lista.map(exp => {
+                  const estadoOrden = exp.ordenes_trabajo?.estado;
+                  const pill = estadoOrden === 'con_garantia'
+                    ? { label: '🛡️ Con garantía', cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' }
+                    : estadoOrden === 'finalizado'
+                    ? { label: '🟢 Finalizado', cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' }
+                    : { label: '🔵 En curso', cls: 'bg-blue-500/10 text-blue-400 border-blue-500/30' };
+                  return (
                   <div
                     key={exp.id}
                     onClick={() => router.push(`/expediente/${exp.id}`)}
@@ -500,7 +587,10 @@ function PerfilClienteContent() {
                           <FileText className="w-6 h-6" />
                         </div>
                         <div>
-                          <h4 className="font-black text-base text-white group-hover:text-[#fc8127] transition-colors">{exp.titulo}</h4>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-black text-base text-white group-hover:text-[#fc8127] transition-colors">{exp.titulo}</h4>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${pill.cls}`}>{pill.label}</span>
+                          </div>
                           <p className="text-xs text-slate-400">Profesional: {exp.profesional?.nombre || 'Asignado'}</p>
                         </div>
                       </div>
@@ -517,8 +607,151 @@ function PerfilClienteContent() {
                         <Calendar className="w-4 h-4 text-[#fc8127]" /> {new Date(exp.created_at).toLocaleDateString('es-AR')}
                       </span>
                     </div>
+
+                    {['finalizado', 'con_garantia'].includes(exp.ordenes_trabajo?.estado) && (
+                      <div onClick={e => e.stopPropagation()} className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center gap-3">
+                        {exp.profesional_id && (
+                          <button
+                            type="button"
+                            onClick={() => handleRecontratar(exp.profesional_id)}
+                            disabled={recontratandoId === exp.profesional_id}
+                            className="text-xs bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white font-black px-4 py-2 rounded-xl flex items-center gap-1.5"
+                          >
+                            {recontratandoId === exp.profesional_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Volver a contratar
+                          </button>
+                        )}
+                        {ordenesResenadas.includes(exp.orden_trabajo_id) ? (
+                          <p className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4" /> Ya calificaste este trabajo
+                          </p>
+                        ) : resenandoExpId === exp.id ? (
+                          <div className="space-y-3 bg-slate-900/60 rounded-2xl p-4">
+                            {[
+                              { key: 'puntualidad', label: 'Puntualidad' },
+                              { key: 'resolvioProblema', label: 'Resolvió el problema' },
+                              { key: 'dejoLimpio', label: 'Dejó todo limpio' },
+                            ].map(campo => (
+                              <div key={campo.key} className="flex items-center justify-between">
+                                <span className="text-xs text-slate-300">{campo.label}</span>
+                                <div className="flex gap-1">
+                                  {[1, 2, 3, 4, 5].map(n => (
+                                    <button
+                                      key={n}
+                                      type="button"
+                                      onClick={() => setResenaForm(f => ({ ...f, [campo.key]: n }))}
+                                    >
+                                      <Star className={`w-5 h-5 ${n <= (resenaForm as any)[campo.key] ? 'fill-amber-400 text-amber-400' : 'text-slate-700'}`} />
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-slate-300">¿Volverías a contratarlo?</span>
+                              <div className="flex gap-2">
+                                <button type="button" onClick={() => setResenaForm(f => ({ ...f, volveriaContratar: true }))} className={`text-[11px] font-bold px-3 py-1 rounded-lg ${resenaForm.volveriaContratar ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>Sí</button>
+                                <button type="button" onClick={() => setResenaForm(f => ({ ...f, volveriaContratar: false }))} className={`text-[11px] font-bold px-3 py-1 rounded-lg ${!resenaForm.volveriaContratar ? 'bg-red-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>No</button>
+                              </div>
+                            </div>
+                            <textarea
+                              rows={2}
+                              value={resenaForm.comentario}
+                              onChange={e => setResenaForm(f => ({ ...f, comentario: e.target.value }))}
+                              placeholder="Comentario (opcional)"
+                              className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#fc8127] resize-none"
+                            />
+                            <div className="flex justify-end gap-2">
+                              <button type="button" onClick={() => setResenandoExpId(null)} className="text-xs text-slate-500 font-bold px-3 py-2 hover:underline">Cancelar</button>
+                              <button
+                                type="button"
+                                onClick={() => handleCrearResena(exp)}
+                                disabled={enviandoResena}
+                                className="text-xs bg-[#fc8127] hover:bg-[#e06d19] disabled:opacity-50 text-white font-black px-4 py-2 rounded-xl flex items-center gap-1.5"
+                              >
+                                {enviandoResena ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Star className="w-3.5 h-3.5" />} Enviar reseña
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setResenandoExpId(exp.id)}
+                            className="text-xs bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-4 py-2 rounded-xl flex items-center gap-1.5"
+                          >
+                            <Star className="w-3.5 h-3.5" /> Calificar trabajo
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
+                  );
+                })}
+                </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB: FAVORITOS */}
+        {activeTab === 'favoritos' && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="font-black text-lg text-white">❤️ Profesionales favoritos</h3>
+              <p className="text-xs text-slate-400">Guardaste estos perfiles para encontrarlos rápido cuando los necesites</p>
+            </div>
+
+            {favoritos.length === 0 ? (
+              <div className="bg-[#001529] border border-slate-800 rounded-3xl p-12 text-center space-y-3">
+                <Heart className="w-12 h-12 text-slate-700 mx-auto" />
+                <h4 className="font-black text-base text-white">Todavía no guardaste favoritos</h4>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Tocá el corazón en el perfil de un profesional o en los resultados de búsqueda para guardarlo acá.
+                </p>
+                <button
+                  onClick={() => router.push('/buscar-profesionales')}
+                  className="text-xs bg-[#fc8127] hover:bg-[#e06d19] text-white font-black px-4 py-2 rounded-xl inline-flex items-center gap-1.5"
+                >
+                  <Search className="w-3.5 h-3.5" /> Buscar profesionales
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {favoritos.map((fav: any) => {
+                  const pro = fav.profesional;
+                  if (!pro) return null;
+                  return (
+                    <div
+                      key={fav.id}
+                      className="bg-[#001529] border border-slate-800 hover:border-slate-700 rounded-2xl p-4 flex items-center gap-3 transition-colors"
+                    >
+                      <img
+                        src={pro.foto_perfil || `https://i.pravatar.cc/150?u=${pro.id}`}
+                        alt={pro.nombre}
+                        className="w-12 h-12 rounded-full object-cover shrink-0 cursor-pointer"
+                        onClick={() => router.push(`/profesional/${pro.id}`)}
+                      />
+                      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => router.push(`/profesional/${pro.id}`)}>
+                        <p className="font-black text-sm text-white truncate">{pro.nombre}</p>
+                        <p className="text-xs text-slate-400 truncate">{Array.isArray(pro.oficios) ? pro.oficios.join(', ') : (pro.oficios || 'Profesional')}</p>
+                        <p className="text-[11px] text-slate-500 truncate">{pro.ciudad ? `${pro.ciudad}, ` : ''}{pro.provincia}</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        {typeof pro.rating === 'number' && pro.rating > 0 && (
+                          <span className="flex items-center gap-1 text-[11px] font-bold text-amber-400">
+                            <Star className="w-3.5 h-3.5 fill-amber-400" /> {pro.rating.toFixed(1)}
+                          </span>
+                        )}
+                        <button
+                          onClick={() => handleQuitarFavorito(pro.id)}
+                          className="text-[11px] font-bold text-slate-500 hover:text-red-400 transition-colors"
+                        >
+                          Quitar
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -671,6 +904,29 @@ function PerfilClienteContent() {
                   </div>
                 </div>
 
+                {CATEGORIAS_SOBRE_PROFESIONAL.includes(ticketForm.categoria) && (
+                  <div>
+                    <label className="text-xs font-bold text-amber-400 block mb-1.5">¿Con qué profesional fue esto? *</label>
+                    {expedientes.length === 0 ? (
+                      <p className="text-[11px] text-slate-500 bg-slate-800/60 border border-slate-700 rounded-xl p-2.5">
+                        No tenés ningún trabajo registrado con un profesional todavía, así que no podemos vincular este reclamo a nadie en particular.
+                      </p>
+                    ) : (
+                      <select
+                        required
+                        value={ticketForm.profesionalId}
+                        onChange={e => setTicketForm(f => ({ ...f, profesionalId: e.target.value }))}
+                        className="w-full bg-slate-800 border border-amber-500/40 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                      >
+                        <option value="">Seleccioná el profesional...</option>
+                        {expedientes.map((exp: any) => (
+                          <option key={exp.id} value={exp.profesional_id}>{exp.profesional?.nombre || 'Profesional'}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
+
                 <div>
                   <label className="text-xs font-bold text-slate-400 block mb-1.5">Mensaje detallado *</label>
                   <textarea
@@ -714,6 +970,27 @@ function PerfilClienteContent() {
                   </button>
                 </div>
 
+                <div>
+                  <label className="text-xs font-bold text-amber-400 block mb-1.5">¿Con qué profesional fue esto? *</label>
+                  {expedientes.length === 0 ? (
+                    <p className="text-[11px] text-slate-500 bg-slate-800/60 border border-slate-700 rounded-xl p-2.5">
+                      No tenés ningún trabajo registrado con un profesional todavía.
+                    </p>
+                  ) : (
+                    <select
+                      required
+                      value={disputaForm.profesionalId}
+                      onChange={e => setDisputaForm(f => ({ ...f, profesionalId: e.target.value }))}
+                      className="w-full bg-slate-800 border border-amber-500/40 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="">Seleccioná el profesional...</option>
+                      {expedientes.map((exp: any) => (
+                        <option key={exp.id} value={exp.profesional_id}>{exp.profesional?.nombre || 'Profesional'}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-bold text-slate-400 block mb-1.5">Tipo de solución deseada *</label>
@@ -726,7 +1003,7 @@ function PerfilClienteContent() {
                       <option value="Solicitar corrección">Solicitar corrección del trabajo</option>
                       <option value="Solicitar devolución parcial">Solicitar devolución parcial</option>
                       <option value="Cancelar garantía">Cancelar garantía</option>
-                      <option value="Intervención SuperOficios">Pedir intervención urgente de SuperOficios Admin</option>
+                      <option value="Intervención OficiosYa">Pedir intervención urgente de OficiosYa Admin</option>
                     </select>
                   </div>
                   <div>
@@ -806,7 +1083,7 @@ function PerfilClienteContent() {
                       {t.respuesta_admin ? (
                         <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3.5 space-y-1 mt-2">
                           <p className="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Respuesta de la Administración SuperOficios:
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Respuesta de la Administración OficiosYa:
                           </p>
                           <p className="text-xs text-slate-200 leading-relaxed">{t.respuesta_admin}</p>
                           {t.fecha_respuesta && (

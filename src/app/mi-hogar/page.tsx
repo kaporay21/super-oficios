@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Home, Plus, Trash2, ChevronRight, FileText, Wrench, Bell,
+  Home, Plus, Trash2, ChevronRight, FileText, Wrench, User,
   Building, Building2, MapPin, Calendar, ArrowLeft, Loader2,
   AlertCircle, Package, ShieldCheck, Clock, CheckCircle2,
   Edit3, X, Save, Search
@@ -11,7 +11,6 @@ import {
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
 import { dbHelper } from '@/lib/supabase';
-import Logo from '@/components/Logo';
 
 export default function MiHogarPage() {
   return (
@@ -332,7 +331,7 @@ function MiHogarContent() {
             <div>
               <p className="text-xs font-bold text-white">Tus datos están protegidos</p>
               <p className="text-[10px] text-slate-400 mt-0.5">
-                Todo el historial y documentación de tus propiedades se guarda de forma segura en SuperOficios. Solo vos tenés acceso a esta información.
+                Todo el historial y documentación de tus propiedades se guarda de forma segura en OficiosYa. Solo vos tenés acceso a esta información.
               </p>
             </div>
           </div>
@@ -353,8 +352,8 @@ function MiHogarContent() {
           <Search className="w-5 h-5" />
           <span className="text-[9px] font-bold">Buscar</span>
         </button>
-        <button onClick={() => router.push('/configuracion-cliente')} className="flex flex-col items-center gap-1 text-slate-500 hover:text-white transition-colors">
-          <Bell className="w-5 h-5" />
+        <button onClick={() => router.push('/perfil-cliente')} className="flex flex-col items-center gap-1 text-slate-500 hover:text-white transition-colors">
+          <User className="w-5 h-5" />
           <span className="text-[9px] font-bold">Perfil</span>
         </button>
       </nav>

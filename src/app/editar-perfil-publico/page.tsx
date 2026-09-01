@@ -53,6 +53,8 @@ export default function EditarPerfilPublicoPage() {
     base.fotoPerfil = base.fotoPerfil || base.foto_perfil || base.avatar || '';
     base.bannerUrl = base.bannerUrl || base.banner_url || '';
     base.portafolio = base.portafolio || [];
+    base.cobraPresupuesto = !!base.cobraPresupuesto;
+    base.aceptaPagosSemanales = !!base.aceptaPagosSemanales;
 
     setPerfil(base);
     setPlan(base.plan || 'Gratis');
@@ -102,8 +104,21 @@ export default function EditarPerfilPublicoPage() {
           ciudad: updatedProfile.ciudad,
           oficios: updatedProfile.oficios,
           telefono: updatedProfile.telefono,
-          portafolio: updatedProfile.portafolio
-        }).catch(err => console.error("Error guardando en Supabase:", err));
+          portafolio: updatedProfile.portafolio,
+          cobra_presupuesto: updatedProfile.cobraPresupuesto,
+          acepta_pagos_semanales: updatedProfile.aceptaPagosSemanales
+        });
+
+        // Perfil al 100% (foto + banner + bio de al menos 30 caract. +
+        // alguna foto de portafolio): mismo criterio que calcularFuerzaPerfil.
+        const fuerzaFinal =
+          (updatedProfile.fotoPerfil ? 25 : 0) +
+          (updatedProfile.bannerUrl ? 25 : 0) +
+          ((updatedProfile.bio || '').trim().length >= 30 ? 25 : 0) +
+          ((updatedProfile.portafolio || []).length > 0 ? 25 : 0);
+        if (fuerzaFinal === 100) {
+          dbHelper.otorgarPuntosUnaVez(user.id, 'completar_perfil', 50, 'Completaste tu perfil al 100%');
+        }
       }
 
       setIsSaving(false);
@@ -459,6 +474,34 @@ export default function EditarPerfilPublicoPage() {
                     placeholder="Contale a tus clientes sobre tu experiencia, garantías de trabajo y disponibilidad..."
                     className="w-full p-4 rounded-2xl border border-gray-200 text-sm font-medium focus:ring-2 focus:ring-[#fc8127] outline-none transition-all leading-relaxed"
                   />
+                </div>
+
+                {/* Preferencias de trabajo — se muestran como badge en la tarjeta de búsqueda */}
+                <div className="space-y-1 pt-2 border-t border-gray-100">
+                  <label className="font-bold text-xs text-gray-700 block uppercase tracking-wide pt-4">Preferencias de trabajo</label>
+                  <p className="text-[11px] text-gray-400 pb-2">Estas dos opciones aparecen como sello en tu tarjeta cuando un cliente te busca.</p>
+
+                  <div className="flex items-center justify-between px-4 py-3.5 border border-gray-100 rounded-2xl">
+                    <div className="flex flex-col pr-4">
+                      <span className="text-sm font-bold text-[#00355f]">Cobro presupuesto / visita</span>
+                      <span className="text-xs text-gray-500">Activá esto si cobrás por ir a evaluar el trabajo, aunque no te lo contraten.</span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input type="checkbox" className="sr-only peer" checked={!!perfil.cobraPresupuesto} onChange={() => setPerfil({ ...perfil, cobraPresupuesto: !perfil.cobraPresupuesto })} />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#fc8127]"></div>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center justify-between px-4 py-3.5 border border-gray-100 rounded-2xl">
+                    <div className="flex flex-col pr-4">
+                      <span className="text-sm font-bold text-[#00355f]">Acepto pagos en cuotas / semanales</span>
+                      <span className="text-xs text-gray-500">Es solo una preferencia declarada — la plataforma no gestiona el cobro.</span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input type="checkbox" className="sr-only peer" checked={!!perfil.aceptaPagosSemanales} onChange={() => setPerfil({ ...perfil, aceptaPagosSemanales: !perfil.aceptaPagosSemanales })} />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#fc8127]"></div>
+                    </label>
+                  </div>
                 </div>
 
                 <div className="flex justify-between pt-4">

@@ -71,7 +71,7 @@ async function reverseGeocode(lat: number, lon: number): Promise<{ ciudad: strin
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=es`,
-      { headers: { 'User-Agent': 'SuperOficios/1.0 (contact@superoficios.com)' } }
+      { headers: { 'User-Agent': 'OficiosYa/1.0 (contact@oficiosya.com)' } }
     );
     if (!res.ok) return null;
     const data = await res.json();

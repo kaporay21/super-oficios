@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { Search, MapPin, Star, MessageSquare, Plus, Bell, Menu, Home, ClipboardList, User, Sparkles, Wrench, Zap, Paintbrush, Building, ChevronRight, ShieldAlert, HelpCircle, ChevronDown, ChevronUp, Send, Loader2 } from 'lucide-react';
+import { Search, MapPin, Star, MessageSquare, Plus, Bell, Menu, Home, ClipboardList, User, Sparkles, Wrench, Zap, Paintbrush, Building, ChevronRight, ShieldAlert, HelpCircle, ChevronDown, ChevronUp, Send, Loader2, Receipt, Wallet, Heart, AlertCircle, MessageCircle } from 'lucide-react';
 import { Screen, Professional, Job } from '@/types';
 import { useRouter } from 'next/navigation';
 import Tooltip from '@/components/Tooltip';
@@ -11,6 +11,7 @@ import { OFICIOS_CORE } from '@/lib/constants';
 import confetti from 'canvas-confetti';
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
+import { useNotification } from '@/providers/NotificationProvider';
 
 export default function HomePage() {
   return (
@@ -24,10 +25,10 @@ function HomePageContent() {
   const router = useRouter();
   const { profile: authProfile } = useAuth();
 
+  const { unreadNotificationsCount: unreadNotifsCount } = useNotification();
   const [clientProfile, setClientProfile] = useState<any>(null);
   const [myJobs, setMyJobs] = useState<any[]>([]);
   const [professionals, setProfessionals] = useState<any[]>([]);
-  const [unreadNotifsCount, setUnreadNotifsCount] = useState<number>(0);
 
   React.useEffect(() => {
     // Check if we should show confetti
@@ -53,18 +54,26 @@ function HomePageContent() {
       
       try {
         const allJobs = await dbHelper.getJobs().catch(() => []);
-        
-        // Filter jobs first
-        let clientJobs = clientName || userId
-          ? allJobs.filter((j: any) => j.empleador === clientName || j.user_id === userId)
+
+        // Filtramos por cliente_id real (antes usaba una columna
+        // `user_id` que no existe en `trabajos`, y de respaldo comparaba
+        // por nombre de perfil como texto -- si el cliente cambiaba su
+        // nombre, sus propios trabajos "desaparecían" de este listado).
+        let clientJobs = userId
+          ? allJobs.filter((j: any) => j.cliente_id === userId)
           : allJobs;
 
-        // Fetch presupuestos for these jobs
+        // Ofertas reales del Muro (antes leía presupuestos_estructurados,
+        // una tabla de otro flujo -- el badge de "tenés ofertas" nunca se
+        // activaba aunque hubiera ofertas esperando en comparar-presupuestos).
         const jobsWithPresupuestos = await Promise.all(clientJobs.map(async (j: any) => {
           let count = 0;
           try {
-            const presupuestos = await dbHelper.getPresupuestosPorTrabajo(j.id);
-            count = presupuestos.length;
+            const ofertas = await dbHelper.getPresupuestosMuroByTrabajo(j.id);
+            // Solo las pendientes de revisar -- antes contaba también las ya
+            // aceptadas/rechazadas, así que el badge seguía mostrando
+            // "N Presupuestos" después de haber resuelto todas.
+            count = ofertas.filter((o: any) => o.estado === 'pendiente').length;
           } catch (e) {
             console.error('Error fetching presupuestos for job', j.id);
           }
@@ -78,19 +87,14 @@ function HomePageContent() {
         console.error("Error al cargar trabajos:", error);
       }
 
-      if (userId) {
-        try {
-          const notifs = await dbHelper.getNotificaciones(userId);
-          const unread = notifs.filter((n: any) => !n.leida).length;
-          setUnreadNotifsCount(unread);
-        } catch (e) {
-          setUnreadNotifsCount(0);
-        }
-      }
 
       try {
         const users = await dbHelper.getAllUsers();
-        const pros = users.filter((u: any) => u.role === 'Profesional');
+        // getAllUsers trae todos los perfiles sin filtrar (la usa el admin
+        // para gestionar cuentas de cualquier estado) -- acá, de cara al
+        // cliente, hay que sacar los suspendidos/eliminados a mano, cosa
+        // que el buscador ya hace pero esta pantalla no.
+        const pros = users.filter((u: any) => u.role === 'Profesional' && u.status === 'Activo');
         setProfessionals(pros);
       } catch (error) {
         console.error("Error al cargar profesionales:", error);
@@ -136,7 +140,7 @@ function HomePageContent() {
               className="hidden md:flex items-center gap-2 cursor-pointer"
               onClick={() => router.push('/perfil-cliente')}
             >
-              <img src={clientProfile?.fotoPerfil || "https://lh3.googleusercontent.com/aida-public/AB6AXuBgGxtS7RKDHLyY5y6lNafj3BeDhG6IkxEq9VqlAXNANvWQ0SDvyNg94IhrR7NRCH5ipJoHo-ctwaJAmv5swv96O-FKX13VwDYhVA7svtWDswJpd_GgvEvGZ2kobHqyW59sVXYLQijNtWB1mibdA-N4IwLEP7cqf3Pb_3NUsJU3Yh-tx-hpOfZwKqGR20Dm2ulgvMhMPYTc9gxHnptp4OxVKkIgJoTBpASBRrRy5nVKP5AIfU3iuTa-K100p7Pvb_fXmD1yrqla1Jas"} alt="Perfil" className="w-8 h-8 rounded-full border border-gray-200 object-cover" />
+              <img src={clientProfile?.foto_perfil || clientProfile?.fotoPerfil || 'https://i.pravatar.cc/150?u=' + (clientProfile?.id || 'cliente')} alt="Perfil" className="w-8 h-8 rounded-full border border-gray-200 object-cover" />
               <span className="text-sm font-semibold text-gray-700">{clientProfile?.nombre?.split(' ')[0] || 'Usuario'}</span>
             </div>
           </div>
@@ -189,6 +193,65 @@ const HomeClient: React.FC<HomeClientProps> = ({
   const router = useRouter();
   const [selectedCategory, setSelectedScreen] = useState<string>('todos');
   const [selectedProvince, setSelectedProvince] = useState<string>('');
+
+  // Favoritos: guardados sin re-buscar (ver también Bug 5 -- estos mismos
+  // botones de "Contactar" no tenían ninguna acción propia).
+  const [favoritosIds, setFavoritosIds] = useState<Set<string>>(new Set());
+  const [contactandoId, setContactandoId] = useState<string | null>(null);
+
+  // "Cosas pendientes": resumen de lo que necesita tu atención, arriba de todo.
+  const { unreadMessagesCount } = useNotification();
+  const [pendientes, setPendientes] = useState<{ ofertasNuevas: number; preguntasSinResponder: number; trabajosSinResena: number } | null>(null);
+
+  React.useEffect(() => {
+    if (!clientProfile?.id) return;
+    dbHelper.getResumenPendientesCliente(clientProfile.id).then(setPendientes).catch(() => {});
+  }, [clientProfile?.id]);
+
+  const scrollToPedidos = () => {
+    document.getElementById('pedidos-activos')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  React.useEffect(() => {
+    if (!clientProfile?.id) return;
+    dbHelper.getFavoritosIds(clientProfile.id).then(ids => setFavoritosIds(new Set(ids))).catch(() => {});
+  }, [clientProfile?.id]);
+
+  const handleToggleFavorito = async (e: React.MouseEvent, proId: string) => {
+    e.stopPropagation();
+    if (!clientProfile?.id) return;
+    const yaEsFavorito = favoritosIds.has(proId);
+    setFavoritosIds(prev => {
+      const next = new Set(prev);
+      if (yaEsFavorito) next.delete(proId); else next.add(proId);
+      return next;
+    });
+    try {
+      await dbHelper.toggleFavorito(clientProfile.id, proId, !yaEsFavorito);
+    } catch (err) {
+      console.error('Error al guardar favorito:', err);
+      // revertimos si falló
+      setFavoritosIds(prev => {
+        const next = new Set(prev);
+        if (yaEsFavorito) next.add(proId); else next.delete(proId);
+        return next;
+      });
+    }
+  };
+
+  const handleContactarProfesional = async (e: React.MouseEvent, proId: string) => {
+    e.stopPropagation();
+    if (!clientProfile?.id || clientProfile.id === proId) return;
+    setContactandoId(proId);
+    try {
+      const conv = await dbHelper.getOrCreateConversation(clientProfile.id, proId);
+      if (conv?.id) router.push(`/chat/${conv.id}`);
+    } catch (err: any) {
+      alert(err?.message || 'No pudimos abrir el chat. Intentá de nuevo en un momento.');
+    } finally {
+      setContactandoId(null);
+    }
+  };
 
   // Estado para el panel de preguntas por trabajo
   const [expandedJobId, setExpandedJobId] = useState<string | number | null>(null);
@@ -247,7 +310,7 @@ const HomeClient: React.FC<HomeClientProps> = ({
     setExpandedJobId(jobId);
     const [pregs, presupuestos] = await Promise.all([
       dbHelper.getPreguntasTrabajo(jobId),
-      dbHelper.getPresupuestosPorTrabajo(String(jobId))
+      dbHelper.getPresupuestosMuroByTrabajo(jobId)
     ]);
     setPreguntasMap(prev => ({ ...prev, [String(jobId)]: pregs }));
     setPresupuestosMap(prev => ({ ...prev, [String(jobId)]: presupuestos }));
@@ -257,7 +320,12 @@ const HomeClient: React.FC<HomeClientProps> = ({
     const texto = (respuestasMap[preguntaId] || '').trim();
     if (!texto) return;
     setRespondingMap(prev => ({ ...prev, [preguntaId]: true }));
-    await dbHelper.responderPreguntaTrabajo(preguntaId, texto);
+    const ok = await dbHelper.responderPreguntaTrabajo(preguntaId, texto);
+    if (!ok) {
+      alert('No pudimos guardar tu respuesta. Probá de nuevo en un momento.');
+      setRespondingMap(prev => ({ ...prev, [preguntaId]: false }));
+      return;
+    }
     const updatedPregs = await dbHelper.getPreguntasTrabajo(jobId);
     setPreguntasMap(prev => ({ ...prev, [String(jobId)]: updatedPregs }));
     setRespuestasMap(prev => ({ ...prev, [preguntaId]: '' }));
@@ -530,8 +598,40 @@ const HomeClient: React.FC<HomeClientProps> = ({
         </div>
       </section>
 
+      {/* Cosas pendientes: solo se muestra si hay algo que requiera atención */}
+      {pendientes && (pendientes.ofertasNuevas > 0 || pendientes.preguntasSinResponder > 0 || pendientes.trabajosSinResena > 0 || unreadMessagesCount > 0) && (
+        <section className="bg-white border border-orange-100 rounded-2xl p-5 space-y-3 shadow-sm">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-[#fc8127]" />
+            <h3 className="font-bold text-[#00355f]">Cosas pendientes</h3>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {pendientes.ofertasNuevas > 0 && (
+              <button onClick={scrollToPedidos} className="flex items-center gap-1.5 bg-orange-50 hover:bg-orange-100 text-[#c85a0f] text-xs font-bold px-3 py-2 rounded-xl transition-colors">
+                <Receipt className="w-3.5 h-3.5" /> {pendientes.ofertasNuevas} {pendientes.ofertasNuevas === 1 ? 'oferta nueva' : 'ofertas nuevas'}
+              </button>
+            )}
+            {pendientes.preguntasSinResponder > 0 && (
+              <button onClick={scrollToPedidos} className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold px-3 py-2 rounded-xl transition-colors">
+                <MessageCircle className="w-3.5 h-3.5" /> {pendientes.preguntasSinResponder} {pendientes.preguntasSinResponder === 1 ? 'pregunta sin responder' : 'preguntas sin responder'}
+              </button>
+            )}
+            {pendientes.trabajosSinResena > 0 && (
+              <button onClick={() => router.push('/perfil-cliente?tab=expedientes')} className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-bold px-3 py-2 rounded-xl transition-colors">
+                <Star className="w-3.5 h-3.5" /> {pendientes.trabajosSinResena} {pendientes.trabajosSinResena === 1 ? 'trabajo sin calificar' : 'trabajos sin calificar'}
+              </button>
+            )}
+            {unreadMessagesCount > 0 && (
+              <button onClick={() => router.push('/chat')} className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-2 rounded-xl transition-colors">
+                <MessageSquare className="w-3.5 h-3.5" /> {unreadMessagesCount} {unreadMessagesCount === 1 ? 'mensaje sin leer' : 'mensajes sin leer'}
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* Tus Pedidos Activos */}
-      <section className="space-y-4">
+      <section id="pedidos-activos" className="space-y-4">
         <div className="flex justify-between items-end border-b border-gray-200 pb-2">
           <h3 className="text-xl font-bold text-[#00355f]">Tus Pedidos Activos</h3>
           <button onClick={() => onNavigate('profile_client')} className="font-bold text-sm hover:underline text-[#00355f]">
@@ -641,10 +741,10 @@ const HomeClient: React.FC<HomeClientProps> = ({
                             <div key={pres.id} className="bg-white border-2 border-[#fc8127]/20 rounded-2xl p-4 shadow-sm flex items-center justify-between hover:border-[#fc8127] transition-colors cursor-pointer" onClick={() => handleVerEnChatPresupuesto(pres)}>
 
                               <div className="flex items-center gap-3">
-                                <img src={pres.profesional?.foto_perfil || 'https://i.pravatar.cc/150'} className="w-10 h-10 rounded-full border border-gray-200 object-cover" alt="Pro" />
+                                <img src={pres.profesional?.fotoPerfil || 'https://i.pravatar.cc/150'} className="w-10 h-10 rounded-full border border-gray-200 object-cover" alt="Pro" />
                                 <div>
                                   <p className="text-xs font-black text-[#00355f]">{pres.profesional?.nombre || 'Profesional'}</p>
-                                  <p className="text-[10px] text-gray-500 line-clamp-1">{pres.detalle}</p>
+                                  <p className="text-[10px] text-gray-500 line-clamp-1">{pres.descripcion}</p>
                                 </div>
                               </div>
                               <div className="text-right">
@@ -777,6 +877,13 @@ const HomeClient: React.FC<HomeClientProps> = ({
                           <Sparkles className="w-3.5 h-3.5 fill-white text-white" /> Destacado
                         </div>
                       )}
+                      <button
+                        onClick={(e) => handleToggleFavorito(e, pro.id)}
+                        title={favoritosIds.has(pro.id) ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+                        className="absolute bottom-3 right-3 w-8 h-8 bg-white/95 rounded-full shadow-sm flex items-center justify-center hover:scale-110 active:scale-95 transition-all"
+                      >
+                        <Heart className={`w-4 h-4 ${favoritosIds.has(pro.id) ? 'fill-[#fc8127] text-[#fc8127]' : 'text-gray-400'}`} />
+                      </button>
                       {/* Rating real. Sin reseñas mostramos "Nuevo": un 0.0 en la
                           tarjeta hunde al profesional recién registrado igual que
                           un 5.0 inventado engaña al cliente. */}
@@ -801,17 +908,39 @@ const HomeClient: React.FC<HomeClientProps> = ({
                         <p className="text-[11px] font-extrabold text-[#fc8127] tracking-wider uppercase mt-1">
                           {pro.trade}
                         </p>
+                        {(pro.cobraPresupuesto || pro.aceptaPagosSemanales) && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {pro.cobraPresupuesto && (
+                              <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full" title="Cobra la visita de presupuesto, sea cual sea el trabajo">
+                                <Receipt className="w-3 h-3 text-gray-500" /> Cobra presupuesto
+                              </span>
+                            )}
+                            {pro.aceptaPagosSemanales && (
+                              <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full" title="Preferencia declarada por el profesional — OficiosYa no gestiona el pago">
+                                <Wallet className="w-3 h-3 text-gray-500" /> Pagos en cuotas
+                              </span>
+                            )}
+                          </div>
+                        )}
                         <div className="flex items-center gap-1.5 text-gray-500 text-xs mt-3 mb-5">
                           <MapPin className="w-4 h-4 text-[#00355f]" />
                           <span>{pro.location}</span>
                         </div>
                       </div>
-                      
+
                       <div className="flex gap-2">
-                        <button className="flex-1 py-2.5 bg-[#00355f] text-white rounded-xl font-bold text-sm shadow-sm hover:bg-[#0f4c81] transition-colors active:scale-95">
-                          Contactar
+                        <button
+                          onClick={(e) => handleContactarProfesional(e, pro.id)}
+                          disabled={contactandoId === pro.id}
+                          className="flex-1 py-2.5 bg-[#00355f] text-white rounded-xl font-bold text-sm shadow-sm hover:bg-[#0f4c81] disabled:opacity-60 transition-colors active:scale-95"
+                        >
+                          {contactandoId === pro.id ? 'Abriendo...' : 'Contactar'}
                         </button>
-                        <button className="px-4 py-2.5 border border-gray-200 rounded-xl text-[#00355f] hover:bg-gray-50 transition-colors active:scale-95 flex items-center justify-center">
+                        <button
+                          onClick={(e) => handleContactarProfesional(e, pro.id)}
+                          disabled={contactandoId === pro.id}
+                          className="px-4 py-2.5 border border-gray-200 rounded-xl text-[#00355f] hover:bg-gray-50 disabled:opacity-60 transition-colors active:scale-95 flex items-center justify-center"
+                        >
                           <MessageSquare className="w-5 h-5" />
                         </button>
                       </div>

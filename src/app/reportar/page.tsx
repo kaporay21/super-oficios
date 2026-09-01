@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft, AlertTriangle, Send, CheckCircle2, Loader2,
   ShieldAlert, User, MapPin, XCircle, Clock, Flag
@@ -29,23 +29,25 @@ const TIPOS_REPORTE = [
 
 function ReportarContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, profile } = useAuth();
+  const reportadoId = searchParams.get('reportadoId') || '';
+  const reportadoNombre = searchParams.get('reportadoNombre') || '';
   const [tipo, setTipo] = useState('');
   const [descripcion, setDescripcion] = useState('');
-  const [reportadoId, setReportadoId] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [enviado, setEnviado] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleEnviar = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.id || !tipo || !descripcion.trim()) return;
+    if (!user?.id || !tipo || !descripcion.trim() || !reportadoId) return;
     setEnviando(true);
     setError(null);
     try {
       await dbHelper.createReporte({
         reportador_id: user.id,
-        reportado_id: reportadoId || user.id, // Si no se especifica, se registra el reporte igualmente
+        reportado_id: reportadoId,
         tipo,
         descripcion,
       });
@@ -66,7 +68,7 @@ function ReportarContent() {
           </div>
           <h2 className="text-xl font-black text-white mb-2">Reporte enviado</h2>
           <p className="text-sm text-slate-400 mb-6">
-            Tu reporte fue recibido. El equipo de SuperOficios lo revisará y tomará las medidas necesarias.
+            Tu reporte fue recibido. El equipo de OficiosYa lo revisará y tomará las medidas necesarias.
           </p>
           <p className="text-xs text-slate-500 mb-6">
             Los reportes se procesan en un plazo de 24-48 horas hábiles.
@@ -100,16 +102,27 @@ function ReportarContent() {
       </header>
 
       <div className="max-w-lg mx-auto px-4 py-6">
-        {/* Aviso */}
-        <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 mb-6 flex items-start gap-3">
-          <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-xs font-bold text-amber-400 mb-1">Sistema de reportes bidireccional</p>
-            <p className="text-[10px] text-slate-400">
-              Tanto clientes como profesionales pueden reportar problemas. Todos los reportes son revisados por el equipo de SuperOficios y se mantienen confidenciales.
-            </p>
+        {!reportadoId ? (
+          <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4 mb-6 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-bold text-red-400 mb-1">Falta indicar a quién estás reportando</p>
+              <p className="text-[10px] text-slate-400">
+                Este formulario tiene que abrirse desde el chat o el perfil de la persona que querés reportar, para que el reporte quede vinculado a esa cuenta. Volvé a esa conversación y usá el botón "Reportar" de ahí.
+              </p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 mb-6 flex items-start gap-3">
+            <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-bold text-amber-400 mb-1">Vas a reportar a: {reportadoNombre || 'este usuario'}</p>
+              <p className="text-[10px] text-slate-400">
+                Todos los reportes son revisados por el equipo de OficiosYa y se mantienen confidenciales.
+              </p>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 flex items-center gap-2 text-red-400 text-xs mb-4">
@@ -183,7 +196,7 @@ function ReportarContent() {
 
           <button
             type="submit"
-            disabled={enviando || !tipo || !descripcion.trim()}
+            disabled={enviando || !tipo || !descripcion.trim() || !reportadoId}
             className="w-full py-4 rounded-xl bg-[#fc8127] hover:bg-[#e06d19] text-white font-black text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
           >
             {enviando ? (

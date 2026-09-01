@@ -11,16 +11,18 @@ import Tooltip from '@/components/Tooltip';
 import { PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, ConfiguracionIcon, HerramientasIcon } from '@/components/ModernIcons';
 import { dbHelper } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthContext';
+import { useNotification } from '@/providers/NotificationProvider';
 import AuthGuard from '@/components/AuthGuard';
 
 // Tipo de dato para las notificaciones
 interface Notificacion {
   id: string;
-  tipo: 'trabajo' | 'mensaje' | 'sistema' | 'alerta';
+  tipo: 'trabajo' | 'mensaje' | 'sistema' | 'alerta' | 'presupuesto';
   titulo: string;
   descripcion: string;
   tiempo: string;
   leida: boolean;
+  referencia_id?: string;
 }
 
 export default function NotificacionesPage() {
@@ -34,21 +36,17 @@ export default function NotificacionesPage() {
 function NotificacionesContent() {
   const router = useRouter();
   const { user, profile } = useAuth();
+  const { refreshUnreadNotifications } = useNotification();
   const [filtroActivo, setFiltroActivo] = useState<'todas' | 'trabajos' | 'mensajes'>('todas');
   const [userPlan, setUserPlan] = useState<'Gratis' | 'Pro' | 'Master'>('Gratis');
 
   // Estado de las notificaciones desde BD
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (profile?.rol === 'profesional') {
-      const storedPerfil = localStorage.getItem('oficiosya_profesional_perfil');
-      if (storedPerfil) {
-        try {
-          const parsed = JSON.parse(storedPerfil);
-          if (parsed.plan) setUserPlan(parsed.plan);
-        } catch (e) {}
-      }
+    if (profile?.rol === 'profesional' && profile?.plan) {
+      setUserPlan(profile.plan);
     }
   }, [profile]);
 
@@ -72,41 +70,38 @@ function NotificacionesContent() {
         referencia_id: n.referencia_id
       }));
       setNotificaciones(formatted);
+      setError(null);
     } catch (e) {
       console.error("Error cargando notificaciones:", e);
+      setError('No pudimos cargar tus notificaciones. Probá recargar la página.');
     }
   };
 
   const marcarComoLeida = async (id: string) => {
-    setNotificaciones(prev => prev.map(notif => 
+    setNotificaciones(prev => prev.map(notif =>
       notif.id === id ? { ...notif, leida: true } : notif
     ));
     await dbHelper.marcarNotificacionLeida(id);
+    refreshUnreadNotifications();
   };
 
   const handleNotificacionClick = (notif: Notificacion) => {
     marcarComoLeida(notif.id);
-    const refId = (notif as any).referencia_id;
+    const refId = notif.referencia_id;
+    const inicio = profile?.rol === 'profesional' ? '/muro-trabajos' : '/cliente';
 
-    if (notif.tipo === 'mensaje') {
-      if (refId) {
-        router.push(`/chat/${refId}`);
-      } else {
-        router.push('/chat');
-      }
-    } else if (notif.tipo === 'trabajo') {
-      if (profile?.rol === 'profesional') {
-        router.push('/muro-trabajos');
-      } else {
-        router.push('/cliente');
-      }
-    } else {
-      // Default fallback
-      if (profile?.rol === 'profesional') {
-        router.push('/muro-trabajos');
-      } else {
-        router.push('/cliente');
-      }
+    // Antes 'presupuesto', 'alerta' y 'sistema' caían siempre al listado
+    // genérico ignorando referencia_id, aunque venía poblado con el trabajo,
+    // la disputa o la conversación puntual de la que se trataba.
+    switch (notif.tipo) {
+      case 'mensaje':
+        router.push(refId ? `/chat/${refId}` : '/chat');
+        break;
+      case 'presupuesto':
+        router.push(refId ? `/comparar-presupuestos?trabajoId=${refId}` : inicio);
+        break;
+      default:
+        router.push(inicio);
     }
   };
 
@@ -151,7 +146,7 @@ function NotificacionesContent() {
               className="w-8 h-8 rounded-full bg-[#d2e4ff] flex items-center justify-center text-[#00355f] font-bold cursor-pointer border border-gray-200"
               onClick={() => router.push('/configuracion-profesional')}
             >
-              JP
+              {(profile?.nombre || 'U').trim().split(' ').slice(0, 2).map((w: string) => w[0]?.toUpperCase() || '').join('')}
             </div>
           </Tooltip>
         </div>
@@ -256,6 +251,12 @@ function NotificacionesContent() {
         <div className="mb-6">
           <h1 className="text-2xl md:text-3xl font-extrabold text-[#00355f]">Notificaciones</h1>
         </div>
+
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-3 text-xs font-bold text-red-700">
+            {error}
+          </div>
+        )}
 
         {/* Categories / Tabs */}
         <div className="flex gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">

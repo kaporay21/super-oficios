@@ -9,6 +9,9 @@ import {
 } from 'lucide-react';
 import Logo from '@/components/Logo';
 import Tooltip from '@/components/Tooltip';
+import AuthGuard from '@/components/AuthGuard';
+import { useAuth } from '@/components/AuthContext';
+import { useNotification } from '@/providers/NotificationProvider';
 import { dbHelper } from '@/lib/supabase';
 import {
   PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon,
@@ -64,7 +67,17 @@ function getInitials(nombre: string): string {
 
 // =================== COMPONENT ===================
 export default function MisTrabajosPage() {
+  return (
+    <AuthGuard requiredRole="profesional">
+      <MisTrabajosContent />
+    </AuthGuard>
+  );
+}
+
+function MisTrabajosContent() {
   const router = useRouter();
+  const { user } = useAuth();
+  const { unreadNotificationsCount } = useNotification();
 
   const [activeTab, setActiveTab] = useState<'clientes' | 'obras'>('clientes');
 
@@ -99,9 +112,10 @@ export default function MisTrabajosPage() {
     setFormPagoFecha(`${dd}/${mm}/${today.getFullYear()}`);
 
     async function loadData() {
+      if (!user?.id) return;
       try {
-        const savedClientes = typeof dbHelper.getClientes === 'function' ? await dbHelper.getClientes() : JSON.parse(localStorage.getItem('oficiosya_clientes_v2') || '[]');
-        const savedObras = typeof dbHelper.getObras === 'function' ? await dbHelper.getObras() : JSON.parse(localStorage.getItem('oficiosya_obras_v2') || '[]');
+        const savedClientes = await dbHelper.getClientes(user.id);
+        const savedObras = await dbHelper.getObras(user.id);
 
         setClientes(savedClientes || []);
         setObras(savedObras || []);
@@ -111,17 +125,17 @@ export default function MisTrabajosPage() {
     }
 
     loadData();
-  }, []);
+  }, [user?.id]);
 
   // =================== SAVE HELPERS ===================
   const persistClientes = (list: Cliente[]) => {
     setClientes(list);
-    list.forEach(c => dbHelper.saveCliente(c));
+    if (user?.id) list.forEach(c => dbHelper.saveCliente(c, user.id));
   };
 
   const persistObras = (list: Obra[]) => {
     setObras(list);
-    list.forEach(o => dbHelper.saveObra(o));
+    if (user?.id) list.forEach(o => dbHelper.saveObra(o, user.id));
     if (selectedObra) {
       const updated = list.find(o => o.id === selectedObra.id);
       if (updated) setSelectedObra(updated);
@@ -494,7 +508,9 @@ export default function MisTrabajosPage() {
         </div>
         <button onClick={() => router.push('/notificaciones')} className="relative p-2 rounded-full hover:bg-gray-100 text-gray-500 transition-colors">
           <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+          {unreadNotificationsCount > 0 && (
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+          )}
         </button>
       </header>
 

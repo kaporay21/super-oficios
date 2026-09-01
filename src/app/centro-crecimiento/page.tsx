@@ -35,6 +35,7 @@ function CentroCrecimientoContent() {
   const [indiceConfianza, setIndiceConfianza] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [totalTrabajos, setTotalTrabajos] = useState(0);
+  const [puntosTotal, setPuntosTotal] = useState(0);
 
   useEffect(() => {
     if (user?.id) loadData();
@@ -44,15 +45,17 @@ function CentroCrecimientoContent() {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const [logrosData, confianza, ordenes] = await Promise.all([
+      const [logrosData, confianza, ordenes, puntos] = await Promise.all([
         dbHelper.getLogros(user.id),
         dbHelper.calcularIndiceConfianza(user.id),
         dbHelper.getOrdenesTrabajoProfesional(user.id),
+        dbHelper.getOrCreatePuntosProfesional(user.id).catch(() => null),
       ]);
       setLogros(logrosData);
       setIndiceConfianza(confianza);
       const finalizados = ordenes.filter((o: any) => ['finalizado', 'con_garantia'].includes(o.estado)).length;
       setTotalTrabajos(finalizados);
+      setPuntosTotal(puntos?.puntos_totales || 0);
     } catch (err) {
       console.warn('Error cargando Centro de Crecimiento:', err);
     } finally {
@@ -60,7 +63,10 @@ function CentroCrecimientoContent() {
     }
   };
 
-  const nivelInfo = dbHelper.getNivelPlataforma(totalTrabajos);
+  // Mismo criterio de nivel que panel-profesional (por puntos) -- antes
+  // esta pantalla lo calculaba por trabajos completados y mostraba un
+  // nivel distinto al del panel para el mismo profesional.
+  const nivelInfo = dbHelper.getNivelPlataforma(puntosTotal);
 
   // Evalúa si una misión está completada según datos reales
   const estaCompletada = (mision: any): boolean => {
@@ -78,7 +84,7 @@ function CentroCrecimientoContent() {
   const porcentajeMisiones = Math.round((misionesCompletadas / MISIONES_ESTATICAS.length) * 100);
 
   const progreso = nivelInfo.siguiente > 0
-    ? Math.round((totalTrabajos / nivelInfo.siguiente) * 100)
+    ? Math.round((puntosTotal / nivelInfo.siguiente) * 100)
     : 100;
 
   if (loading) return (
@@ -116,10 +122,10 @@ function CentroCrecimientoContent() {
               </h2>
             </div>
             <div className="text-right">
-              <p className="text-xs text-slate-400">{totalTrabajos} trabajos completados</p>
+              <p className="text-xs text-slate-400">{puntosTotal} puntos</p>
               {nivelInfo.siguiente > 0 && (
                 <p className="text-xs font-bold text-amber-400 mt-0.5">
-                  Faltan {nivelInfo.siguiente - totalTrabajos} para {nivelInfo.nivel === 'Bronce' ? '🥈 Plata' : nivelInfo.nivel === 'Plata' ? '🥇 Oro' : '💎 Platino'}
+                  Faltan {nivelInfo.siguiente - puntosTotal} pts para {nivelInfo.nivel === 'Bronce' ? '🥈 Plata' : nivelInfo.nivel === 'Plata' ? '🥇 Oro' : '💎 Platino'}
                 </p>
               )}
             </div>
@@ -128,7 +134,7 @@ function CentroCrecimientoContent() {
             <div>
               <div className="flex justify-between text-[10px] text-slate-400 mb-1">
                 <span>{nivelInfo.nivel}</span>
-                <span>{nivelInfo.siguiente} trabajos</span>
+                <span>{nivelInfo.siguiente} pts</span>
               </div>
               <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full transition-all"
@@ -205,6 +211,7 @@ function CentroCrecimientoContent() {
           <h3 className="text-sm font-black text-white mb-3">Mejorar mi posición</h3>
           <div className="space-y-2">
             {[
+              { label: 'Canjear mis puntos', route: '/tienda-puntos', icon: <Award className="w-4 h-4 text-amber-400" /> },
               { label: 'Ver mi Índice de Confianza', route: '/mi-marca', icon: <Star className="w-4 h-4 text-amber-400" /> },
               { label: 'Crear Orden de Trabajo', route: '/orden-trabajo', icon: <Zap className="w-4 h-4 text-[#fc8127]" /> },
               { label: 'Completar mi perfil', route: '/configuracion-profesional', icon: <Users className="w-4 h-4 text-blue-400" /> },

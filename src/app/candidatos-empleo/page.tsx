@@ -9,65 +9,60 @@ import {
 } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import Logo from '@/components/Logo';
+import { useAuth } from '@/components/AuthContext';
 import { dbHelper } from '@/lib/supabase';
 
 export default function CandidatosEmpleoPage() {
   const router = useRouter();
-  
+  const { profile: perfil } = useAuth();
+
   // Estado local
   const [postulaciones, setPostulaciones] = useState<any[]>([]);
   const [empleosPropios, setEmpleosPropios] = useState<any[]>([]);
-  const [perfil, setPerfil] = useState<any>(null);
   const [busqueda, setBusqueda] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('Todos');
+  const [error, setError] = useState<string | null>(null);
+  const [contactandoId, setContactandoId] = useState<number | null>(null);
 
   useEffect(() => {
-    // 1. Cargar perfil del profesional actual
-    const storedPerfil = localStorage.getItem('oficiosya_profesional_perfil');
-    let nombrePro = 'Roberto Gómez'; // Default para demo
-    if (storedPerfil) {
-      const p = JSON.parse(storedPerfil);
-      setPerfil(p);
-      nombrePro = p.nombre;
-    }
+    if (!perfil?.nombre) return;
 
-    // 2. Cargar las postulaciones con dbHelper
     const loadPostulaciones = async () => {
       try {
-        const data = await dbHelper.getPostulaciones(nombrePro);
-        
-        // Si no hay datos y estamos en mock, inicializar con mock data
-        if (data.length === 0 && (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('tu-proyecto'))) {
-            const mockData = [
-              {
-                id: 101, idPostulacion: 101, empleoId: 1, tituloEmpleo: 'Ayudante de Plomero con experiencia',
-                empleador: nombrePro, candidato: 'Martín Pérez', candidatoAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBJFksOrbm_vwGQaTq5Vuqr1acUBEH2jxptCR5CusLDf2Sb5qZ8fqxqznYXUigT9dEfKpCENJlHaLhC_WoPDhEQJYKRkRbxGiFrH2Jf4hrRkaq4pffxxwX2ietvZfajbBEyvOb665wnkChMjc88JXD3dUq70dprcIy22fOVZalBnuC390ApdZb18RNQjeSD56KQnd4KnVj3W9Vf6W_rfyL2JkZDhnRQLKr0smIh2slCZIjrr0crl5Ri-6h1zRMK70Hxc9PXqDijgpuj', candidatoRating: 4.8, mensaje: 'Hola, tengo 2 años de experiencia como ayudante en obras grandes. Me interesa mucho el puesto.', fecha: new Date().toISOString(), estado: 'En revisión'
-              },
-              {
-                id: 102, idPostulacion: 102, empleoId: 1, tituloEmpleo: 'Ayudante de Plomero con experiencia',
-                empleador: nombrePro, candidato: 'Lucas Gómez', candidatoAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuC1W2fOmSq-AynqbO3ZoWLKh_XWhnamU4gzNipXAwgMd19QXjrLW74lvJpK-ZQeavvPt4luRYD7mhyI0qQuA6QCs8afpj3cqqLqgCs6S4po0rIeUYesugVkfTIMWiABeNBgEH8TIKJHiZdH_Pv9DLWbTS8ggXJkSpU6taEOfoFmwVs-S04n62fGxmqyzsGqJSR4eb_sNOrD5MTYiXByZcjscbg4QHwR8TpMzDU7dtp1JrFSPFMp9pBSecyG65yj2h2KnVBnkMvHuipY', candidatoRating: 5.0, mensaje: 'Tengo disponibilidad full time y herramientas propias. Vivo cerca del centro.', fecha: new Date(Date.now() - 86400000).toISOString(), estado: 'Aceptado'
-              },
-              {
-                id: 103, idPostulacion: 103, empleoId: 2, tituloEmpleo: 'Instalador de Termotanques',
-                empleador: nombrePro, candidato: 'Diego Sánchez', candidatoAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBgGxtS7RKDHLyY5y6lNafj3BeDhG6IkxEq9VqlAXNANvWQ0SDvyNg94IhrR7NRCH5ipJoHo-ctwaJAmv5swv96O-FKX13VwDYhVA7svtWDswJpd_GgvEvGZ2kobHqyW59sVXYLQijNtWB1mibdA-N4IwLEP7cqf3Pb_3NUsJU3Yh-tx-hpOfZwKqGR20Dm2ulgvMhMPYTc9gxHnptp4OxVKkIgJoTBpASBRrRy5nVKP5AIfU3iuTa-K100p7Pvb_fXmD1yrqla1Jas', candidatoRating: 4.2, mensaje: 'Me gustaría participar. Trabajé en algo similar el año pasado.', fecha: new Date(Date.now() - 172800000).toISOString(), estado: 'Rechazado'
-              }
-            ];
-            localStorage.setItem('oficiosya_postulaciones', JSON.stringify(mockData));
-            setPostulaciones(mockData);
-        } else {
-            setPostulaciones(data);
-        }
-      } catch (error) {
-        console.error("Error al cargar postulaciones:", error);
+        const data = await dbHelper.getPostulaciones(perfil.nombre);
+        setPostulaciones(data);
+      } catch (err) {
+        console.error("Error al cargar postulaciones:", err);
+        setError('No pudimos cargar tus postulantes. Probá recargar la página.');
       }
     };
-    
+
     loadPostulaciones();
-  }, []);
+  }, [perfil?.nombre]);
+
+  /** Abre (o crea) la conversación real con el candidato -- antes mandaba siempre a la bandeja general. */
+  const handleChatearConCandidato = async (postulacion: any) => {
+    if (!postulacion.candidatoId) {
+      alert('Esta postulación es de antes de tener chat directo -- no podemos identificar al candidato. Buscalo en Mensajes.');
+      router.push('/chat');
+      return;
+    }
+    if (!perfil?.id || perfil.id === postulacion.candidatoId) return;
+    setContactandoId(postulacion.id || postulacion.idPostulacion);
+    try {
+      const conv = await dbHelper.getOrCreateConversation(perfil.id, postulacion.candidatoId);
+      if (conv?.id) router.push(`/chat/${conv.id}`);
+      else throw new Error('No se pudo abrir la conversación');
+    } catch (err: any) {
+      alert(err?.message || 'No pudimos abrir el chat. Intentá de nuevo en un momento.');
+    } finally {
+      setContactandoId(null);
+    }
+  };
 
   const handleCambiarEstado = async (idPostulacion: number, nuevoEstado: string) => {
     try {
-      await dbHelper.updatePostulacion(idPostulacion, nuevoEstado, perfil?.nombre || 'Roberto Gómez');
+      await dbHelper.updatePostulacion(idPostulacion, nuevoEstado, perfil?.nombre || '');
       
       const actualizadas = postulaciones.map(p => 
         p.id === idPostulacion || p.idPostulacion === idPostulacion || p.empleoId === idPostulacion
@@ -119,7 +114,13 @@ export default function CandidatosEmpleoPage() {
       </header>
 
       <main className="flex-grow max-w-5xl mx-auto w-full px-4 pt-20 pb-12">
-        
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-xl">
+            {error}
+          </div>
+        )}
+
         {/* Encabezado Fotográfico */}
         <div className="relative rounded-3xl overflow-hidden mb-8 shadow-md group h-48 md:h-64 flex items-end">
           <div 
@@ -251,9 +252,10 @@ export default function CandidatosEmpleoPage() {
 
                 {/* Actions */}
                 <div className="flex gap-2 pt-4 border-t border-gray-100 mt-auto">
-                  <button 
-                    onClick={() => router.push('/chat')}
-                    className="flex-1 py-2.5 bg-blue-50 text-[#00355f] rounded-xl font-bold text-xs hover:bg-blue-100 transition-colors flex justify-center items-center gap-1.5"
+                  <button
+                    onClick={() => handleChatearConCandidato(postulacion)}
+                    disabled={contactandoId === (postulacion.id || postulacion.idPostulacion)}
+                    className="flex-1 py-2.5 bg-blue-50 text-[#00355f] rounded-xl font-bold text-xs hover:bg-blue-100 disabled:opacity-60 transition-colors flex justify-center items-center gap-1.5"
                   >
                     <Mail className="w-4 h-4" /> Chatear
                   </button>

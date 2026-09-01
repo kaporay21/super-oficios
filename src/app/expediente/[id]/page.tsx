@@ -10,6 +10,7 @@ import {
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
 import { dbHelper, supabase } from '@/lib/supabase';
+import { uploadImageToSupabase } from '@/lib/supabaseStorage';
 import Logo from '@/components/Logo';
 
 export default function ExpedienteTrabajoPage() {
@@ -23,12 +24,32 @@ export default function ExpedienteTrabajoPage() {
 function ExpedienteContent() {
   const router = useRouter();
   const params = useParams();
-  const { id: expedienteId } = React.use(params as any) as { id: string };
+  const expedienteId = params?.id as string;
   const { user } = useAuth();
 
   const [expediente, setExpediente] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [subiendoFoto, setSubiendoFoto] = useState<'antes' | 'despues' | null>(null);
+
+  const handleSubirFoto = async (tipo: 'antes' | 'despues', file: File | undefined) => {
+    if (!file || !expediente?.id) return;
+    setSubiendoFoto(tipo);
+    try {
+      const { publicUrl, error: uploadError } = await uploadImageToSupabase('trabajos', `expedientes/${expediente.id}/${tipo}_${Date.now()}.jpg`, file);
+      if (uploadError || !publicUrl) throw uploadError || new Error('No se pudo subir la imagen.');
+      await dbHelper.agregarFotoExpediente(expediente.id, tipo, publicUrl);
+      setExpediente((prev: any) => ({
+        ...prev,
+        [tipo === 'antes' ? 'fotos_antes' : 'fotos_despues']: [...(prev[tipo === 'antes' ? 'fotos_antes' : 'fotos_despues'] || []), publicUrl],
+      }));
+    } catch (err) {
+      console.error('Error al subir foto de expediente:', err);
+      alert('No pudimos subir la foto. Probá de nuevo.');
+    } finally {
+      setSubiendoFoto(null);
+    }
+  };
 
   useEffect(() => {
     if (expedienteId) loadExpediente();
@@ -125,20 +146,20 @@ function ExpedienteContent() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
             <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex items-center gap-3">
               <img
-                src={expediente.profesional?.foto_perfil || 'https://i.pravatar.cc/150'}
+                src={expediente.profesional?.foto_perfil || expediente.profesional?.fotoperfil || 'https://i.pravatar.cc/150'}
                 alt={expediente.profesional?.nombre || 'Profesional'}
                 className="w-12 h-12 rounded-xl object-cover border border-slate-700"
               />
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase">Profesional Contratado</span>
                 <h4 className="font-black text-sm text-white">{expediente.profesional?.nombre || 'Profesional'}</h4>
-                <p className="text-[11px] text-[#fc8127] font-bold">{expediente.profesional?.oficio_principal || 'Especialista'}</p>
+                <p className="text-[11px] text-[#fc8127] font-bold">{expediente.profesional?.oficios?.[0] || 'Especialista'}</p>
               </div>
             </div>
 
             <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex items-center gap-3">
               <img
-                src={expediente.cliente?.foto_perfil || 'https://i.pravatar.cc/150'}
+                src={expediente.cliente?.foto_perfil || expediente.cliente?.fotoperfil || 'https://i.pravatar.cc/150'}
                 alt={expediente.cliente?.nombre || 'Cliente'}
                 className="w-12 h-12 rounded-xl object-cover border border-slate-700"
               />
@@ -178,7 +199,7 @@ function ExpedienteContent() {
                 Garantía Coberta: {expediente.garantia?.replace('_', ' ') || '30 días'}
               </p>
               <p className="text-[11px] text-slate-300 leading-relaxed">
-                Este trabajo se encuentra protegido bajo la garantía formal de SuperOficios.
+                Este trabajo se encuentra protegido bajo la garantía formal de OficiosYa.
               </p>
             </div>
           </section>
@@ -202,6 +223,13 @@ function ExpedienteContent() {
               ) : (
                 <p className="text-[11px] text-slate-500 py-6">Sin imágenes registradas al inicio</p>
               )}
+              {user?.id === expediente.profesional_id && (
+                <label className="block cursor-pointer text-[11px] font-bold text-[#fc8127] hover:underline pt-1">
+                  {subiendoFoto === 'antes' ? 'Subiendo...' : '+ Agregar foto'}
+                  <input type="file" accept="image/*" className="hidden" disabled={subiendoFoto !== null}
+                    onChange={e => handleSubirFoto('antes', e.target.files?.[0])} />
+                </label>
+              )}
             </div>
 
             <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 text-center space-y-2">
@@ -214,6 +242,13 @@ function ExpedienteContent() {
                 </div>
               ) : (
                 <p className="text-[11px] text-slate-500 py-6">Sin imágenes registradas al finalizar</p>
+              )}
+              {user?.id === expediente.profesional_id && (
+                <label className="block cursor-pointer text-[11px] font-bold text-emerald-400 hover:underline pt-1">
+                  {subiendoFoto === 'despues' ? 'Subiendo...' : '+ Agregar foto'}
+                  <input type="file" accept="image/*" className="hidden" disabled={subiendoFoto !== null}
+                    onChange={e => handleSubirFoto('despues', e.target.files?.[0])} />
+                </label>
               )}
             </div>
           </div>

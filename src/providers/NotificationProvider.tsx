@@ -16,6 +16,8 @@ interface NotificationToast {
 
 interface NotificationContextType {
   unreadMessagesCount: number;
+  unreadNotificationsCount: number;
+  refreshUnreadNotifications: () => void;
   toasts: NotificationToast[];
   removeToast: (id: string) => void;
   requestPermission: () => Promise<void>;
@@ -24,6 +26,8 @@ interface NotificationContextType {
 
 const NotificationContext = createContext<NotificationContextType>({
   unreadMessagesCount: 0,
+  unreadNotificationsCount: 0,
+  refreshUnreadNotifications: () => {},
   toasts: [],
   removeToast: () => {},
   requestPermission: async () => {},
@@ -123,6 +127,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const [user, setUser] = useState<any>(null);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
   const [toasts, setToasts] = useState<NotificationToast[]>([]);
   const [permissionState, setPermissionState] = useState<NotificationPermission>('default');
   const [showPermissionBanner, setShowPermissionBanner] = useState<boolean>(false);
@@ -169,6 +174,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       if (event === 'SIGNED_OUT') {
         setUser(null);
         setUnreadMessagesCount(0);
+        setUnreadNotificationsCount(0);
         setToasts([]);
       }
     });
@@ -236,6 +242,33 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     loadUnreadCount(user.id);
   }, [user, loadUnreadCount]);
 
+  // Contador real de notificaciones no leídas (tabla `notificaciones`, no
+  // `mensajes`). Antes cada pantalla lo reimplementaba a mano -- la mitad
+  // dejó el puntito rojo de la campana hardcodeado siempre prendido, y la
+  // otra mitad lo calculaba una sola vez al montar sin reaccionar a lo
+  // nuevo que llegara mientras el usuario seguía en esa pantalla.
+  const loadUnreadNotifCount = useCallback(async (userId: string) => {
+    try {
+      const { count, error } = await supabase
+        .from('notificaciones')
+        .select('*', { count: 'exact', head: true })
+        .eq('usuario_id', userId)
+        .eq('leida', false);
+      if (!error && count !== null) setUnreadNotificationsCount(count);
+    } catch (e) {
+      console.error('Error al contar notificaciones no leídas:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    loadUnreadNotifCount(user.id);
+  }, [user, loadUnreadNotifCount]);
+
+  const refreshUnreadNotifications = useCallback(() => {
+    if (user?.id) loadUnreadNotifCount(user.id);
+  }, [user, loadUnreadNotifCount]);
+
   // Suscripción Realtime a Supabase
   useEffect(() => {
     if (!user?.id) return;
@@ -298,6 +331,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         (payload) => {
           const notif = payload.new;
 
+          setUnreadNotificationsCount(prev => prev + 1);
+
           // Los mensajes ya generan su propio toast en el canal de `mensajes`;
           // sin esto el usuario recibía dos avisos por cada mensaje entrante.
           if (notif.tipo === 'mensaje') return;
@@ -325,6 +360,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     <NotificationContext.Provider
       value={{
         unreadMessagesCount,
+        unreadNotificationsCount,
+        refreshUnreadNotifications,
         toasts,
         removeToast,
         requestPermission,

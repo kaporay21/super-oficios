@@ -3,47 +3,32 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Send, CheckCircle2, MessageSquare, AlertTriangle, FileQuestion, Sparkles, HelpCircle, Loader2 } from 'lucide-react';
-import Logo from '@/components/Logo';
+import { useAuth } from '@/components/AuthContext';
 import { dbHelper } from '@/lib/supabase';
 import confetti from 'canvas-confetti';
 
 export default function SoportePage() {
   const router = useRouter();
+  const { user, profile, loading: isLoadingAuth } = useAuth();
+  const isLoggedIn = !!user;
 
   // Estados del formulario
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [tipo, setTipo] = useState('Pregunta');
   const [mensaje, setMensaje] = useState('');
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  
-  const [isLoggedIn, setIsLoggedIn] = useState(true); // Assume true initially to avoid flicker, or false and check in useEffect
-  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
   // Archivo adjunto
   const [archivoBase64, setArchivoBase64] = useState('');
   const [nombreArchivo, setNombreArchivo] = useState('');
 
   React.useEffect(() => {
-    const prof = localStorage.getItem('oficiosya_profesional_perfil');
-    const client = localStorage.getItem('oficiosya_cliente_perfil');
-    if (prof) {
-      const p = JSON.parse(prof);
-      setNombre(p.nombre || '');
-      setEmail(p.email || '');
-      setIsLoggedIn(true);
-    } else if (client) {
-      const c = JSON.parse(client);
-      setNombre(c.nombre || '');
-      setEmail(c.email || '');
-      setIsLoggedIn(true);
-    } else {
-      setIsLoggedIn(false);
-    }
-    setIsLoadingAuth(false);
-  }, []);
+    if (profile?.nombre) setNombre(profile.nombre);
+    if (profile?.email || user?.email) setEmail(profile?.email || user?.email || '');
+  }, [profile, user]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

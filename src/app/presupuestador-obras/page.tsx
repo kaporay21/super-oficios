@@ -2,20 +2,17 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  ArrowLeft, Bell, Search, Calculator, Plus, Trash2, 
-  Share2, Printer, PlusCircle, CheckCircle2, CheckCircle, 
-  HelpCircle, User, Phone, FileText, ChevronRight, Settings, 
-  Wrench, Hammer, Folder, ClipboardCheck, ArrowRight, X, 
-  RotateCcw, Check, Sparkles, Copy, PlusIcon, Pencil, Package
+import {
+  ArrowLeft, Bell, Search, Calculator, Plus, Trash2,
+  Share2, Printer, PlusCircle, CheckCircle2, CheckCircle,
+  HelpCircle, User, Phone, FileText, ChevronRight, Settings,
+  Wrench, Hammer, Folder, ClipboardCheck, ArrowRight, X,
+  RotateCcw, Check, Sparkles, Copy, PlusIcon, Pencil, Package,
+  MessageCircle
 } from 'lucide-react';
-import Logo from '@/components/Logo';
-import Tooltip from '@/components/Tooltip';
+import AuthGuard from '@/components/AuthGuard';
+import { useAuth } from '@/components/AuthContext';
 import { dbHelper } from '@/lib/supabase';
-import { 
-  PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, 
-  SoporteIcon, ConfiguracionIcon, HerramientasIcon 
-} from '@/components/ModernIcons';
 
 // Calculadoras por defecto iniciales
 const DEFAULT_CALCULADORAS = [
@@ -92,8 +89,17 @@ const CATALOGO_SUGERIDO = [
 ];
 
 export default function PresupuestadorObrasPage() {
+  return (
+    <AuthGuard requiredRole="profesional">
+      <PresupuestadorObrasContent />
+    </AuthGuard>
+  );
+}
+
+function PresupuestadorObrasContent() {
   const router = useRouter();
-  
+  const { user, profile } = useAuth();
+
   const [activeTab, setActiveTab] = useState<'calculadoras' | 'presupuestador' | 'historial'>('calculadoras');
 
   // --- CALCULADORAS ---
@@ -142,10 +148,21 @@ export default function PresupuestadorObrasPage() {
   const [nuevoClienteEmail, setNuevoClienteEmail] = useState<string>('');
   const [nuevoClienteDireccion, setNuevoClienteDireccion] = useState<string>('');
 
-  // --- FORMULARIO MANO DE OBRA MANUAL ---
+  // --- FORMULARIO MANO DE OBRA MANUAL (con autocompletar + ratios de materiales) ---
   const [newItemNombre, setNewItemNombre] = useState('');
   const [newItemUnidad, setNewItemUnidad] = useState('m²');
   const [newItemPrecio, setNewItemPrecio] = useState<number>(2000);
+  const [newItemCantidad, setNewItemCantidad] = useState<number>(1);
+  const [showRatiosForm, setShowRatiosForm] = useState(false);
+  const [itemRatios, setItemRatios] = useState<{ name: string; factor: number; unit: string }[]>([]);
+  const [newRatioNombre, setNewRatioNombre] = useState('');
+  const [newRatioFactor, setNewRatioFactor] = useState<number>(0);
+  const [newRatioUnidad, setNewRatioUnidad] = useState('u.');
+
+  // --- MODAL COMPARTIR POR WHATSAPP (configurable) ---
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareIncluirManoObra, setShareIncluirManoObra] = useState(true);
+  const [shareIncluirMateriales, setShareIncluirMateriales] = useState(true);
 
   // --- FORMULARIO MATERIAL MANUAL ---
   const [newMatNombre, setNewMatNombre] = useState('');
@@ -186,37 +203,38 @@ export default function PresupuestadorObrasPage() {
   useEffect(() => {
     setRefNo(Math.floor(Math.random() * 9000) + 1000);
     setFechaStr(new Date().toLocaleDateString());
-    
-    // Cargar perfil y plan del profesional
-    const storedPerfil = localStorage.getItem('oficiosya_profesional_perfil');
-    if (storedPerfil) {
-      try {
-        const parsed = JSON.parse(storedPerfil);
-        if (parsed.plan === 'Pro' || parsed.plan === 'Master') {
-          setUserPlan(parsed.plan);
-          setModoPresupuestador('pro');
-        } else {
-          setUserPlan('Gratis');
-          setModoPresupuestador('basico');
-        }
-        if (parsed.nombre) {
-          setPrintNombrePro(`${parsed.nombre} ${parsed.apellido || ''}`.trim());
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
-    const savedCalcs = localStorage.getItem('oficiosya_custom_calculadoras');
-    if (savedCalcs) {
-      setCalculadoras(JSON.parse(savedCalcs));
-    } else {
-      setCalculadoras(DEFAULT_CALCULADORAS);
-      localStorage.setItem('oficiosya_custom_calculadoras', JSON.stringify(DEFAULT_CALCULADORAS));
-    }
-    const guardados = JSON.parse(localStorage.getItem('oficiosya_presupuestos_guardados') || '[]');
-    setHistorialPresupuestos(guardados);
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // Plan real del perfil (antes se leía de una key de localStorage
+    // paralela que solo se llenaba si el usuario había pasado por
+    // Configuración -- quedaba en "Gratis" para cualquier otro).
+    if (profile?.plan === 'Pro' || profile?.plan === 'Master') {
+      setUserPlan(profile.plan);
+      setModoPresupuestador('pro');
+    } else {
+      setUserPlan('Gratis');
+      setModoPresupuestador('basico');
+    }
+    if (profile?.nombre) setPrintNombrePro(profile.nombre);
+
+    const cargarDatos = async () => {
+      const [calcs, presupuestosGuardados] = await Promise.all([
+        dbHelper.getCalculadoras(user.id),
+        dbHelper.getPresupuestos(user.id),
+      ]);
+      if (calcs && calcs.length > 0) {
+        setCalculadoras(calcs);
+      } else {
+        setCalculadoras(DEFAULT_CALCULADORAS);
+        dbHelper.saveCalculadoras(user.id, DEFAULT_CALCULADORAS);
+      }
+      setHistorialPresupuestos(presupuestosGuardados);
+    };
+    cargarDatos();
+  }, [user?.id, profile]);
 
   const addItemBasico = () => {
     setItemsBasico(prev => [
@@ -282,7 +300,7 @@ export default function PresupuestadorObrasPage() {
 
   const updateAndSaveCalculadoras = (newList: any[]) => {
     setCalculadoras(newList);
-    localStorage.setItem('oficiosya_custom_calculadoras', JSON.stringify(newList));
+    if (user?.id) dbHelper.saveCalculadoras(user.id, newList);
   };
 
   const activeCalc = useMemo(() => {
@@ -410,19 +428,76 @@ export default function PresupuestadorObrasPage() {
     alert(`¡Cálculo de "${activeCalc.nombre}" añadido al presupuesto!`);
   };
 
+  // Busca en el catálogo personal (calculadoras) un ítem por nombre exacto, sin
+  // distinguir mayúsculas/emoji -- es la base del autocompletar.
+  const buscarEnCatalogo = (nombre: string) => {
+    const limpio = nombre.trim().toLowerCase();
+    if (!limpio) return null;
+    return calculadoras.find((c: any) => c.nombre.replace(/^[^\w\s]+\s*/u, '').trim().toLowerCase() === limpio) || null;
+  };
+
+  const handleNombreManoObraChange = (val: string) => {
+    setNewItemNombre(val);
+    const match = buscarEnCatalogo(val);
+    if (match) {
+      setNewItemPrecio(match.manoObra || 0);
+      setNewItemUnidad(match.unidad || 'u.');
+      setItemRatios(match.items || []);
+      setShowRatiosForm(false);
+    }
+  };
+
+  const handleAddRatio = () => {
+    if (!newRatioNombre.trim()) return;
+    setItemRatios(prev => [...prev, { name: newRatioNombre, factor: newRatioFactor, unit: newRatioUnidad }]);
+    setNewRatioNombre('');
+    setNewRatioFactor(0);
+  };
+
+  const handleRemoveRatio = (idx: number) => {
+    setItemRatios(prev => prev.filter((_, i) => i !== idx));
+  };
+
   const handleAddManualManoObra = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItemNombre.trim()) return;
+    const cantidad = newItemCantidad || 1;
+    const materiales: Record<string, number> = {};
+    itemRatios.forEach(r => {
+      if (r.name.trim()) materiales[r.name] = Math.ceil(cantidad * r.factor);
+    });
     const nuevoItem = {
       id: 'man_' + Date.now(),
       nombre: newItemNombre,
-      cantidad: 1,
+      cantidad,
       unidad: newItemUnidad,
       precioUnitario: newItemPrecio,
-      materiales: {}
+      materiales
     };
     setPresupuestoManoObra([...presupuestoManoObra, nuevoItem]);
+
+    // Aprendizaje: si el nombre es nuevo, lo guardamos en el catálogo
+    // personal para que la próxima vez aparezca en el autocompletar. Si ya
+    // existía, no lo pisamos -- un precio puntual de este trabajo no debe
+    // ensuciar la tarifa general del profesional.
+    if (!buscarEnCatalogo(newItemNombre)) {
+      const nuevaCalc = {
+        id: 'custom_' + Date.now(),
+        nombre: newItemNombre,
+        tipo: 'unidades' as const,
+        unidad: newItemUnidad,
+        cantidad: 10,
+        manoObra: newItemPrecio,
+        items: itemRatios.filter(r => r.name.trim()),
+      };
+      updateAndSaveCalculadoras([...calculadoras, nuevaCalc]);
+    }
+
     setNewItemNombre('');
+    setNewItemPrecio(2000);
+    setNewItemCantidad(1);
+    setItemRatios([]);
+    setShowRatiosForm(false);
     setMaterialesEditados(null);
   };
 
@@ -613,8 +688,8 @@ export default function PresupuestadorObrasPage() {
   const totalGeneral = subtotalManoObra;
 
   // --- GUARDADO ---
-  const handleOpenSaveModal = () => {
-    const existingClientes = JSON.parse(localStorage.getItem('oficiosya_clientes_v2') || '[]');
+  const handleOpenSaveModal = async () => {
+    const existingClientes = user?.id ? await dbHelper.getClientes(user.id) : [];
     setListaClientesExistentes(existingClientes);
     if (existingClientes.length > 0) {
       setClienteExistenteId(existingClientes[0].id);
@@ -635,7 +710,7 @@ export default function PresupuestadorObrasPage() {
     let finalClienteDireccion = '';
 
     if (asociarCliente) {
-      const existingClientes = JSON.parse(localStorage.getItem('oficiosya_clientes_v2') || '[]');
+      const existingClientes = listaClientesExistentes;
 
       if (tipoClienteOption === 'nuevo') {
         if (!nuevoClienteNombre.trim()) {
@@ -654,7 +729,7 @@ export default function PresupuestadorObrasPage() {
           email: nuevoClienteEmail || '',
           direccion: nuevoClienteDireccion || ''
         };
-        dbHelper.saveCliente(newCliente);
+        if (user?.id) dbHelper.saveCliente(newCliente, user.id);
         finalClienteId = newCliente.id;
         finalClienteNombre = newCliente.nombre;
         finalClienteTelefono = newCliente.telefono;
@@ -687,7 +762,7 @@ export default function PresupuestadorObrasPage() {
         pagos: []
       };
 
-      dbHelper.saveObra(newObra);
+      if (user?.id) dbHelper.saveObra(newObra, user.id);
     }
 
     setClienteNombre(finalClienteNombre);
@@ -708,7 +783,7 @@ export default function PresupuestadorObrasPage() {
       fecha: new Date().toLocaleDateString()
     };
 
-    dbHelper.savePresupuesto(nuevoPresupuesto);
+    if (user?.id) dbHelper.savePresupuesto(nuevoPresupuesto, user.id);
     setHistorialPresupuestos([nuevoPresupuesto, ...historialPresupuestos]);
 
     setShowSaveModal(false);
@@ -728,41 +803,48 @@ export default function PresupuestadorObrasPage() {
 
   const handleEliminarPresupuestoHistorial = (id: string) => {
     if (confirm('¿Estás seguro de que deseas eliminar este presupuesto del historial?')) {
-      const filtrados = historialPresupuestos.filter(p => p.id !== id);
-      localStorage.setItem('oficiosya_presupuestos_guardados', JSON.stringify(filtrados));
-      setHistorialPresupuestos(filtrados);
+      dbHelper.deletePresupuesto(id);
+      setHistorialPresupuestos(historialPresupuestos.filter(p => p.id !== id));
     }
   };
 
-  // --- WHATSAPP MANO DE OBRA ---
-  const handleShareWhatsAppManoObra = () => {
-    let mensaje = `*${presupuestoNombre} — Mano de Obra*\n`;
-    if (clienteNombre) mensaje += `Cliente: ${clienteNombre}\n`;
-    mensaje += `---------------------------\n`;
+  // --- COMPARTIR POR WHATSAPP, CONFIGURABLE (mano de obra / materiales / ambos) ---
+  const buildTextoManoObra = () => {
+    let mensaje = `*Mano de Obra*\n---------------------------\n`;
     presupuestoManoObra.forEach(i => {
       mensaje += `• ${i.nombre} (${i.cantidad} ${i.unidad}) — $${Math.round(i.cantidad * i.precioUnitario).toLocaleString()}\n`;
     });
-    mensaje += `---------------------------\n`;
-    mensaje += `*Total Mano de Obra: $${Math.round(subtotalManoObra).toLocaleString()}*\n`;
-    const url = `https://wa.me/${clienteTelefono ? '54' + clienteTelefono : ''}?text=${encodeURIComponent(mensaje)}`;
-    window.open(url, '_blank');
+    mensaje += `---------------------------\n*Total Mano de Obra: $${Math.round(subtotalManoObra).toLocaleString()}*\n`;
+    return mensaje;
   };
 
-  // --- WHATSAPP MATERIALES ---
-  const handleShareWhatsAppMateriales = () => {
-    let mensaje = `*${presupuestoNombre} — Lista de Materiales*\n`;
-    if (clienteNombre) mensaje += `Cliente: ${clienteNombre}\n`;
-    mensaje += `---------------------------\n`;
+  const buildTextoMateriales = () => {
+    let mensaje = `*Lista de Materiales*\n---------------------------\n`;
     listaMaterialesUnificada.filter(i => i.cantidad > 0).forEach(i => {
       const totalItem = Math.round(i.cantidad * i.precioUnitario);
       mensaje += `• ${i.nombre}: ${i.cantidad} ${i.unidad}${totalItem > 0 ? ` — $${totalItem.toLocaleString()}` : ''}\n`;
     });
     mensaje += `---------------------------\n`;
-    if (subtotalMateriales > 0) {
-      mensaje += `*Total Materiales: $${Math.round(subtotalMateriales).toLocaleString()}*\n`;
-    }
+    if (subtotalMateriales > 0) mensaje += `*Total Materiales: $${Math.round(subtotalMateriales).toLocaleString()}*\n`;
+    return mensaje;
+  };
+
+  const handleConfirmShareWhatsApp = () => {
+    let mensaje = `*${presupuestoNombre}*\n`;
+    if (clienteNombre) mensaje += `Cliente: ${clienteNombre}\n`;
+    mensaje += `\n`;
+    if (shareIncluirManoObra) mensaje += buildTextoManoObra() + '\n';
+    if (shareIncluirMateriales) mensaje += buildTextoMateriales() + '\n';
+    mensaje += `_Presupuesto generado con OficiosYa_`;
     const url = `https://wa.me/${clienteTelefono ? '54' + clienteTelefono : ''}?text=${encodeURIComponent(mensaje)}`;
     window.open(url, '_blank');
+    setShowShareModal(false);
+  };
+
+  const handleOpenShareModal = (incluirMO: boolean, incluirMat: boolean) => {
+    setShareIncluirManoObra(incluirMO);
+    setShareIncluirMateriales(incluirMat);
+    setShowShareModal(true);
   };
 
   // --- SVG MURO ---
@@ -810,79 +892,27 @@ export default function PresupuestadorObrasPage() {
   };
 
   return (
-    <div className="bg-[#f7fafc] text-[#181c1e] min-h-screen flex flex-col font-sans pb-24 md:pl-24 md:pb-0 print:bg-white print:p-0 print:pl-0">
-      
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-[#001b33] to-slate-900 text-white pb-8 print:bg-white print:p-0 print:text-black">
+
       {/* TopAppBar */}
-      <header className="fixed top-0 left-0 w-full z-40 bg-white h-16 flex items-center justify-between px-4 md:px-8 border-b border-gray-200 shadow-sm print:hidden">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.push('/panel-profesional')} className="p-2 rounded-full hover:bg-gray-100 text-[#00355f] transition-colors relative z-10">
-            <ArrowLeft className="w-6 h-6" />
-          </button>
+      <header className="bg-[#001529]/90 backdrop-blur-xl sticky top-0 z-50 border-b border-slate-800/60 px-4 py-3 flex items-center gap-3 shadow-xl print:hidden">
+        <button onClick={() => router.push('/panel-profesional')} className="p-2 rounded-xl hover:bg-slate-800 transition-colors">
+          <ArrowLeft className="w-5 h-5 text-slate-300" />
+        </button>
+        <div className="flex items-center gap-2 flex-1">
+          <div className="w-8 h-8 bg-gradient-to-br from-[#fc8127] to-amber-600 rounded-xl flex items-center justify-center">
+            <Calculator className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <h1 className="text-sm font-black text-white">Presupuestador de Obras</h1>
+            <p className="text-[10px] text-slate-400">Mano de obra, materiales y presupuestos</p>
+          </div>
         </div>
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer z-10" onClick={() => router.push('/panel-profesional')}>
-          <Logo size="md" theme="light" />
-        </div>
-        <button onClick={() => router.push('/notificaciones')} className="text-gray-500 hover:bg-gray-100 p-2 rounded-full relative z-10 transition-colors">
+        <button onClick={() => router.push('/notificaciones')} className="text-slate-400 hover:bg-slate-800 p-2 rounded-full relative transition-colors">
           <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-[#001529]"></span>
         </button>
       </header>
-
-      {/* Navegación Lateral Desktop */}
-      <div className="hidden md:flex fixed left-0 top-16 bottom-0 w-24 bg-white border-r border-gray-200 z-30 flex-col items-center py-4 gap-3 select-none shadow-sm print:hidden overflow-y-auto scrollbar-none">
-        <Tooltip title="Panel" text="Hacé clic para ver el resumen de tu actividad, trabajos activos y ganancias del mes." position="right">
-          <button onClick={() => router.push('/panel-profesional')} className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all">
-            <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center border border-gray-100 shadow-inner">
-              <PanelIcon className="w-6 h-6" active={false} />
-            </div>
-            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Panel</span>
-          </button>
-        </Tooltip>
-        <Tooltip title="Muro de trabajos" text="Explorá el muro de solicitudes publicadas por clientes y postulá tus presupuestos." position="right">
-          <button onClick={() => router.push('/muro-trabajos')} className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all">
-            <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center border border-gray-100 shadow-inner">
-              <MuroIcon className="w-6 h-6" active={false} />
-            </div>
-            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Muro</span>
-          </button>
-        </Tooltip>
-        {(userPlan === 'Pro' || userPlan === 'Master') && (
-          <Tooltip title="Mis trabajos" text="Revisá y gestioná tus trabajos en curso, presupuestados o finalizados." position="right">
-            <button onClick={() => router.push('/mis-trabajos')} className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#fc8127] hover:scale-105 transition-all">
-              <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center border border-gray-100 shadow-inner">
-                <TrabajosIcon className="w-6 h-6" active={false} />
-              </div>
-              <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#fc8127] uppercase tracking-wider">Trabajos</span>
-            </button>
-          </Tooltip>
-        )}
-        <Tooltip title="Mensajes" text="Chateá directamente con tus clientes para coordinar visitas y detalles de los trabajos." position="right">
-          <button onClick={() => router.push('/chat')} className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#00355f] hover:scale-105 transition-all">
-            <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center border border-gray-100 shadow-inner">
-              <MensajesIcon className="w-6 h-6" active={false} />
-            </div>
-            <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#00355f] uppercase tracking-wider">Mensajes</span>
-          </button>
-        </Tooltip>
-        <Tooltip title="Presupuestador" text="Calculadora de materiales y mano de obra para construcción." position="right">
-          <button className="flex flex-col items-center justify-center gap-1 group text-[#fc8127] hover:scale-105 transition-all">
-            <div className="w-12 h-12 bg-orange-50 text-[#fc8127] rounded-xl flex items-center justify-center border border-orange-100 shadow-sm">
-              <HerramientasIcon className="w-6 h-6" active={true} />
-            </div>
-            <span className="text-[10px] font-extrabold text-[#fc8127] uppercase tracking-wider">Presupuestador</span>
-          </button>
-        </Tooltip>
-        <div className="mt-auto mb-6">
-          <Tooltip title="Configuración" text="Editá tus datos, cambia tu contraseña y activa o desactiva estos globitos aclaratorios." position="right">
-            <button onClick={() => router.push('/configuracion-profesional')} className="flex flex-col items-center justify-center gap-1 group text-gray-400 hover:text-[#00355f] hover:scale-105 transition-all">
-              <div className="w-12 h-12 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center border border-gray-100 shadow-inner">
-                <ConfiguracionIcon className="w-6 h-6" active={false} />
-              </div>
-              <span className="text-[10px] font-bold text-gray-400 group-hover:text-[#00355f] uppercase tracking-wider">Configurar</span>
-            </button>
-          </Tooltip>
-        </div>
-      </div>
 
       {/* PRINT-ONLY DOCUMENT */}
       <div className="hidden print:block w-full text-black">
@@ -1109,41 +1139,41 @@ export default function PresupuestadorObrasPage() {
       </div>
 
       {/* SCREEN VIEWPORT */}
-      <main className="mt-16 flex-grow px-4 md:px-8 py-8 max-w-6xl mx-auto w-full print:hidden">
-        
+      <main className="px-4 md:px-8 py-6 max-w-6xl mx-auto w-full print:hidden">
+
         {/* Selector de Modo: Básico (Plan Gratis) vs Pro Flex */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-white p-4 md:p-6 rounded-3xl border border-gray-200 shadow-sm mb-8">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-[#001529] border border-slate-800 p-4 md:p-6 rounded-3xl shadow-sm mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-[#fc8127]">
+            <div className="w-12 h-12 bg-[#fc8127]/10 rounded-2xl flex items-center justify-center text-[#fc8127]">
               <FileText className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-xl font-extrabold text-[#00355f] flex items-center gap-2">
+              <h2 className="text-xl font-black text-white flex items-center gap-2">
                 {modoPresupuestador === 'basico' ? 'Presupuestador Básico' : 'Presupuestador de Obras Pro Flex'}
                 <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase ${
-                  modoPresupuestador === 'basico' ? 'bg-blue-100 text-[#00355f]' : 'bg-orange-100 text-[#fc8127]'
+                  modoPresupuestador === 'basico' ? 'bg-blue-500/10 text-blue-400' : 'bg-[#fc8127]/10 text-[#fc8127]'
                 }`}>
                   {modoPresupuestador === 'basico' ? 'Plan Gratis' : 'Plan Pro'}
                 </span>
               </h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {modoPresupuestador === 'basico' 
-                  ? 'Generá presupuestos o listas de materiales para enviar por WhatsApp, chat o PDF.' 
+              <p className="text-xs text-slate-400 mt-0.5">
+                {modoPresupuestador === 'basico'
+                  ? 'Generá presupuestos o listas de materiales para enviar por WhatsApp, chat o PDF.'
                   : 'Cómputos automáticos por m² y módulos avanzados de mano de obra e insumos.'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-2xl text-xs font-bold w-full md:w-auto">
-            <button 
+          <div className="flex items-center gap-2 bg-slate-800/60 p-1.5 rounded-2xl text-xs font-bold w-full md:w-auto">
+            <button
               onClick={() => setModoPresupuestador('basico')}
               className={`flex-1 md:flex-initial px-4 py-2.5 rounded-xl transition-all ${
-                modoPresupuestador === 'basico' ? 'bg-[#00355f] text-white shadow-md' : 'text-gray-600 hover:text-gray-900'
+                modoPresupuestador === 'basico' ? 'bg-[#00355f] text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
               Presupuestador Básico
             </button>
-            <button 
+            <button
               onClick={() => {
                 if (userPlan === 'Pro' || userPlan === 'Master') {
                   setModoPresupuestador('pro');
@@ -1153,7 +1183,7 @@ export default function PresupuestadorObrasPage() {
                 }
               }}
               className={`flex-1 md:flex-initial px-4 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                modoPresupuestador === 'pro' ? 'bg-[#fc8127] text-white shadow-md' : 'text-gray-600 hover:text-gray-900'
+                modoPresupuestador === 'pro' ? 'bg-[#fc8127] text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -1167,74 +1197,74 @@ export default function PresupuestadorObrasPage() {
           <div className="space-y-8">
             
             {/* Pestañas Arriba: Presupuesto vs Lista de Materiales */}
-            <div className="flex border-b border-gray-200">
-              <button 
+            <div className="flex items-center gap-2 bg-slate-800/60 p-1.5 rounded-2xl w-fit">
+              <button
                 onClick={() => setModoTabsBasico('presupuesto')}
-                className={`py-3.5 px-6 font-extrabold text-xs uppercase tracking-wider border-b-[3px] transition-all flex items-center gap-2 ${
-                  modoTabsBasico === 'presupuesto' ? 'border-[#fc8127] text-[#00355f]' : 'border-transparent text-gray-400 hover:text-gray-600'
+                className={`px-5 py-2.5 rounded-xl font-extrabold text-xs uppercase tracking-wider transition-all flex items-center gap-2 ${
+                  modoTabsBasico === 'presupuesto' ? 'bg-[#fc8127] text-white shadow-md' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <FileText className="w-4 h-4 text-[#fc8127]" />
+                <FileText className="w-4 h-4" />
                 Presupuesto
               </button>
-              <button 
+              <button
                 onClick={() => setModoTabsBasico('materiales')}
-                className={`py-3.5 px-6 font-extrabold text-xs uppercase tracking-wider border-b-[3px] transition-all flex items-center gap-2 ${
-                  modoTabsBasico === 'materiales' ? 'border-[#fc8127] text-[#00355f]' : 'border-transparent text-gray-400 hover:text-gray-600'
+                className={`px-5 py-2.5 rounded-xl font-extrabold text-xs uppercase tracking-wider transition-all flex items-center gap-2 ${
+                  modoTabsBasico === 'materiales' ? 'bg-[#fc8127] text-white shadow-md' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <Package className="w-4 h-4 text-[#fc8127]" />
+                <Package className="w-4 h-4" />
                 Lista de Materiales
               </button>
             </div>
 
             {/* Cabecera del Documento Básico */}
-            <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-200 shadow-sm space-y-6">
-              
+            <div className="bg-[#001529] border border-slate-800 p-6 md:p-8 rounded-3xl shadow-sm space-y-6">
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Nombre del Presupuesto / Trabajo</label>
-                  <input 
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre del Presupuesto / Trabajo</label>
+                  <input
                     type="text"
                     value={tituloBasico}
                     onChange={(e) => setTituloBasico(e.target.value)}
                     placeholder="Ej: Instalación de Baño y Cañerías"
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-bold text-[#00355f] focus:outline-none focus:border-[#fc8127] focus:bg-white transition-all text-sm"
+                    className="w-full px-4 py-3 bg-slate-800/40 border border-slate-700 rounded-xl font-bold text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#fc8127] transition-all text-sm"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Cliente / Destinatario (Opcional)</label>
-                  <input 
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Cliente / Destinatario (Opcional)</label>
+                  <input
                     type="text"
                     value={clienteBasico}
                     onChange={(e) => setClienteBasico(e.target.value)}
                     placeholder="Ej: Sra. María Gómez"
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-semibold text-gray-800 focus:outline-none focus:border-[#fc8127] focus:bg-white transition-all text-sm"
+                    className="w-full px-4 py-3 bg-slate-800/40 border border-slate-700 rounded-xl font-semibold text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#fc8127] transition-all text-sm"
                   />
                 </div>
               </div>
 
               {/* Ficha Emisor Auto-completado */}
-              <div className="bg-blue-50/60 p-4 rounded-2xl border border-blue-100 flex items-center gap-3">
+              <div className="bg-blue-500/10 p-4 rounded-2xl border border-blue-500/20 flex items-center gap-3">
                 <div className="w-10 h-10 bg-[#00355f] text-white rounded-xl flex items-center justify-center font-bold text-sm shrink-0">
                   {printNombrePro.charAt(0)}
                 </div>
                 <div>
-                  <p className="text-xs text-blue-800/80 font-semibold uppercase">Profesional Emisor (Auto-completado)</p>
-                  <p className="text-sm font-black text-[#00355f]">{printNombrePro || 'Profesional de OficiosYa'}</p>
+                  <p className="text-xs text-blue-300/80 font-semibold uppercase">Profesional Emisor (Auto-completado)</p>
+                  <p className="text-sm font-black text-white">{printNombrePro || 'Profesional de OficiosYa'}</p>
                 </div>
               </div>
 
               {/* Tabla de Ítems / Materiales */}
               <div className="space-y-4 pt-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider">
+                  <h3 className="font-extrabold text-slate-300 text-xs uppercase tracking-wider">
                     {modoTabsBasico === 'presupuesto' ? 'Ítems del Presupuesto' : 'Materiales e Insumos'}
                   </h3>
-                  <button 
+                  <button
                     onClick={addItemBasico}
-                    className="flex items-center gap-1.5 text-xs font-bold text-[#fc8127] hover:text-[#e06d19] bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg transition-colors"
+                    className="flex items-center gap-1.5 text-xs font-bold text-[#fc8127] hover:text-white bg-[#fc8127]/10 hover:bg-[#fc8127] px-3 py-1.5 rounded-lg transition-colors"
                   >
                     <Plus className="w-4 h-4" />
                     Agregar Ítem
@@ -1244,7 +1274,7 @@ export default function PresupuestadorObrasPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm border-collapse min-w-[600px]">
                     <thead>
-                      <tr className="border-b border-gray-200 text-gray-400 text-xs font-bold uppercase">
+                      <tr className="border-b border-slate-800 text-slate-500 text-xs font-bold uppercase">
                         <th className="py-3 px-3">Concepto / Material</th>
                         <th className="py-3 px-3 w-28 text-center">Cantidad</th>
                         <th className="py-3 px-3 w-36">Unidad</th>
@@ -1257,34 +1287,34 @@ export default function PresupuestadorObrasPage() {
                         <th className="py-3 px-3 w-12 text-center"></th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-slate-800/60">
                       {itemsBasico.map((item) => {
                         const sub = (Number(item.cantidad) || 0) * (Number(item.precioUnitario) || 0);
                         return (
-                          <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
+                          <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
                             <td className="py-2.5 px-3">
-                              <input 
+                              <input
                                 type="text"
                                 value={item.concepto}
                                 onChange={(e) => updateItemBasico(item.id, 'concepto', e.target.value)}
                                 placeholder="Ej. Instalación de cañerías"
-                                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold text-gray-800 focus:outline-none focus:border-[#fc8127] focus:bg-white"
+                                className="w-full px-3 py-2 bg-slate-800/40 border border-slate-700 rounded-lg text-xs font-semibold text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#fc8127]"
                               />
                             </td>
                             <td className="py-2.5 px-3 text-center">
-                              <input 
+                              <input
                                 type="number"
                                 min="1"
                                 value={item.cantidad}
                                 onChange={(e) => updateItemBasico(item.id, 'cantidad', parseFloat(e.target.value) || 0)}
-                                className="w-20 px-2 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-center text-gray-800 focus:outline-none focus:border-[#fc8127] focus:bg-white"
+                                className="w-20 px-2 py-2 bg-slate-800/40 border border-slate-700 rounded-lg text-xs font-bold text-center text-white focus:outline-none focus:ring-2 focus:ring-[#fc8127]"
                               />
                             </td>
                             <td className="py-2.5 px-3">
-                              <select 
+                              <select
                                 value={item.unidad}
                                 onChange={(e) => updateItemBasico(item.id, 'unidad', e.target.value)}
-                                className="w-full px-2 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 focus:outline-none focus:border-[#fc8127]"
+                                className="w-full px-2 py-2 bg-slate-800/40 border border-slate-700 rounded-lg text-xs font-semibold text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#fc8127]"
                               >
                                 <option value="Unidad">Unidad</option>
                                 <option value="Metros">Metros</option>
@@ -1299,23 +1329,23 @@ export default function PresupuestadorObrasPage() {
                             {modoTabsBasico === 'presupuesto' && (
                               <>
                                 <td className="py-2.5 px-3 text-right">
-                                  <input 
+                                  <input
                                     type="number"
                                     min="0"
                                     value={item.precioUnitario}
                                     onChange={(e) => updateItemBasico(item.id, 'precioUnitario', parseFloat(e.target.value) || 0)}
-                                    className="w-28 px-2 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-right text-gray-800 focus:outline-none focus:border-[#fc8127] focus:bg-white"
+                                    className="w-28 px-2 py-2 bg-slate-800/40 border border-slate-700 rounded-lg text-xs font-bold text-right text-white focus:outline-none focus:ring-2 focus:ring-[#fc8127]"
                                   />
                                 </td>
-                                <td className="py-2.5 px-3 text-right font-black text-gray-900 text-xs">
+                                <td className="py-2.5 px-3 text-right font-black text-white text-xs">
                                   ${sub.toLocaleString('es-AR')}
                                 </td>
                               </>
                             )}
                             <td className="py-2.5 px-3 text-center">
-                              <button 
+                              <button
                                 onClick={() => deleteItemBasico(item.id)}
-                                className="text-gray-300 hover:text-red-500 p-1.5 rounded-lg transition-colors"
+                                className="text-slate-600 hover:text-red-400 p-1.5 rounded-lg transition-colors"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -1328,38 +1358,38 @@ export default function PresupuestadorObrasPage() {
                 </div>
 
                 {modoTabsBasico === 'presupuesto' && (
-                  <div className="flex justify-end pt-4 border-t border-gray-100">
-                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-right space-y-1 min-w-[240px]">
-                      <span className="text-xs text-gray-500 font-bold uppercase block">Total del Presupuesto</span>
-                      <span className="text-2xl font-black text-green-600">${totalBasico.toLocaleString('es-AR')}</span>
+                  <div className="flex justify-end pt-4 border-t border-slate-800">
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl text-right space-y-1 min-w-[240px]">
+                      <span className="text-xs text-slate-400 font-bold uppercase block">Total del Presupuesto</span>
+                      <span className="text-2xl font-black text-emerald-400">${totalBasico.toLocaleString('es-AR')}</span>
                     </div>
                   </div>
                 )}
               </div>
 
               {/* Botones de Exportar / Compartir */}
-              <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
+              <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <button 
+                  <button
                     onClick={handleShareWhatsAppBasico}
-                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all"
+                    className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all"
                   >
                     <Share2 className="w-4 h-4" />
                     Compartir por WhatsApp
                   </button>
-                  
-                  <button 
+
+                  <button
                     onClick={handleShareChatBasico}
-                    className="flex items-center gap-2 bg-[#00355f] hover:bg-[#0f4c81] text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all"
+                    className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all"
                   >
                     <FileText className="w-4 h-4 text-[#fc8127]" />
                     Enviar por Chat
                   </button>
                 </div>
 
-                <button 
+                <button
                   onClick={() => window.print()}
-                  className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl font-bold text-xs transition-all"
+                  className="flex items-center gap-2 bg-slate-800/60 hover:bg-slate-800 border border-slate-700 text-slate-200 px-4 py-2.5 rounded-xl font-bold text-xs transition-all"
                 >
                   <Printer className="w-4 h-4" />
                   Descargar PDF / Imprimir
@@ -1369,17 +1399,17 @@ export default function PresupuestadorObrasPage() {
             </div>
 
             {/* Banner CTA Promocional Pro */}
-            <div className="bg-gradient-to-r from-[#00355f] to-[#004e8a] p-6 rounded-3xl text-white flex flex-col md:flex-row items-center justify-between gap-4 shadow-md">
+            <div className="bg-gradient-to-r from-[#fc8127]/10 to-amber-500/5 border border-[#fc8127]/20 p-6 rounded-3xl text-white flex flex-col md:flex-row items-center justify-between gap-4 shadow-md">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-[#fc8127]" />
                   <h4 className="font-extrabold text-base">¿Querés automatizar cómputos por m² y guardar obras sin límites?</h4>
                 </div>
-                <p className="text-xs text-blue-100/80">
+                <p className="text-xs text-slate-400">
                   Con los Planes Pro y Master accedés a calculadoras inteligentes para muros, losas, pintura y presupuestador de obras.
                 </p>
               </div>
-              <button 
+              <button
                 onClick={() => router.push('/planes')}
                 className="bg-[#fc8127] hover:bg-[#e06d19] text-white px-5 py-2.5 rounded-xl font-extrabold text-xs shrink-0 transition-all shadow-sm"
               >
@@ -1391,42 +1421,42 @@ export default function PresupuestadorObrasPage() {
         ) : (
           /* VISTA PRESUPUESTADOR PRO FLEX */
           <div>
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
               <div>
-                <h2 className="text-3xl font-black text-[#00355f] tracking-tight flex items-center gap-2">
+                <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
                   Presupuestador de Obras
-                  <span className="text-xs font-black bg-orange-100 text-[#fc8127] px-2 py-0.5 rounded-full uppercase">Flex</span>
+                  <span className="text-xs font-black bg-[#fc8127]/10 text-[#fc8127] px-2 py-0.5 rounded-full uppercase">Flex</span>
                 </h2>
-                <p className="text-gray-500 text-sm mt-1">Calculador de materiales con módulos personalizables y agregables.</p>
+                <p className="text-slate-400 text-sm mt-1">Calculador de materiales con módulos personalizables y agregables.</p>
               </div>
-              <button 
+              <button
                 onClick={() => setActiveTab('presupuestador')}
-                className="flex items-center gap-2 bg-[#00355f] hover:bg-[#0f4c81] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all"
+                className="flex items-center gap-2 bg-[#fc8127] hover:bg-[#e67320] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all"
               >
-                <ClipboardCheck className="w-4 h-4 text-[#fc8127]" />
+                <ClipboardCheck className="w-4 h-4" />
                 Ver Presupuesto ({presupuestoManoObra.length + presupuestoMateriales.length})
               </button>
             </div>
 
             {/* Tabs Pro */}
-            <div className="flex border-b border-gray-200 mb-8 overflow-x-auto scrollbar-none">
-              <button 
+            <div className="flex items-center gap-2 bg-slate-800/60 p-1.5 rounded-2xl mb-6 w-fit overflow-x-auto scrollbar-none">
+              <button
                 onClick={() => setActiveTab('calculadoras')}
-                className={`py-3.5 px-5 font-bold text-xs tracking-wider border-b-[3px] transition-all uppercase flex items-center gap-2 shrink-0 ${activeTab === 'calculadoras' ? 'text-[#00355f] border-[#fc8127]' : 'text-gray-400 border-transparent hover:text-gray-600'}`}
+                className={`px-4 py-2.5 rounded-xl font-bold text-xs tracking-wider transition-all uppercase flex items-center gap-2 shrink-0 ${activeTab === 'calculadoras' ? 'bg-[#fc8127] text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
               >
                 <Calculator className="w-4 h-4" />
                 Calculadoras de Insumos
               </button>
-              <button 
+              <button
                 onClick={() => setActiveTab('presupuestador')}
-                className={`py-3.5 px-5 font-bold text-xs tracking-wider border-b-[3px] transition-all uppercase flex items-center gap-2 shrink-0 ${activeTab === 'presupuestador' ? 'text-[#00355f] border-[#fc8127]' : 'text-gray-400 border-transparent hover:text-gray-600'}`}
+                className={`px-4 py-2.5 rounded-xl font-bold text-xs tracking-wider transition-all uppercase flex items-center gap-2 shrink-0 ${activeTab === 'presupuestador' ? 'bg-[#fc8127] text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
               >
                 <Folder className="w-4 h-4" />
                 Presupuesto & Ítems ({presupuestoManoObra.length + presupuestoMateriales.length})
               </button>
-              <button 
+              <button
                 onClick={() => setActiveTab('historial')}
-                className={`py-3.5 px-5 font-bold text-xs tracking-wider border-b-[3px] transition-all uppercase flex items-center gap-2 shrink-0 ${activeTab === 'historial' ? 'text-[#00355f] border-[#fc8127]' : 'text-gray-400 border-transparent hover:text-gray-600'}`}
+                className={`px-4 py-2.5 rounded-xl font-bold text-xs tracking-wider transition-all uppercase flex items-center gap-2 shrink-0 ${activeTab === 'historial' ? 'bg-[#fc8127] text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
               >
                 <FileText className="w-4 h-4" />
                 Historial de Obras ({historialPresupuestos.length})
@@ -1440,28 +1470,28 @@ export default function PresupuestadorObrasPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
               
               {/* Left: Calculator list */}
-              <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-4 lg:col-span-1">
+              <div className="bg-[#001529] border border-slate-800 rounded-3xl p-5 shadow-sm space-y-4 lg:col-span-1">
                 <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs font-black text-gray-500 uppercase tracking-wider">Módulos de Cómputo</span>
-                  <button onClick={handleResetToStandard} className="text-[9px] text-gray-400 hover:text-red-500 font-bold" title="Restablece las calculadoras de fábrica">
+                  <span className="text-xs font-black text-slate-400 uppercase tracking-wider">Módulos de Cómputo</span>
+                  <button onClick={handleResetToStandard} className="text-[9px] text-slate-500 hover:text-red-400 font-bold" title="Restablece las calculadoras de fábrica">
                     Restablecer
                   </button>
                 </div>
                 <div className="space-y-2">
                   {calculadoras.map((c) => (
-                    <div 
+                    <div
                       key={c.id}
                       onClick={() => { setActiveCalculatorId(c.id); setShowRendimientoConfig(false); }}
-                      className={`w-full p-4 rounded-2xl border text-left cursor-pointer transition-all flex justify-between items-center ${activeCalculatorId === c.id ? 'border-[#fc8127] bg-orange-50/20 shadow-sm' : 'border-slate-100 hover:border-slate-200 bg-slate-50/50'}`}
+                      className={`w-full p-4 rounded-2xl border text-left cursor-pointer transition-all flex justify-between items-center ${activeCalculatorId === c.id ? 'border-[#fc8127] bg-[#fc8127]/10 shadow-sm' : 'border-slate-800 hover:border-slate-700 bg-slate-800/30'}`}
                     >
                       <div>
-                        <p className="font-extrabold text-sm text-[#00355f]">{c.nombre}</p>
-                        <p className="text-[10px] text-gray-400 font-bold uppercase mt-1">Cálculo por {c.unidad}</p>
+                        <p className="font-extrabold text-sm text-white">{c.nombre}</p>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">Cálculo por {c.unidad}</p>
                       </div>
                       {c.id !== 'muro' && c.id !== 'losa' && (
-                        <button 
+                        <button
                           onClick={(e) => { e.stopPropagation(); handleDeleteCalculator(c.id); }}
-                          className="text-red-400 hover:text-red-600 p-2 print:hidden"
+                          className="text-red-400 hover:text-red-300 p-2 print:hidden"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -1469,9 +1499,9 @@ export default function PresupuestadorObrasPage() {
                     </div>
                   ))}
                 </div>
-                <button 
+                <button
                   onClick={() => setShowCreateCalcModal(true)}
-                  className="w-full bg-[#00355f] hover:bg-[#0f4c81] text-white py-3 rounded-xl font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5"
+                  className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white py-3 rounded-xl font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5"
                 >
                   <PlusIcon className="w-4 h-4 text-[#fc8127]" />
                   Crear Nueva Calculadora
@@ -1480,17 +1510,17 @@ export default function PresupuestadorObrasPage() {
 
               {/* Right Columns: Active calculator */}
               <div className="lg:col-span-2 grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-                
+
                 {/* Calculator inputs */}
-                <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6 lg:col-span-2">
-                  <div className="flex justify-between items-center border-b border-gray-100 pb-4">
+                <div className="bg-[#001529] border border-slate-800 rounded-3xl p-6 shadow-sm space-y-6 lg:col-span-2">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-4">
                     <div>
-                      <h3 className="text-xl font-black text-[#00355f]">{activeCalc.nombre}</h3>
-                      <p className="text-xs text-gray-400 mt-0.5">Calculando mano de obra y materiales por {activeCalc.unidad}</p>
+                      <h3 className="text-xl font-black text-white">{activeCalc.nombre}</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Calculando mano de obra y materiales por {activeCalc.unidad}</p>
                     </div>
-                    <button 
+                    <button
                       onClick={() => setShowRendimientoConfig(!showRendimientoConfig)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${showRendimientoConfig ? 'bg-orange-50 border-orange-200 text-[#fc8127]' : 'bg-slate-50 border-slate-200 text-gray-600 hover:bg-slate-100'}`}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${showRendimientoConfig ? 'bg-[#fc8127]/10 border-[#fc8127]/30 text-[#fc8127]' : 'bg-slate-800/40 border-slate-700 text-slate-300 hover:bg-slate-800'}`}
                     >
                       <Settings className="w-3.5 h-3.5" />
                       {showRendimientoConfig ? 'Ocultar Insumos' : 'Ajustar Insumos'}
@@ -1498,26 +1528,26 @@ export default function PresupuestadorObrasPage() {
                   </div>
 
                   {showRendimientoConfig && (
-                    <div className="bg-orange-50/20 border border-orange-100 rounded-2xl p-5 space-y-4 animate-in slide-in-from-top-4 duration-200">
+                    <div className="bg-[#fc8127]/5 border border-[#fc8127]/20 rounded-2xl p-5 space-y-4 animate-in slide-in-from-top-4 duration-200">
                       <div>
-                        <p className="text-xs font-extrabold text-[#00355f]">🛠️ Dosificación de Materiales (Rendimiento por 1 {activeCalc.unidad})</p>
-                        <p className="text-[10px] text-gray-400 mt-0.5">Editá las proporciones por cada unidad de cómputo.</p>
+                        <p className="text-xs font-extrabold text-white">🛠️ Dosificación de Materiales (Rendimiento por 1 {activeCalc.unidad})</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Editá las proporciones por cada unidad de cómputo.</p>
                       </div>
                       <div className="space-y-2">
                         {activeCalc.items && activeCalc.items.length === 0 ? (
-                          <p className="text-xs text-gray-400 italic text-center py-4">No hay materiales agregados a este módulo.</p>
+                          <p className="text-xs text-slate-500 italic text-center py-4">No hay materiales agregados a este módulo.</p>
                         ) : (
                           activeCalc.items.map((item: any, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between gap-3 p-2 bg-white border border-orange-50 rounded-xl">
-                              <span className="text-xs font-bold text-gray-700">{item.name}</span>
+                            <div key={idx} className="flex items-center justify-between gap-3 p-2 bg-slate-800/40 border border-slate-700 rounded-xl">
+                              <span className="text-xs font-bold text-slate-200">{item.name}</span>
                               <div className="flex items-center gap-2">
-                                <input 
+                                <input
                                   type="number" step="any" value={item.factor}
                                   onChange={(e) => handleUpdateInsumoFactor(idx, parseFloat(e.target.value) || 0)}
-                                  className="w-16 h-8 text-center border border-gray-250 rounded-lg text-xs font-bold focus:border-[#fc8127] outline-none"
+                                  className="w-16 h-8 text-center bg-slate-900 border border-slate-700 rounded-lg text-xs font-bold text-white focus:ring-2 focus:ring-[#fc8127] outline-none"
                                 />
-                                <span className="text-[10px] text-gray-400 font-bold w-12">{item.unit}</span>
-                                <button onClick={() => handleDeleteInsumo(idx)} className="text-red-500 hover:text-red-700 p-1">
+                                <span className="text-[10px] text-slate-400 font-bold w-12">{item.unit}</span>
+                                <button onClick={() => handleDeleteInsumo(idx)} className="text-red-400 hover:text-red-300 p-1">
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
@@ -1525,23 +1555,23 @@ export default function PresupuestadorObrasPage() {
                           ))
                         )}
                       </div>
-                      <div className="pt-3 border-t border-orange-100 space-y-3">
-                        <p className="text-[10px] font-bold text-[#00355f] uppercase tracking-wider">Añadir otro material al cálculo:</p>
+                      <div className="pt-3 border-t border-[#fc8127]/20 space-y-3">
+                        <p className="text-[10px] font-bold text-white uppercase tracking-wider">Añadir otro material al cálculo:</p>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
                           <div className="flex flex-col gap-1">
-                            <label className="text-[9px] font-bold text-gray-500">Nombre del material</label>
-                            <input type="text" placeholder="Ej: Cal, Pegamento..." value={newInsumoNombre} onChange={(e) => setNewInsumoNombre(e.target.value)} className="h-9 px-3 border border-gray-250 rounded-lg text-xs font-bold outline-none" />
+                            <label className="text-[9px] font-bold text-slate-400">Nombre del material</label>
+                            <input type="text" placeholder="Ej: Cal, Pegamento..." value={newInsumoNombre} onChange={(e) => setNewInsumoNombre(e.target.value)} className="h-9 px-3 bg-slate-800/40 border border-slate-700 rounded-lg text-xs font-bold text-white placeholder:text-slate-500 focus:ring-2 focus:ring-[#fc8127] outline-none" />
                           </div>
                           <div className="flex flex-col gap-1">
-                            <label className="text-[9px] font-bold text-gray-500">Consumo por {activeCalc.unidad}</label>
-                            <input type="number" step="any" value={newInsumoFactor} onChange={(e) => setNewInsumoFactor(parseFloat(e.target.value) || 0)} className="h-9 px-3 border border-gray-250 rounded-lg text-xs font-bold outline-none" />
+                            <label className="text-[9px] font-bold text-slate-400">Consumo por {activeCalc.unidad}</label>
+                            <input type="number" step="any" value={newInsumoFactor} onChange={(e) => setNewInsumoFactor(parseFloat(e.target.value) || 0)} className="h-9 px-3 bg-slate-800/40 border border-slate-700 rounded-lg text-xs font-bold text-white focus:ring-2 focus:ring-[#fc8127] outline-none" />
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="flex flex-col gap-1 flex-1">
-                              <label className="text-[9px] font-bold text-gray-500">Unidad</label>
-                              <input type="text" value={newInsumoUnidad} onChange={(e) => setNewInsumoUnidad(e.target.value)} className="h-9 px-3 border border-gray-250 rounded-lg text-xs font-bold outline-none" />
+                              <label className="text-[9px] font-bold text-slate-400">Unidad</label>
+                              <input type="text" value={newInsumoUnidad} onChange={(e) => setNewInsumoUnidad(e.target.value)} className="h-9 px-3 bg-slate-800/40 border border-slate-700 rounded-lg text-xs font-bold text-white focus:ring-2 focus:ring-[#fc8127] outline-none" />
                             </div>
-                            <button type="button" onClick={handleAddNewInsumo} className="bg-[#00355f] text-white px-3 h-9 rounded-lg font-bold text-xs shadow hover:bg-[#0f4c81]">+</button>
+                            <button type="button" onClick={handleAddNewInsumo} className="bg-[#fc8127] text-white px-3 h-9 rounded-lg font-bold text-xs shadow hover:bg-[#e67320]">+</button>
                           </div>
                         </div>
                       </div>
@@ -1552,83 +1582,83 @@ export default function PresupuestadorObrasPage() {
                     {activeCalc.tipo === 'area' && (
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-bold text-gray-600">Largo (metros)</label>
-                          <input type="number" value={activeCalc.largo ?? 4} onChange={(e) => handleUpdateCalcField('largo', parseFloat(e.target.value) || 0)} className="h-11 px-4 border border-gray-250 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none font-bold" />
+                          <label className="text-xs font-bold text-slate-400">Largo (metros)</label>
+                          <input type="number" value={activeCalc.largo ?? 4} onChange={(e) => handleUpdateCalcField('largo', parseFloat(e.target.value) || 0)} className="h-11 px-4 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-white" />
                         </div>
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-bold text-gray-600">Alto / Ancho (metros)</label>
-                          <input type="number" value={activeCalc.alto ?? 3} onChange={(e) => handleUpdateCalcField('alto', parseFloat(e.target.value) || 0)} className="h-11 px-4 border border-gray-250 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none font-bold" />
+                          <label className="text-xs font-bold text-slate-400">Alto / Ancho (metros)</label>
+                          <input type="number" value={activeCalc.alto ?? 3} onChange={(e) => handleUpdateCalcField('alto', parseFloat(e.target.value) || 0)} className="h-11 px-4 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-white" />
                         </div>
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-bold text-gray-600">Aberturas a descontar ({activeCalc.unidad})</label>
-                          <input type="number" value={activeCalc.aberturas ?? 0} onChange={(e) => handleUpdateCalcField('aberturas', parseFloat(e.target.value) || 0)} className="h-11 px-4 border border-gray-250 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none font-bold" placeholder="Ej: Puertas o ventanas" />
+                          <label className="text-xs font-bold text-slate-400">Aberturas a descontar ({activeCalc.unidad})</label>
+                          <input type="number" value={activeCalc.aberturas ?? 0} onChange={(e) => handleUpdateCalcField('aberturas', parseFloat(e.target.value) || 0)} className="h-11 px-4 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-white" placeholder="Ej: Puertas o ventanas" />
                         </div>
                       </div>
                     )}
                     {activeCalc.tipo === 'volumen' && (
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-bold text-gray-600">Largo (metros)</label>
-                          <input type="number" value={activeCalc.largo ?? 5} onChange={(e) => handleUpdateCalcField('largo', parseFloat(e.target.value) || 0)} className="h-11 px-4 border border-gray-250 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none font-bold" />
+                          <label className="text-xs font-bold text-slate-400">Largo (metros)</label>
+                          <input type="number" value={activeCalc.largo ?? 5} onChange={(e) => handleUpdateCalcField('largo', parseFloat(e.target.value) || 0)} className="h-11 px-4 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-white" />
                         </div>
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-bold text-gray-600">Ancho (metros)</label>
-                          <input type="number" value={activeCalc.ancho ?? 4} onChange={(e) => handleUpdateCalcField('ancho', parseFloat(e.target.value) || 0)} className="h-11 px-4 border border-gray-250 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none font-bold" />
+                          <label className="text-xs font-bold text-slate-400">Ancho (metros)</label>
+                          <input type="number" value={activeCalc.ancho ?? 4} onChange={(e) => handleUpdateCalcField('ancho', parseFloat(e.target.value) || 0)} className="h-11 px-4 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-white" />
                         </div>
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-bold text-gray-600">Espesor (centímetros)</label>
-                          <input type="number" value={activeCalc.espesor ?? 10} onChange={(e) => handleUpdateCalcField('espesor', parseFloat(e.target.value) || 0)} className="h-11 px-4 border border-gray-250 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none font-bold" />
+                          <label className="text-xs font-bold text-slate-400">Espesor (centímetros)</label>
+                          <input type="number" value={activeCalc.espesor ?? 10} onChange={(e) => handleUpdateCalcField('espesor', parseFloat(e.target.value) || 0)} className="h-11 px-4 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-white" />
                         </div>
                       </div>
                     )}
                     {activeCalc.tipo === 'unidades' && (
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-bold text-gray-600">Cantidad Total ({activeCalc.unidad})</label>
-                        <input type="number" value={activeCalc.cantidad ?? 10} onChange={(e) => handleUpdateCalcField('cantidad', parseFloat(e.target.value) || 0)} className="h-11 px-4 border border-gray-250 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none font-bold" />
+                        <label className="text-xs font-bold text-slate-400">Cantidad Total ({activeCalc.unidad})</label>
+                        <input type="number" value={activeCalc.cantidad ?? 10} onChange={(e) => handleUpdateCalcField('cantidad', parseFloat(e.target.value) || 0)} className="h-11 px-4 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-white" />
                       </div>
                     )}
                     <div className="flex flex-col gap-1.5 pt-2">
-                      <label className="text-xs font-bold text-gray-600">Mano de Obra por unidad {activeCalc.unidad} (ARS)</label>
-                      <input type="number" value={activeCalc.manoObra || 0} onChange={(e) => handleUpdateCalcField('manoObra', parseInt(e.target.value) || 0)} className="h-11 px-4 border border-gray-250 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none font-bold text-green-600" />
+                      <label className="text-xs font-bold text-slate-400">Mano de Obra por unidad {activeCalc.unidad} (ARS)</label>
+                      <input type="number" value={activeCalc.manoObra || 0} onChange={(e) => handleUpdateCalcField('manoObra', parseInt(e.target.value) || 0)} className="h-11 px-4 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-emerald-400" />
                     </div>
                   </div>
 
                   {activeCalculatorId === 'muro' && (
                     <div className="space-y-2 mt-4">
-                      <span className="text-xs font-bold text-gray-600">Representación del Muro:</span>
+                      <span className="text-xs font-bold text-slate-400">Representación del Muro:</span>
                       <div className="h-40 w-full">{renderSVGWall()}</div>
                     </div>
                   )}
                 </div>
 
                 {/* Results card */}
-                <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-md space-y-6 lg:col-span-1">
+                <div className="bg-[#001529] border border-slate-800 rounded-3xl p-6 shadow-md space-y-6 lg:col-span-1">
                   <div>
-                    <h4 className="text-lg font-black text-[#00355f]">Insumos Calculados</h4>
-                    <p className="text-xs text-gray-400 mt-0.5">Módulo: {activeCalc.nombre}</p>
+                    <h4 className="text-lg font-black text-white">Insumos Calculados</h4>
+                    <p className="text-xs text-slate-400 mt-0.5">Módulo: {activeCalc.nombre}</p>
                     <p className="text-xs text-[#fc8127] font-black mt-1">Cómputo Neto: {activeCalculos.cantidad.toFixed(2)} {activeCalc.unidad}</p>
                   </div>
                   <div className="space-y-4">
                     {Object.keys(activeCalculos.materiales).length === 0 ? (
-                      <p className="text-xs text-gray-400 italic">No hay materiales asociados al cálculo.</p>
+                      <p className="text-xs text-slate-500 italic">No hay materiales asociados al cálculo.</p>
                     ) : (
                       Object.entries(activeCalculos.materiales).map(([name, val], idx) => {
                         const itemData = activeCalc.items.find((i: any) => i.name === name);
                         const unitLabel = itemData ? itemData.unit : 'unid.';
                         return (
-                          <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-3">
-                            <span className="text-xs text-gray-500 font-medium">{name}</span>
-                            <span className="font-black text-[#00355f] text-sm">{val} {unitLabel}</span>
+                          <div key={idx} className="flex justify-between items-center border-b border-slate-800 pb-3">
+                            <span className="text-xs text-slate-400 font-medium">{name}</span>
+                            <span className="font-black text-white text-sm">{val} {unitLabel}</span>
                           </div>
                         );
                       })
                     )}
-                    <div className="flex justify-between items-center border-b border-gray-100 pb-3 pt-1">
-                      <span className="text-xs text-gray-500 font-medium">Mano de Obra Subtotal</span>
-                      <span className="font-black text-green-600 text-base">${Math.round(activeCalculos.manoObraTotal).toLocaleString()}</span>
+                    <div className="flex justify-between items-center border-b border-slate-800 pb-3 pt-1">
+                      <span className="text-xs text-slate-400 font-medium">Mano de Obra Subtotal</span>
+                      <span className="font-black text-emerald-400 text-base">${Math.round(activeCalculos.manoObraTotal).toLocaleString()}</span>
                     </div>
                   </div>
-                  <button 
+                  <button
                     onClick={handleAddActiveCalcToPresupuesto}
                     className="w-full bg-[#fc8127] hover:bg-[#e67320] text-white py-3.5 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
                   >
@@ -1648,73 +1678,73 @@ export default function PresupuestadorObrasPage() {
               <div className="space-y-6 lg:col-span-2">
 
                 {/* ===== SECCIÓN MANO DE OBRA ===== */}
-                <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-5">
+                <div className="bg-[#001529] border border-slate-800 rounded-3xl p-6 shadow-sm space-y-5">
                   <div className="flex justify-between items-center">
-                    <h4 className="text-lg font-black text-[#00355f] flex items-center gap-2">
+                    <h4 className="text-lg font-black text-white flex items-center gap-2">
                       <span className="w-2 h-5 bg-[#fc8127] rounded-full inline-block"></span>
                       Mano de Obra
                     </h4>
-                    <button 
-                      onClick={() => { setPresupuestoManoObra([]); setMaterialesEditados(null); }} 
-                      className="text-red-500 hover:text-red-700 text-xs font-bold flex items-center gap-1"
+                    <button
+                      onClick={() => { setPresupuestoManoObra([]); setMaterialesEditados(null); }}
+                      className="text-red-400 hover:text-red-300 text-xs font-bold flex items-center gap-1"
                     >
                       <Trash2 className="w-3.5 h-3.5" /> Vaciar
                     </button>
                   </div>
 
                   {presupuestoManoObra.length === 0 ? (
-                    <div className="py-8 text-center text-gray-400 font-medium text-sm bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <div className="py-8 text-center text-slate-500 font-medium text-sm bg-slate-800/30 rounded-2xl border border-dashed border-slate-700">
                       Sin ítems de mano de obra. Calculá módulos o agregá manualmente.
                     </div>
                   ) : (
                     <div className="space-y-3">
                       {presupuestoManoObra.map((item) => (
-                        <div key={item.id} className="bg-slate-50 rounded-2xl border border-slate-100 hover:border-slate-200 transition-all overflow-hidden">
+                        <div key={item.id} className="bg-slate-800/40 rounded-2xl border border-slate-700 hover:border-slate-600 transition-all overflow-hidden">
                           {editingManoObraId === item.id ? (
                             // MODO EDICIÓN
                             <div className="p-4 space-y-3">
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div className="flex flex-col gap-1">
-                                  <label className="text-[10px] font-bold text-gray-500 uppercase">Nombre del servicio</label>
-                                  <input 
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase">Nombre del servicio</label>
+                                  <input
                                     type="text" value={editMONombre} onChange={(e) => setEditMONombre(e.target.value)}
-                                    className="h-9 px-3 border border-gray-300 rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#00355f] outline-none"
+                                    className="h-9 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-white focus:ring-2 focus:ring-[#fc8127] outline-none"
                                   />
                                 </div>
                                 <div className="flex flex-col gap-1">
-                                  <label className="text-[10px] font-bold text-gray-500 uppercase">Precio unitario (ARS)</label>
-                                  <input 
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase">Precio unitario (ARS)</label>
+                                  <input
                                     type="number" value={editMOPrecio} onChange={(e) => setEditMOPrecio(parseInt(e.target.value) || 0)}
-                                    className="h-9 px-3 border border-gray-300 rounded-xl text-sm font-bold text-green-700 focus:ring-2 focus:ring-[#00355f] outline-none"
+                                    className="h-9 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-emerald-400 focus:ring-2 focus:ring-[#fc8127] outline-none"
                                   />
                                 </div>
                               </div>
                               <div className="grid grid-cols-2 gap-3">
                                 <div className="flex flex-col gap-1">
-                                  <label className="text-[10px] font-bold text-gray-500 uppercase">Cantidad</label>
-                                  <input 
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase">Cantidad</label>
+                                  <input
                                     type="number" step="any" value={editMOCantidad} onChange={(e) => setEditMOCantidad(parseFloat(e.target.value) || 0)}
-                                    className="h-9 px-3 border border-gray-300 rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#00355f] outline-none"
+                                    className="h-9 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-white focus:ring-2 focus:ring-[#fc8127] outline-none"
                                   />
                                 </div>
                                 <div className="flex flex-col gap-1">
-                                  <label className="text-[10px] font-bold text-gray-500 uppercase">Unidad</label>
-                                  <input 
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase">Unidad</label>
+                                  <input
                                     type="text" value={editMOUnidad} onChange={(e) => setEditMOUnidad(e.target.value)}
-                                    className="h-9 px-3 border border-gray-300 rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#00355f] outline-none"
+                                    className="h-9 px-3 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-white focus:ring-2 focus:ring-[#fc8127] outline-none"
                                   />
                                 </div>
                               </div>
                               <div className="flex gap-2 pt-1">
-                                <button 
+                                <button
                                   onClick={() => handleSaveEditManoObra(item.id)}
-                                  className="flex-1 bg-[#00355f] text-white py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+                                  className="flex-1 bg-[#fc8127] text-white py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
                                 >
                                   <Check className="w-3.5 h-3.5" /> Guardar
                                 </button>
-                                <button 
+                                <button
                                   onClick={() => setEditingManoObraId(null)}
-                                  className="flex-1 bg-slate-200 text-gray-700 py-2 rounded-xl text-xs font-bold"
+                                  className="flex-1 bg-slate-700 text-slate-200 py-2 rounded-xl text-xs font-bold"
                                 >
                                   Cancelar
                                 </button>
@@ -1724,32 +1754,35 @@ export default function PresupuestadorObrasPage() {
                             // MODO VISTA
                             <div className="flex justify-between items-center gap-4 p-4">
                               <div className="min-w-0 flex-1">
-                                <p className="font-extrabold text-sm text-[#00355f] truncate">{item.nombre}</p>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase mt-0.5">
+                                <p className="font-extrabold text-sm text-white truncate">{item.nombre}</p>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
                                   {item.cantidad} {item.unidad} @ ${item.precioUnitario.toLocaleString()} c/u
+                                  {item.materiales && Object.keys(item.materiales).length > 0 && (
+                                    <span className="ml-1.5 text-blue-400">· {Object.keys(item.materiales).length} materiales</span>
+                                  )}
                                 </p>
                               </div>
                               <div className="flex items-center gap-2">
-                                <input 
+                                <input
                                   type="number" value={item.cantidad} min="0" step="any"
                                   onChange={(e) => handleUpdateManoObraCantidad(item.id, parseFloat(e.target.value) || 0)}
-                                  className="w-16 h-8 text-center border border-gray-250 rounded-lg text-xs font-extrabold"
+                                  className="w-16 h-8 text-center bg-slate-900 border border-slate-700 rounded-lg text-xs font-extrabold text-white"
                                 />
-                                <span className="text-xs text-gray-500 font-bold hidden sm:block">{item.unidad}</span>
+                                <span className="text-xs text-slate-400 font-bold hidden sm:block">{item.unidad}</span>
                               </div>
                               <div className="text-right shrink-0">
-                                <p className="font-extrabold text-sm text-gray-900">${Math.round(item.cantidad * item.precioUnitario).toLocaleString()}</p>
+                                <p className="font-extrabold text-sm text-white">${Math.round(item.cantidad * item.precioUnitario).toLocaleString()}</p>
                                 <div className="flex items-center gap-2 justify-end mt-1">
-                                  <button 
+                                  <button
                                     onClick={() => handleStartEditManoObra(item)}
-                                    className="text-blue-500 hover:text-blue-700 p-1"
+                                    className="text-blue-400 hover:text-blue-300 p-1"
                                     title="Editar ítem"
                                   >
                                     <Pencil className="w-3 h-3" />
                                   </button>
-                                  <button 
+                                  <button
                                     onClick={() => handleDeleteManoObraItem(item.id)}
-                                    className="text-red-500 hover:text-red-700 p-1"
+                                    className="text-red-400 hover:text-red-300 p-1"
                                     title="Eliminar ítem"
                                   >
                                     <Trash2 className="w-3 h-3" />
@@ -1763,47 +1796,123 @@ export default function PresupuestadorObrasPage() {
                     </div>
                   )}
 
-                  {/* Formulario agregar mano de obra manual */}
-                  <div className="pt-4 border-t border-gray-100">
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Agregar ítem de mano de obra manual:</p>
-                    <form onSubmit={handleAddManualManoObra} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-                      <div className="flex flex-col gap-1.5 md:col-span-2">
-                        <label className="text-xs font-bold text-gray-600">Descripción del servicio</label>
-                        <input 
-                          type="text" value={newItemNombre} onChange={(e) => setNewItemNombre(e.target.value)}
-                          placeholder="Ej: Instalación eléctrica" 
-                          className="h-10 px-4 border border-gray-250 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none font-bold text-xs"
-                        />
+                  {/* Formulario agregar mano de obra manual: con autocompletar del catálogo personal
+                      y materiales por unidad (se calculan solos y se guardan para la próxima vez). */}
+                  <div className="pt-4 border-t border-slate-800 space-y-3">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Agregar ítem de mano de obra:</p>
+                    <form onSubmit={handleAddManualManoObra} className="space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                        <div className="flex flex-col gap-1.5 md:col-span-2">
+                          <label className="text-xs font-bold text-slate-400">Descripción del servicio</label>
+                          <input
+                            type="text" value={newItemNombre} onChange={(e) => handleNombreManoObraChange(e.target.value)}
+                            placeholder="Ej: Colocación de cerámico"
+                            list="catalogo-mano-obra"
+                            className="h-10 px-4 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-xs text-white placeholder:text-slate-500"
+                          />
+                          <datalist id="catalogo-mano-obra">
+                            {calculadoras.map((c: any) => (
+                              <option key={c.id} value={c.nombre.replace(/^[^\w\s]+\s*/u, '').trim()} />
+                            ))}
+                          </datalist>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-xs font-bold text-slate-400">Cantidad</label>
+                          <input
+                            type="number" step="any" min="0" value={newItemCantidad} onChange={(e) => setNewItemCantidad(parseFloat(e.target.value) || 0)}
+                            className="h-10 px-4 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-xs text-white"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-xs font-bold text-slate-400">Unidad</label>
+                          <input
+                            type="text" value={newItemUnidad} onChange={(e) => setNewItemUnidad(e.target.value)}
+                            placeholder="m², u., ml..."
+                            className="h-10 px-4 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-xs text-white placeholder:text-slate-500"
+                          />
+                        </div>
                       </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-bold text-gray-600">Precio Unitario</label>
-                        <input 
-                          type="number" value={newItemPrecio} onChange={(e) => setNewItemPrecio(parseInt(e.target.value) || 0)}
-                          className="h-10 px-4 border border-gray-250 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none font-bold text-xs"
-                        />
+
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                        <div className="flex flex-col gap-1.5 md:col-span-2">
+                          <label className="text-xs font-bold text-slate-400">Precio por {newItemUnidad || 'unidad'} (ARS)</label>
+                          <input
+                            type="number" value={newItemPrecio} onChange={(e) => setNewItemPrecio(parseInt(e.target.value) || 0)}
+                            className="h-10 px-4 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-xs text-emerald-400"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowRatiosForm(!showRatiosForm)}
+                          className={`h-10 rounded-xl font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-1.5 border ${
+                            showRatiosForm || itemRatios.length > 0 ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : 'bg-slate-800/40 border-slate-700 text-slate-300 hover:bg-slate-800'
+                          }`}
+                        >
+                          <Package className="w-3.5 h-3.5" /> Materiales por unidad {itemRatios.length > 0 ? `(${itemRatios.length})` : ''}
+                        </button>
+                        <button type="submit" className="bg-[#fc8127] hover:bg-[#e67320] text-white h-10 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-1">
+                          <PlusCircle className="w-4 h-4" /> Agregar
+                        </button>
                       </div>
-                      <button type="submit" className="bg-[#00355f] hover:bg-[#0f4c81] text-white h-10 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-1">
-                        <PlusCircle className="w-4 h-4" /> Agregar
-                      </button>
+
+                      {showRatiosForm && (
+                        <div className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-4 space-y-3 animate-in slide-in-from-top-2 duration-200">
+                          <p className="text-[10px] text-slate-400">
+                            Materiales que se calculan solos por cada {newItemUnidad || 'unidad'} de <strong className="text-slate-200">{newItemNombre || 'este ítem'}</strong>. Se guardan en tu catálogo para la próxima vez.
+                          </p>
+                          {itemRatios.length > 0 && (
+                            <div className="space-y-2">
+                              {itemRatios.map((r, idx) => (
+                                <div key={idx} className="flex items-center justify-between gap-3 p-2 bg-slate-800/40 border border-slate-700 rounded-xl">
+                                  <span className="text-xs font-bold text-slate-200">{r.name}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-blue-400 font-bold">{r.factor} {r.unit} / {newItemUnidad || 'u.'}</span>
+                                    <button type="button" onClick={() => handleRemoveRatio(idx)} className="text-red-400 hover:text-red-300 p-1">
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[9px] font-bold text-slate-400">Material</label>
+                              <input type="text" placeholder="Ej: Pegamento" value={newRatioNombre} onChange={(e) => setNewRatioNombre(e.target.value)} className="h-9 px-3 bg-slate-800/40 border border-slate-700 rounded-lg text-xs font-bold text-white placeholder:text-slate-500 outline-none" />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[9px] font-bold text-slate-400">Cantidad por {newItemUnidad || 'unidad'}</label>
+                              <input type="number" step="any" value={newRatioFactor} onChange={(e) => setNewRatioFactor(parseFloat(e.target.value) || 0)} className="h-9 px-3 bg-slate-800/40 border border-slate-700 rounded-lg text-xs font-bold text-white outline-none" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="flex flex-col gap-1 flex-1">
+                                <label className="text-[9px] font-bold text-slate-400">Unidad del material</label>
+                                <input type="text" value={newRatioUnidad} onChange={(e) => setNewRatioUnidad(e.target.value)} className="h-9 px-3 bg-slate-800/40 border border-slate-700 rounded-lg text-xs font-bold text-white outline-none" />
+                              </div>
+                              <button type="button" onClick={handleAddRatio} className="bg-blue-500 text-white px-3 h-9 rounded-lg font-bold text-xs shadow hover:bg-blue-600">+</button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </form>
                   </div>
 
                   {/* Subtotal MO + Botones */}
-                  <div className="pt-4 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
                     <div>
-                      <span className="text-xs text-gray-400 font-bold uppercase">Subtotal Mano de Obra:</span>
-                      <span className="ml-2 text-lg font-black text-[#00355f]">${Math.round(subtotalManoObra).toLocaleString()}</span>
+                      <span className="text-xs text-slate-400 font-bold uppercase">Subtotal Mano de Obra:</span>
+                      <span className="ml-2 text-lg font-black text-emerald-400">${Math.round(subtotalManoObra).toLocaleString()}</span>
                     </div>
                     <div className="flex gap-2">
-                      <button 
-                        onClick={handleShareWhatsAppManoObra}
+                      <button
+                        onClick={() => handleOpenShareModal(true, false)}
                         className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5"
                       >
                         <Share2 className="w-3.5 h-3.5" /> WhatsApp
                       </button>
-                      <button 
+                      <button
                         onClick={() => { setPrintIncluirManoObra(true); setPrintIncluirMateriales(false); setPrintIncluirMatCalculados(false); setShowPrintModal(true); }}
-                        className="bg-slate-100 hover:bg-slate-200 text-gray-700 px-4 py-2 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5 border border-slate-200"
+                        className="bg-slate-800/60 hover:bg-slate-800 border border-slate-700 text-slate-200 px-4 py-2 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5"
                       >
                         <Printer className="w-3.5 h-3.5" /> PDF
                       </button>
@@ -1812,16 +1921,16 @@ export default function PresupuestadorObrasPage() {
                 </div>
 
                 {/* ===== SECCIÓN MATERIALES ===== */}
-                <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-5">
+                <div className="bg-[#001529] border border-slate-800 rounded-3xl p-6 shadow-sm space-y-5">
                   <div className="flex justify-between items-center">
-                    <h4 className="text-lg font-black text-[#00355f] flex items-center gap-2">
+                    <h4 className="text-lg font-black text-white flex items-center gap-2">
                       <span className="w-2 h-5 bg-blue-500 rounded-full inline-block"></span>
                       Lista de Materiales
                     </h4>
                     {listaMaterialesUnificada.length > 0 && (
-                      <button 
-                        onClick={() => setPresupuestoMateriales([])} 
-                        className="text-red-500 hover:text-red-700 text-xs font-bold flex items-center gap-1"
+                      <button
+                        onClick={() => setPresupuestoMateriales([])}
+                        className="text-red-400 hover:text-red-300 text-xs font-bold flex items-center gap-1"
                       >
                         <Trash2 className="w-3.5 h-3.5" /> Vaciar
                       </button>
@@ -1829,38 +1938,38 @@ export default function PresupuestadorObrasPage() {
                   </div>
 
                   {listaMaterialesUnificada.length === 0 ? (
-                    <div className="py-8 text-center text-gray-400 font-medium text-sm bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                      Sin materiales. Al cargar Mano de Obra o agregar desde el catálogo sugerido se sumarán aquí.
+                    <div className="py-8 text-center text-slate-500 font-medium text-sm bg-slate-800/30 rounded-2xl border border-dashed border-slate-700">
+                      Sin materiales. Al cargar Mano de Obra (con materiales por unidad) o agregar desde el catálogo sugerido se sumarán aquí.
                     </div>
                   ) : (
                     <div className="space-y-3">
                       {/* Cabecera de columnas */}
-                      <div className="hidden sm:grid grid-cols-12 gap-2 px-4 text-[10px] font-black text-gray-400 uppercase tracking-wider">
+                      <div className="hidden sm:grid grid-cols-12 gap-2 px-4 text-[10px] font-black text-slate-500 uppercase tracking-wider">
                         <span className="col-span-6">Material / Insumo</span>
                         <span className="col-span-3 text-center">Cantidad</span>
                         <span className="col-span-2 text-center">Unidad / Mts</span>
                         <span className="col-span-1"></span>
                       </div>
                       {listaMaterialesUnificada.map((item) => (
-                        <div key={item.id} className="grid grid-cols-12 gap-2 items-center p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-100 transition-all">
+                        <div key={item.id} className="grid grid-cols-12 gap-2 items-center p-3 bg-slate-800/40 rounded-2xl border border-slate-700 hover:border-blue-500/40 transition-all">
                           <div className="col-span-12 sm:col-span-6 min-w-0 flex items-center gap-1.5">
-                            <span className="font-bold text-sm text-[#00355f] truncate">{item.nombre}</span>
+                            <span className="font-bold text-sm text-white truncate">{item.nombre}</span>
                             {item.isAuto && (
-                              <span className="text-[9px] font-black bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded uppercase shrink-0">MO</span>
+                              <span className="text-[9px] font-black bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded uppercase shrink-0">MO</span>
                             )}
                           </div>
                           <div className="col-span-6 sm:col-span-3 flex justify-center">
-                            <input 
+                            <input
                               type="number" step="any" min="0" value={item.cantidad}
                               onChange={(e) => handleUpdateMaterialCantidad(item.id, parseFloat(e.target.value) || 0)}
-                              className="w-full h-9 text-center border border-gray-250 rounded-xl text-xs font-extrabold focus:ring-2 focus:ring-blue-400 outline-none bg-white"
+                              className="w-full h-9 text-center bg-slate-900 border border-slate-700 rounded-xl text-xs font-extrabold text-white focus:ring-2 focus:ring-blue-400 outline-none"
                             />
                           </div>
                           <div className="col-span-4 sm:col-span-2 flex justify-center">
                             <select
                               value={item.unidad || 'u.'}
                               onChange={(e) => handleUpdateMaterialUnidad(item.id, e.target.value)}
-                              className="w-full h-9 px-2 text-center border border-gray-250 rounded-xl text-xs font-bold text-gray-700 focus:ring-2 focus:ring-blue-400 outline-none bg-white cursor-pointer"
+                              className="w-full h-9 px-2 text-center bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-slate-200 focus:ring-2 focus:ring-blue-400 outline-none cursor-pointer"
                             >
                               <option value="u.">u.</option>
                               <option value="mts">mts</option>
@@ -1875,7 +1984,7 @@ export default function PresupuestadorObrasPage() {
                             </select>
                           </div>
                           <div className="col-span-2 sm:col-span-1 flex justify-end">
-                            <button onClick={() => handleDeleteMaterialItem(item.id)} className="text-red-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition-colors">
+                            <button onClick={() => handleDeleteMaterialItem(item.id)} className="text-red-400 hover:text-red-300 p-1.5 hover:bg-red-500/10 rounded-lg transition-colors">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
@@ -1885,14 +1994,14 @@ export default function PresupuestadorObrasPage() {
                   )}
 
                   {/* Catálogo sugerido */}
-                  <div className="pt-4 border-t border-gray-100 space-y-3">
-                    <p className="text-xs font-bold text-[#00355f] uppercase tracking-wider">Añadir del catálogo sugerido:</p>
+                  <div className="pt-4 border-t border-slate-800 space-y-3">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Añadir del catálogo sugerido:</p>
                     <div className="flex flex-wrap gap-2">
                       {CATALOGO_SUGERIDO.map(i => (
-                        <button 
-                          key={i.id} 
+                        <button
+                          key={i.id}
                           onClick={() => handleAddCatalogoItem(i)}
-                          className="bg-blue-50 hover:bg-blue-100 border border-blue-100 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-700 transition-colors active:scale-95"
+                          className="bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-400 transition-colors active:scale-95"
                         >
                           + {i.nombre}
                         </button>
@@ -1901,29 +2010,29 @@ export default function PresupuestadorObrasPage() {
                   </div>
 
                   {/* Formulario agregar material manual */}
-                  <div className="pt-4 border-t border-gray-100">
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Agregar material manual:</p>
+                  <div className="pt-4 border-t border-slate-800">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Agregar material manual:</p>
                     <form onSubmit={handleAddMaterialManual} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
                       <div className="flex flex-col gap-1 sm:col-span-6">
-                        <label className="text-xs font-bold text-gray-600">Nombre del material</label>
-                        <input 
+                        <label className="text-xs font-bold text-slate-400">Nombre del material</label>
+                        <input
                           type="text" value={newMatNombre} onChange={(e) => setNewMatNombre(e.target.value)}
-                          placeholder="Ej: Caño PVC 110mm" 
-                          className="h-10 px-4 border border-gray-250 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none font-bold text-xs"
+                          placeholder="Ej: Caño PVC 110mm"
+                          className="h-10 px-4 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-xs text-white placeholder:text-slate-500"
                         />
                       </div>
                       <div className="flex flex-col gap-1 sm:col-span-3">
-                        <label className="text-xs font-bold text-gray-600">Cantidad</label>
-                        <input 
+                        <label className="text-xs font-bold text-slate-400">Cantidad</label>
+                        <input
                           type="number" step="any" min="0" value={newMatCantidad} onChange={(e) => setNewMatCantidad(parseFloat(e.target.value) || 0)}
-                          className="h-10 px-3 border border-gray-250 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none font-bold text-xs text-center"
+                          className="h-10 px-3 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-xs text-white text-center"
                         />
                       </div>
                       <div className="flex flex-col gap-1 sm:col-span-3">
-                        <label className="text-xs font-bold text-gray-600">Unidad</label>
-                        <select 
+                        <label className="text-xs font-bold text-slate-400">Unidad</label>
+                        <select
                           value={newMatUnidad} onChange={(e) => setNewMatUnidad(e.target.value)}
-                          className="h-10 px-2 border border-gray-250 rounded-xl focus:ring-2 focus:ring-[#00355f] outline-none font-bold text-xs bg-white cursor-pointer"
+                          className="h-10 px-2 bg-slate-800/40 border border-slate-700 rounded-xl focus:ring-2 focus:ring-[#fc8127] outline-none font-bold text-xs text-slate-200 cursor-pointer"
                         >
                           <option value="u.">u. (unidades)</option>
                           <option value="mts">mts (metros)</option>
@@ -1937,30 +2046,30 @@ export default function PresupuestadorObrasPage() {
                           <option value="paquetes">paquetes</option>
                         </select>
                       </div>
-                      <button type="submit" className="sm:col-span-12 bg-[#00355f] hover:bg-[#0f4c81] text-white h-10 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-1 mt-1">
+                      <button type="submit" className="sm:col-span-12 bg-[#fc8127] hover:bg-[#e67320] text-white h-10 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-1 mt-1">
                         <PlusCircle className="w-4 h-4" /> Agregar material
                       </button>
                     </form>
                   </div>
 
                   {/* Subtotal materiales + Botones */}
-                  <div className="pt-4 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
                     <div>
-                      <span className="text-xs text-gray-400 font-bold uppercase">Total de materiales:</span>
-                      <span className="ml-2 text-sm font-extrabold text-[#00355f]">
+                      <span className="text-xs text-slate-400 font-bold uppercase">Total de materiales:</span>
+                      <span className="ml-2 text-sm font-extrabold text-white">
                         {listaMaterialesUnificada.filter(i => i.cantidad > 0).length} ítems en lista
                       </span>
                     </div>
                     <div className="flex gap-2">
-                      <button 
-                        onClick={handleShareWhatsAppMateriales}
+                      <button
+                        onClick={() => handleOpenShareModal(false, true)}
                         className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5"
                       >
                         <Share2 className="w-3.5 h-3.5" /> WhatsApp
                       </button>
-                      <button 
+                      <button
                         onClick={() => { setPrintIncluirManoObra(false); setPrintIncluirMateriales(true); setShowPrintModal(true); }}
-                        className="bg-slate-100 hover:bg-slate-200 text-gray-700 px-4 py-2 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5 border border-slate-200"
+                        className="bg-slate-800/60 hover:bg-slate-800 border border-slate-700 text-slate-200 px-4 py-2 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5"
                       >
                         <Printer className="w-3.5 h-3.5" /> PDF
                       </button>
@@ -1971,48 +2080,48 @@ export default function PresupuestadorObrasPage() {
 
               {/* Right: Summary Panel */}
               <div className="space-y-6 lg:col-span-1">
-                <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-md space-y-6">
+                <div className="bg-[#001529] border border-slate-800 rounded-3xl p-6 shadow-md space-y-6 lg:sticky lg:top-20">
                   <div>
-                    <h4 className="text-lg font-black text-[#00355f]">Resumen del Presupuesto</h4>
-                    <p className="text-xs text-gray-400 mt-0.5 font-medium">Mano de Obra + Lista de Materiales</p>
+                    <h4 className="text-lg font-black text-white">Resumen del Presupuesto</h4>
+                    <p className="text-xs text-slate-400 mt-0.5 font-medium">Mano de Obra + Lista de Materiales</p>
                   </div>
 
                   <div className="space-y-3">
-                    <div className="flex justify-between items-center border-b border-gray-100 pb-3">
-                      <span className="text-sm text-gray-500 font-medium">Mano de Obra</span>
-                      <span className="font-extrabold text-[#00355f] text-base">${Math.round(subtotalManoObra).toLocaleString()}</span>
+                    <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                      <span className="text-sm text-slate-400 font-medium">Mano de Obra</span>
+                      <span className="font-extrabold text-white text-base">${Math.round(subtotalManoObra).toLocaleString()}</span>
                     </div>
-                    <div className="flex justify-between items-center border-b border-gray-100 pb-3">
-                      <span className="text-sm text-gray-500 font-medium">Lista de Materiales</span>
-                      <span className="font-extrabold text-blue-600 text-sm">
+                    <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                      <span className="text-sm text-slate-400 font-medium">Lista de Materiales</span>
+                      <span className="font-extrabold text-blue-400 text-sm">
                         {listaMaterialesUnificada.filter(i => i.cantidad > 0).length} ítems
                       </span>
                     </div>
                     <div className="flex justify-between items-center pt-2">
-                      <span className="text-base text-gray-900 font-extrabold">Total General</span>
-                      <span className="font-black text-green-600 text-2xl">${Math.round(totalGeneral).toLocaleString()}</span>
+                      <span className="text-base text-white font-extrabold">Total General</span>
+                      <span className="font-black text-emerald-400 text-2xl">${Math.round(totalGeneral).toLocaleString()}</span>
                     </div>
                   </div>
 
                   {/* Botones globales */}
                   <div className="space-y-3 pt-4">
-                    <button 
+                    <button
                       onClick={handleOpenSaveModal}
-                      className="w-full bg-[#00355f] hover:bg-[#0f4c81] text-white py-3.5 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
+                      className="w-full bg-[#fc8127] hover:bg-[#e67320] text-white py-3.5 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
                     >
-                      <CheckCircle className="w-5 h-5 text-[#fc8127]" />
+                      <CheckCircle className="w-5 h-5" />
                       Guardar y Asociar Obra
                     </button>
                     <div className="grid grid-cols-2 gap-3">
-                      <button 
-                        onClick={() => { setPrintIncluirManoObra(true); setPrintIncluirMateriales(true); setPrintIncluirMatCalculados(true); handleShareWhatsAppManoObra(); }}
+                      <button
+                        onClick={() => handleOpenShareModal(true, true)}
                         className="bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5"
                       >
                         <Share2 className="w-4 h-4" /> WhatsApp
                       </button>
-                      <button 
+                      <button
                         onClick={() => { setPrintIncluirManoObra(true); setPrintIncluirMateriales(true); setPrintIncluirMatCalculados(true); setShowPrintModal(true); }}
-                        className="bg-slate-100 hover:bg-slate-200 text-gray-700 py-3 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 border border-slate-200"
+                        className="bg-slate-800/60 hover:bg-slate-800 border border-slate-700 text-slate-200 py-3 rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5"
                       >
                         <Printer className="w-4 h-4" /> PDF / Imprimir
                       </button>
@@ -2027,51 +2136,51 @@ export default function PresupuestadorObrasPage() {
 
           {/* TAB 3: HISTORIAL */}
           {activeTab === 'historial' && (
-            <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
-              <h4 className="text-lg font-black text-[#00355f] mb-4 flex items-center gap-2">
+            <div className="bg-[#001529] border border-slate-800 rounded-3xl p-6 shadow-sm">
+              <h4 className="text-lg font-black text-white mb-4 flex items-center gap-2">
                 <span className="w-2 h-5 bg-[#fc8127] rounded-full inline-block"></span>
                 Historial de Presupuestos Guardados
               </h4>
               {historialPresupuestos.length === 0 ? (
-                <div className="py-12 text-center text-gray-400 font-medium">
+                <div className="py-12 text-center text-slate-500 font-medium">
                   No hay presupuestos guardados todavía. Usá el botón "Guardar y Asociar Obra" en el presupuesto.
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm border-collapse">
                     <thead>
-                      <tr className="bg-slate-50 border-b border-gray-200">
-                        <th className="py-3 px-4 font-bold text-[#00355f]">Obra / Presupuesto</th>
-                        <th className="py-3 px-4 font-bold text-[#00355f]">Cliente</th>
-                        <th className="py-3 px-4 font-bold text-[#00355f]">Fecha</th>
-                        <th className="py-3 px-4 font-bold text-[#00355f]">Total</th>
-                        <th className="py-3 px-4 font-bold text-[#00355f] text-center">Acciones</th>
+                      <tr className="bg-slate-800/40 border-b border-slate-800">
+                        <th className="py-3 px-4 font-bold text-slate-300">Obra / Presupuesto</th>
+                        <th className="py-3 px-4 font-bold text-slate-300">Cliente</th>
+                        <th className="py-3 px-4 font-bold text-slate-300">Fecha</th>
+                        <th className="py-3 px-4 font-bold text-slate-300">Total</th>
+                        <th className="py-3 px-4 font-bold text-slate-300 text-center">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
                       {historialPresupuestos.map((pres) => (
-                        <tr key={pres.id} className="border-b border-gray-100 hover:bg-slate-50/50">
+                        <tr key={pres.id} className="border-b border-slate-800/60 hover:bg-slate-800/30">
                           <td className="py-3 px-4">
-                            <p className="font-extrabold text-gray-900">{pres.nombre}</p>
-                            {pres.nota && <p className="text-xs text-gray-400 truncate max-w-xs mt-0.5">{pres.nota}</p>}
+                            <p className="font-extrabold text-white">{pres.nombre}</p>
+                            {pres.nota && <p className="text-xs text-slate-500 truncate max-w-xs mt-0.5">{pres.nota}</p>}
                           </td>
-                          <td className="py-3 px-4 font-bold text-gray-600">
+                          <td className="py-3 px-4 font-bold text-slate-300">
                             <p>{pres.cliente}</p>
-                            {pres.telefono && <p className="text-xs text-gray-400">{pres.telefono}</p>}
+                            {pres.telefono && <p className="text-xs text-slate-500">{pres.telefono}</p>}
                           </td>
-                          <td className="py-3 px-4 text-xs font-bold text-gray-400">{pres.fecha}</td>
-                          <td className="py-3 px-4 font-black text-green-600">${Math.round(pres.total).toLocaleString()}</td>
+                          <td className="py-3 px-4 text-xs font-bold text-slate-500">{pres.fecha}</td>
+                          <td className="py-3 px-4 font-black text-emerald-400">${Math.round(pres.total).toLocaleString()}</td>
                           <td className="py-3 px-4">
                             <div className="flex items-center justify-center gap-2">
-                              <button 
+                              <button
                                 onClick={() => handleCargarPresupuestoHistorial(pres)}
-                                className="bg-slate-100 hover:bg-[#00355f] hover:text-white text-gray-700 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all"
+                                className="bg-slate-800 hover:bg-[#fc8127] hover:text-white text-slate-200 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all"
                               >
                                 Cargar
                               </button>
-                              <button 
+                              <button
                                 onClick={() => handleEliminarPresupuestoHistorial(pres.id)}
-                                className="text-red-500 hover:text-red-700 p-2"
+                                className="text-red-400 hover:text-red-300 p-2"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -2263,6 +2372,46 @@ export default function PresupuestadorObrasPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL COMPARTIR POR WHATSAPP (configurable: mano de obra / materiales / ambos) */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm print:hidden">
+          <div className="bg-white rounded-3xl p-6 md:p-8 border border-gray-100 shadow-2xl max-w-sm w-full mx-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-5">
+              <h3 className="text-xl font-black text-[#00355f] flex items-center gap-2">
+                <MessageCircle className="w-5 h-5 text-emerald-500" /> Compartir por WhatsApp
+              </h3>
+              <button onClick={() => setShowShareModal(false)} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">Elegí qué secciones incluir en el mensaje.</p>
+            <div className="space-y-3 mb-6">
+              <label className="flex items-center gap-2.5 cursor-pointer bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <input type="checkbox" checked={shareIncluirManoObra} onChange={(e) => setShareIncluirManoObra(e.target.checked)} className="w-4 h-4 text-[#fc8127] border-gray-300 rounded focus:ring-[#fc8127]" />
+                <div className="text-xs">
+                  <p className="font-bold text-gray-700">Mano de Obra</p>
+                  <p className="text-[10px] text-gray-400">Servicios, cantidades y total</p>
+                </div>
+              </label>
+              <label className="flex items-center gap-2.5 cursor-pointer bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <input type="checkbox" checked={shareIncluirMateriales} onChange={(e) => setShareIncluirMateriales(e.target.checked)} className="w-4 h-4 text-blue-500 border-gray-300 rounded focus:ring-blue-500" />
+                <div className="text-xs">
+                  <p className="font-bold text-gray-700">Lista de Materiales</p>
+                  <p className="text-[10px] text-gray-400">Insumos calculados y agregados a mano</p>
+                </div>
+              </label>
+            </div>
+            <button
+              onClick={handleConfirmShareWhatsApp}
+              disabled={!shareIncluirManoObra && !shareIncluirMateriales}
+              className="w-full h-12 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-black text-sm uppercase tracking-wider shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              <Share2 className="w-4 h-4" /> Enviar por WhatsApp
+            </button>
           </div>
         </div>
       )}

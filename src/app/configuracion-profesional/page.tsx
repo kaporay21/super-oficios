@@ -61,6 +61,7 @@ const PROVINCIAS_Y_CIUDADES: Record<string, string[]> = {
 
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
+import { useNotification } from '@/providers/NotificationProvider';
 import { dbHelper } from '@/lib/supabase';
 
 export default function PerfilProfesionalPage() {
@@ -74,6 +75,7 @@ export default function PerfilProfesionalPage() {
 function PerfilProfesionalContent() {
   const router = useRouter();
   const { user, profile: authProfile, refreshProfile } = useAuth();
+  const { unreadNotificationsCount } = useNotification();
   
   // Referencias para inputs de archivos ocultos
   const fotoPerfilRef = useRef<HTMLInputElement>(null);
@@ -354,7 +356,9 @@ function PerfilProfesionalContent() {
           <Tooltip title="Notificaciones" text="Revisá avisos importantes, alertas de empleo y actualizaciones sobre tu cuenta al instante." position="bottom">
             <button onClick={() => router.push('/notificaciones')} className="p-2 rounded-full hover:bg-gray-100 transition-colors duration-200 relative">
               <Bell className="w-5 h-5 text-gray-600" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+              )}
             </button>
           </Tooltip>
           <Tooltip title="Mi Perfil" text="Actualizá tus datos personales, especialidades, coberturas y subí certificados profesionales." position="bottom">

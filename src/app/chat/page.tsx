@@ -10,6 +10,7 @@ import { PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, Configura
 import Logo from '@/components/Logo';
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
+import { useNotification } from '@/providers/NotificationProvider';
 import { dbHelper } from '@/lib/supabase';
 
 export default function ChatIndexPage() {
@@ -23,8 +24,10 @@ export default function ChatIndexPage() {
 function ChatIndexContent() {
   const router = useRouter();
   const { user, profile } = useAuth();
+  const { unreadNotificationsCount } = useNotification();
   const [conversaciones, setConversaciones] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const userRole = profile?.rol || 'cliente';
 
@@ -34,8 +37,10 @@ function ChatIndexContent() {
       try {
         const convs = await dbHelper.getConversaciones(user.id);
         setConversaciones(convs);
+        setError(null);
       } catch (err: any) {
         console.warn('Error al cargar conversaciones:', err?.message || err);
+        setError('No pudimos cargar tus conversaciones. Probá recargar la página.');
       } finally {
         setLoading(false);
       }
@@ -71,6 +76,9 @@ function ChatIndexContent() {
           <Tooltip title="Notificaciones" text="Revisá avisos importantes." position="bottom">
             <button onClick={() => router.push('/notificaciones')} className="text-gray-500 hover:bg-gray-100 p-2 rounded-full transition-colors relative">
               <Bell className="w-5 h-5" />
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+              )}
             </button>
           </Tooltip>
         </div>
@@ -116,6 +124,12 @@ function ChatIndexContent() {
         <div className="flex justify-between items-end mb-6">
           <h1 className="text-2xl md:text-3xl font-extrabold text-[#00355f]">Mensajes</h1>
         </div>
+
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-3 text-xs font-bold text-red-700">
+            {error}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-20">

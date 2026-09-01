@@ -37,8 +37,16 @@ function PublicarTrabajoContent() {
     provincia: 'Tucumán',
     ciudad: '',
     descripcion: '',
+    propiedadId: '',
   });
-  
+
+  const [propiedades, setPropiedades] = useState<any[]>([]);
+
+  React.useEffect(() => {
+    if (!profile?.id) return;
+    dbHelper.getPropiedades(profile.id).then(setPropiedades).catch(() => {});
+  }, [profile?.id]);
+
   const [urgente, setUrgente] = useState(false);
   // Guardamos el File real además del preview: el archivo se sube a Storage
   // recién al enviar, y `url` es solo un object-URL local para la vista previa.
@@ -173,6 +181,7 @@ function PublicarTrabajoContent() {
         ubicacion: `${formData.ciudad}, ${formData.provincia}`, // Fallback backwards compatibility
         provincia: formData.provincia,
         ciudad: formData.ciudad,
+        propiedadId: formData.propiedadId || null,
         tipo: urgente ? 'Temporal' : 'Por obra',
         tiempo: 'Hace unos instantes',
         urgente: urgente,
@@ -286,6 +295,25 @@ function PublicarTrabajoContent() {
                     className="w-full p-5 rounded-2xl border-2 border-gray-100 focus:border-[#00355f] focus:ring-4 focus:ring-[#00355f]/10 outline-none bg-gray-50 hover:bg-white text-sm font-medium text-gray-800 transition-all resize-y"
                   ></textarea>
                 </div>
+
+                {propiedades.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-bold text-[#00355f] mb-2">¿Para qué propiedad es este trabajo? <span className="text-gray-400 font-medium">(opcional)</span></label>
+                    <select
+                      name="propiedadId"
+                      value={formData.propiedadId}
+                      onChange={handleChange}
+                      className="w-full h-14 px-5 rounded-2xl border-2 border-gray-100 focus:border-[#00355f] outline-none bg-gray-50 text-sm font-bold text-gray-700 cursor-pointer appearance-none"
+                      style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%236b7280\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1rem center', backgroundSize: '1.2em' }}
+                    >
+                      <option value="">Ninguna en particular</option>
+                      {propiedades.map((p: any) => (
+                        <option key={p.id} value={p.id}>{p.nombre || p.direccion || 'Propiedad'}</option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] text-gray-400 mt-1.5">Vinculándolo, este trabajo va a aparecer en el historial de esa propiedad dentro de Mi Hogar.</p>
+                  </div>
+                )}
               </div>
             </div>
 

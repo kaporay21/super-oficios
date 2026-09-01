@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { 
   ArrowLeft, Share2, Star, FileText,
   MessageSquare, CheckCircle, ShieldCheck, Home,
-  ClipboardList, User, Bell, Award, Camera, Lock, Loader2, Check
+  ClipboardList, User, Bell, Award, Camera, Lock, Loader2, Check, Heart
 } from 'lucide-react';
 import { dbHelper, getCurrentProfile } from '@/lib/supabase';
 import Tooltip from '@/components/Tooltip';
@@ -28,15 +28,57 @@ export default function ProfesionalCliente() {
   const [abriendoChat, setAbriendoChat] = useState(false);
   const [linkCopiado, setLinkCopiado] = useState(false);
   const [verTodasResenas, setVerTodasResenas] = useState(false);
+  const [compartiendoResenaId, setCompartiendoResenaId] = useState<string | null>(null);
+  const [esFavorito, setEsFavorito] = useState(false);
+  const [cargandoFavorito, setCargandoFavorito] = useState(false);
+
+  /** Comparte la imagen de una reseña puntual con el menú nativo; si falla, comparte el link del perfil. */
+  const compartirResena = async (resena: any) => {
+    const imagenUrl = `${window.location.origin}/profesional/${proId}/resena/${resena.id}`;
+    const texto = `Mirá lo que dicen de ${pro?.name || 'este profesional'} en OficiosYa`;
+    setCompartiendoResenaId(resena.id);
+    try {
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        try {
+          const res = await fetch(imagenUrl);
+          const blob = await res.blob();
+          const file = new File([blob], 'resena-oficiosya.png', { type: blob.type || 'image/png' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: texto, text: texto });
+          } else {
+            await navigator.share({ title: texto, text: texto, url: window.location.href });
+          }
+          return;
+        } catch {
+          return;
+        }
+      }
+      await navigator.clipboard.writeText(window.location.href);
+      setLinkCopiado(true);
+      setTimeout(() => setLinkCopiado(false), 2000);
+    } finally {
+      setCompartiendoResenaId(null);
+    }
+  };
 
   /** Comparte el perfil: menú nativo en celular, copiar link en escritorio. */
   const compartirPerfil = async () => {
     const url = typeof window !== 'undefined' ? window.location.href : '';
     const titulo = pro?.name ? `${pro.name} en OficiosYa` : 'Perfil en OficiosYa';
 
+    // Solo el dueño del perfil suma puntos/logro por compartirlo -- no un
+    // cliente cualquiera que comparte el perfil de otro.
+    const otorgarCredito = () => {
+      if (pro?.id && currentUser?.id === pro.id) {
+        dbHelper.otorgarPuntosUnaVez(pro.id, 'compartir_perfil', 50, 'Compartiste tu perfil');
+        dbHelper.desbloquearLogro(pro.id, 'compartir_perfil', 'Compartí tu perfil', 'Compartiste tu link de perfil');
+      }
+    };
+
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
         await navigator.share({ title: titulo, url });
+        otorgarCredito();
         return;
       } catch {
         // El usuario canceló el menú nativo: no es un error.
@@ -48,6 +90,7 @@ export default function ProfesionalCliente() {
       await navigator.clipboard.writeText(url);
       setLinkCopiado(true);
       setTimeout(() => setLinkCopiado(false), 2000);
+      otorgarCredito();
     } catch {
       console.warn('No se pudo copiar el link al portapapeles');
     }
@@ -71,9 +114,9 @@ export default function ProfesionalCliente() {
       const conv = await dbHelper.getOrCreateConversation(currentUser.id, pro.id);
       if (conv?.id) router.push(`/chat/${conv.id}`);
       else throw new Error('No se pudo abrir la conversación');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error al abrir el chat:', err);
-      alert('No pudimos abrir el chat. Intentá de nuevo en un momento.');
+      alert(err?.message || 'No pudimos abrir el chat. Intentá de nuevo en un momento.');
     } finally {
       setAbriendoChat(false);
     }
@@ -117,6 +160,40 @@ export default function ProfesionalCliente() {
     loadData();
   }, [proId]);
 
+  // Registra la visita real al perfil -- salvo que sea el propio dueño
+  // mirando su perfil, que no cuenta como visita de un cliente.
+  useEffect(() => {
+    if (!pro?.id) return;
+    if (currentUser?.id === pro.id) return;
+    dbHelper.registrarVistaPerfil(pro.id, currentUser?.id);
+  }, [pro?.id, currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser?.id || !pro?.id || currentUser.id === pro.id) return;
+    dbHelper.getFavoritosIds(currentUser.id)
+      .then((ids: string[]) => setEsFavorito(ids.includes(pro.id)))
+      .catch(() => null);
+  }, [currentUser?.id, pro?.id]);
+
+  const handleToggleFavorito = async () => {
+    if (!currentUser?.id) {
+      router.push(`/login?redirect=/profesional/${proId}`);
+      return;
+    }
+    if (currentUser.id === pro?.id || cargandoFavorito) return;
+    const nuevoValor = !esFavorito;
+    setEsFavorito(nuevoValor);
+    setCargandoFavorito(true);
+    try {
+      await dbHelper.toggleFavorito(currentUser.id, pro.id, nuevoValor);
+    } catch (err) {
+      setEsFavorito(!nuevoValor);
+      console.error('Error al actualizar favorito:', err);
+    } finally {
+      setCargandoFavorito(false);
+    }
+  };
+
   if (loading) {
     return (
       <main className="min-h-screen bg-[#F8F9FA] flex items-center justify-center">
@@ -136,6 +213,26 @@ export default function ProfesionalCliente() {
           <div className="text-6xl">🔍</div>
           <h1 className="text-2xl font-bold text-[#00355f]">Profesional no encontrado</h1>
           <p className="text-gray-500">El perfil que buscás no existe o fue eliminado.</p>
+          <button
+            onClick={() => router.push('/buscar-profesionales')}
+            className="bg-[#00355f] text-white px-6 py-3 rounded-xl font-bold hover:bg-[#0f4c81] transition-colors"
+          >
+            Volver al directorio
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  // Cuenta suspendida o eliminada por moderación: no mostramos el perfil
+  // completo ni dejamos contactar, aunque alguien tenga el link guardado.
+  if (pro.status && pro.status !== 'Activo') {
+    return (
+      <main className="min-h-screen bg-[#F8F9FA] font-sans flex items-center justify-center px-4">
+        <div className="text-center space-y-4">
+          <div className="text-6xl">🚫</div>
+          <h1 className="text-2xl font-bold text-[#00355f]">Perfil no disponible</h1>
+          <p className="text-gray-500">Este profesional no está disponible en este momento.</p>
           <button
             onClick={() => router.push('/buscar-profesionales')}
             className="bg-[#00355f] text-white px-6 py-3 rounded-xl font-bold hover:bg-[#0f4c81] transition-colors"
@@ -207,6 +304,18 @@ export default function ProfesionalCliente() {
               Compartir ahora usa la Web Share API (nativa en celulares) con
               fallback a copiar el link; el menú fantasma se eliminó. */}
           <div className="flex items-center gap-2">
+            {currentUser?.id !== pro?.id && (
+              <Tooltip text={esFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'} position="bottom">
+                <button
+                  onClick={handleToggleFavorito}
+                  disabled={cargandoFavorito}
+                  aria-label={esFavorito ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+                  className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors active:scale-95"
+                >
+                  <Heart className={`w-5 h-5 ${esFavorito ? 'fill-[#fc8127] text-[#fc8127]' : ''}`} />
+                </button>
+              </Tooltip>
+            )}
             <Tooltip text={linkCopiado ? '¡Link copiado!' : 'Compartir perfil'} position="bottom">
               <button
                 onClick={compartirPerfil}
@@ -440,7 +549,17 @@ export default function ProfesionalCliente() {
                       <div className="flex items-center gap-3">
                         <img className="w-10 h-10 rounded-full object-cover border-2 border-[#fc8127]/30" alt={resena.clienteNombre} src={resena.clienteAvatar} />
                         <div>
-                          <p className="text-sm font-bold text-gray-900">{resena.clienteNombre}</p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-sm font-bold text-gray-900">{resena.clienteNombre}</p>
+                            {/* Confianza hiperlocal: si quien reseñó vive en la misma
+                                ciudad (o al menos provincia) que el profesional, se lo
+                                marcamos -- un rating de un vecino real pesa más. */}
+                            {resena.clienteCiudad && pro?.ciudad && resena.clienteCiudad.toLowerCase() === pro.ciudad.toLowerCase() ? (
+                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full">🏘️ Vecino de {resena.clienteCiudad}</span>
+                            ) : resena.clienteProvincia && pro?.provincia && resena.clienteProvincia.toLowerCase() === pro.provincia.toLowerCase() ? (
+                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full">🏘️ De {resena.clienteProvincia}</span>
+                            ) : null}
+                          </div>
                           <div className="flex gap-0.5 mt-0.5">
                             {[1,2,3,4,5].map(i => (
                               <Star key={i} className={`w-3.5 h-3.5 ${i <= resena.rating ? 'fill-[#fc8127] text-[#fc8127]' : 'text-gray-200'}`} />
@@ -454,6 +573,14 @@ export default function ProfesionalCliente() {
                     <p className="text-sm text-gray-600 leading-relaxed">
                       {resena.texto}
                     </p>
+                    <button
+                      onClick={() => compartirResena(resena)}
+                      disabled={compartiendoResenaId === resena.id}
+                      className="mt-3 flex items-center gap-1.5 text-[11px] font-bold text-[#fc8127] hover:underline disabled:opacity-60"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      {compartiendoResenaId === resena.id ? 'Preparando...' : 'Compartir esta reseña'}
+                    </button>
                   </div>
                 ))}
 

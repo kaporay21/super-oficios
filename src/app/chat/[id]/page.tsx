@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { 
+import {
   ArrowLeft, Phone, MoreVertical, Send, CheckCheck, Loader2,
   FileText, ShieldCheck, Clock, CheckCircle2, XCircle, DollarSign,
-  Plus, AlertCircle, FolderCheck, Lock
+  Plus, AlertCircle, FolderCheck, Lock, AlertTriangle
 } from 'lucide-react';
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
+import { useNotification } from '@/providers/NotificationProvider';
 import { dbHelper, supabase } from '@/lib/supabase';
 
 export default function ChatIDPage() {
@@ -24,6 +25,7 @@ function ChatIDContent() {
   const params = useParams();
   const conversacionId = params.id as string;
   const { user, profile } = useAuth();
+  const { refreshUnreadNotifications } = useNotification();
 
   
   const [message, setMessage] = useState("");
@@ -32,6 +34,7 @@ function ChatIDContent() {
   const [conversacion, setConversacion] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Formulario para emitir Presupuesto Estructurado (Profesional)
@@ -143,8 +146,11 @@ function ChatIDContent() {
         }
 
         await dbHelper.marcarMensajesLeidos(conversacionId, user.id);
+        refreshUnreadNotifications();
+        setError(null);
       } catch (err: any) {
         console.warn('Error al cargar chat:', err?.message || err);
+        setError('No pudimos cargar esta conversación. Probá recargar la página.');
       } finally {
         setLoading(false);
       }
@@ -183,7 +189,7 @@ function ChatIDContent() {
           }
 
           if (user && payload.new.receptor_id === user.id) {
-            dbHelper.marcarMensajesLeidos(conversacionId, user.id);
+            dbHelper.marcarMensajesLeidos(conversacionId, user.id).then(refreshUnreadNotifications);
           }
         }
       )
@@ -416,6 +422,14 @@ function ChatIDContent() {
               <FileText className="w-4 h-4" /> Presupuestar
             </button>
           )}
+
+          <button
+            onClick={() => router.push(`/reportar?reportadoId=${partner.id}&reportadoNombre=${encodeURIComponent(partner.name || partner.nombre || 'este usuario')}`)}
+            title="Reportar a esta persona"
+            className="p-2 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded-xl transition-colors shrink-0"
+          >
+            <AlertTriangle className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Estado del Chat Banner */}
@@ -435,6 +449,11 @@ function ChatIDContent() {
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-slate-950/80">
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-xs font-bold text-red-400 text-center">
+            {error}
+          </div>
+        )}
         {mensajes.length === 0 ? (
           <div className="text-center py-20 text-slate-500">
             <p className="text-sm">Enviá un mensaje para iniciar la negociación.</p>
@@ -577,6 +596,28 @@ function ChatIDContent() {
                           Rechazar
                         </button>
                       </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // ── Card: presupuesto aceptado, con link real al expediente ──
+            if (msg.texto?.startsWith('✅ PRESUPUESTO_ACEPTADO:')) {
+              const expedienteId = msg.texto.replace('✅ PRESUPUESTO_ACEPTADO:', '').trim();
+              return (
+                <div key={msg.id} className="flex justify-center my-3 w-full">
+                  <div className="bg-emerald-500/10 border-2 border-emerald-500/30 rounded-3xl p-5 max-w-md w-full shadow-2xl space-y-3 text-center">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                    <p className="text-sm font-black text-white">Presupuesto aceptado</p>
+                    <p className="text-xs text-slate-400">Se generó tu expediente digital con el historial, la garantía y los datos del trabajo.</p>
+                    {expedienteId && (
+                      <button
+                        onClick={() => router.push(`/expediente/${expedienteId}`)}
+                        className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <FolderCheck className="w-4 h-4" /> Ver expediente
+                      </button>
                     )}
                   </div>
                 </div>

@@ -17,6 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://oficiosya.com"),
   title: "OficiosYa — Encontrá al profesional que necesitás",
   description: "Conectamos tus necesidades con expertos verificados y de confianza en tu zona. Plomeros, electricistas, pintores y más.",
   manifest: "/manifest.json",

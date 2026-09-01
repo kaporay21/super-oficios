@@ -4,13 +4,14 @@ import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react
 import {
   Search, MapPin, Star, MessageSquare, ClipboardList, ArrowRight,
   Sparkles, CheckCircle, Award, ChevronLeft, ChevronRight, Loader2,
-  Navigation, X, Camera
+  Navigation, X, Camera, Receipt, Wallet, Heart
 } from 'lucide-react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { dbHelper } from '@/lib/supabase';
 import Tooltip from '@/components/Tooltip';
 import Logo from '@/components/Logo';
 import { useGeolocalizacion } from '@/hooks/useGeolocalizacion';
+import { useAuth } from '@/components/AuthContext';
 
 // ──────────────────────────────────────────────────────────────────────
 // Carrusel estático de oficios (datos de presentación, no de la BD)
@@ -62,12 +63,62 @@ function BuscadorContenido() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
 
   // ── Estado de resultados ───────────────────────────────────────────
   const [professionals, setProfessionals] = useState<any[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [contactandoId, setContactandoId] = useState<string | null>(null);
+  const [favoritosIds, setFavoritosIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (user?.id) dbHelper.getFavoritosIds(user.id).then(ids => setFavoritosIds(new Set(ids))).catch(() => {});
+  }, [user?.id]);
+
+  /** Abre (o crea) la conversación con este profesional desde la tarjeta de resultados. */
+  const handleContactar = async (proId: string) => {
+    if (!user) {
+      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    if (user.id === proId) return;
+    setContactandoId(proId);
+    try {
+      const conv = await dbHelper.getOrCreateConversation(user.id, proId);
+      if (conv?.id) router.push(`/chat/${conv.id}`);
+      else throw new Error('No se pudo abrir la conversación');
+    } catch (err: any) {
+      alert(err?.message || 'No pudimos abrir el chat. Intentá de nuevo en un momento.');
+    } finally {
+      setContactandoId(null);
+    }
+  };
+
+  const handleToggleFavorito = async (e: React.MouseEvent, proId: string) => {
+    e.stopPropagation();
+    if (!user) {
+      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    const yaEsFavorito = favoritosIds.has(proId);
+    setFavoritosIds(prev => {
+      const next = new Set(prev);
+      if (yaEsFavorito) next.delete(proId); else next.add(proId);
+      return next;
+    });
+    try {
+      await dbHelper.toggleFavorito(user.id, proId, !yaEsFavorito);
+    } catch (err) {
+      console.error('Error al guardar favorito:', err);
+      setFavoritosIds(prev => {
+        const next = new Set(prev);
+        if (yaEsFavorito) next.add(proId); else next.delete(proId);
+        return next;
+      });
+    }
+  };
 
   // ── Estado de filtros (inicializados desde la URL) ─────────────────
   const [oficio, setOficio] = useState(searchParams.get('oficio') || '');
@@ -549,6 +600,13 @@ function BuscadorContenido() {
                             <span className="font-bold text-[10px] text-[#00355f] uppercase tracking-wide">Nuevo</span>
                           )}
                         </div>
+                        <button
+                          onClick={(e) => handleToggleFavorito(e, pro.id)}
+                          title={favoritosIds.has(pro.id) ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+                          className="absolute bottom-3 right-3 w-8 h-8 bg-white/95 rounded-full shadow-sm flex items-center justify-center hover:scale-110 active:scale-95 transition-all"
+                        >
+                          <Heart className={`w-4 h-4 ${favoritosIds.has(pro.id) ? 'fill-[#fc8127] text-[#fc8127]' : 'text-gray-400'}`} />
+                        </button>
                       </div>
 
                       {/* Info */}
@@ -583,6 +641,16 @@ function BuscadorContenido() {
                                 <Award className="w-3 h-3 text-[#fc8127]" /> Matriculado
                               </span>
                             )}
+                            {pro.cobraPresupuesto && (
+                              <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full" title="Cobra la visita de presupuesto, sea cual sea el trabajo">
+                                <Receipt className="w-3 h-3 text-gray-500" /> Cobra presupuesto
+                              </span>
+                            )}
+                            {pro.aceptaPagosSemanales && (
+                              <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full" title="Preferencia declarada por el profesional — OficiosYa no gestiona el pago">
+                                <Wallet className="w-3 h-3 text-gray-500" /> Pagos en cuotas
+                              </span>
+                            )}
                           </div>
 
                           {/* Ubicación */}
@@ -602,10 +670,11 @@ function BuscadorContenido() {
                               Ver Perfil
                             </button>
                           </Tooltip>
-                          <Tooltip text="Iniciá sesión para contactar" position="top">
+                          <Tooltip text={user ? 'Enviar mensaje' : 'Iniciá sesión para contactar'} position="top">
                             <button
-                              onClick={(e) => { e.stopPropagation(); router.push('/login'); }}
-                              className="px-4 py-2.5 bg-[#00355f] text-white rounded-xl hover:bg-[#0f4c81] transition-colors active:scale-95 flex items-center justify-center shadow-sm"
+                              onClick={(e) => { e.stopPropagation(); handleContactar(pro.id); }}
+                              disabled={contactandoId === pro.id}
+                              className="px-4 py-2.5 bg-[#00355f] text-white rounded-xl hover:bg-[#0f4c81] disabled:opacity-60 transition-colors active:scale-95 flex items-center justify-center shadow-sm"
                             >
                               <MessageSquare className="w-5 h-5" />
                             </button>
