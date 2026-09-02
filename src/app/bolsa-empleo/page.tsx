@@ -16,6 +16,7 @@ import { dbHelper } from '@/lib/supabase';
 import { OFICIOS_CORE, PROVINCIAS_CORE } from '@/lib/constants';
 import { useAuth } from '@/components/AuthContext';
 import { useNotification } from '@/providers/NotificationProvider';
+import AuthGuard from '@/components/AuthGuard';
 
 const PROVINCIAS = ['Todas', ...PROVINCIAS_CORE];
 const OFICIOS = ['Todos', ...OFICIOS_CORE];
@@ -23,6 +24,14 @@ const OFICIOS = ['Todos', ...OFICIOS_CORE];
 const TIPOS = ['Todos', 'Permanente', 'Por obra', 'Temporal', 'Part-time'];
 
 export default function BolsaEmpleoPage() {
+  return (
+    <AuthGuard requiredRole="profesional">
+      <BolsaEmpleoContent />
+    </AuthGuard>
+  );
+}
+
+function BolsaEmpleoContent() {
   const router = useRouter();
   const { profile: authProfile } = useAuth();
   const { unreadNotificationsCount } = useNotification();
@@ -36,21 +45,19 @@ export default function BolsaEmpleoPage() {
   const [postulados, setPostulados] = useState<number[]>([]);
   const [mostrandoExito, setMostrandoExito] = useState<number | null>(null);
   const [errorPostulacion, setErrorPostulacion] = useState<string | null>(null);
-
-  const [perfil, setPerfil] = useState<any>(null);
+  const [conteoPostulantes, setConteoPostulantes] = useState<Record<string, number>>({});
+  const [ratingsEmpleadores, setRatingsEmpleadores] = useState<Record<string, { promedio: number; total: number }>>({});
 
   useEffect(() => {
     const initData = async () => {
-      // 1. Cargar perfil local (para saber quién es el profesional)
-      const storedPerfil = localStorage.getItem('oficiosya_profesional_perfil');
-      let currentPerfil = null;
-      if (storedPerfil) {
-        currentPerfil = JSON.parse(storedPerfil);
-        setPerfil(currentPerfil);
-      }
-      const nombrePro = currentPerfil?.nombre || 'Usuario Profesional';
+      // Antes esto leía el nombre y la foto de una clave de localStorage
+      // (oficiosya_profesional_perfil) que ya nadie escribe -- toda
+      // postulación quedaba guardada con el nombre genérico "Usuario
+      // Profesional" en vez del profesional real. authProfile (Supabase,
+      // vía useAuth) es la fuente real.
+      if (!authProfile?.id) return;
 
-      // 2. Cargar empleos exclusivamente desde Supabase
+      // 1. Cargar empleos exclusivamente desde Supabase
       try {
         const jobs = await dbHelper.getJobs();
         const jobOffers = (jobs || []).filter((j: any) => j.esempleo);
@@ -60,9 +67,25 @@ export default function BolsaEmpleoPage() {
         setEmpleos([]);
       }
 
-      // 3. Cargar postulaciones desde dbHelper
+      // 1b. Conteo real de postulantes por empleo (trabajos.postulantes
+      // nunca se actualiza, siempre queda en 0).
       try {
-        const misPost = await dbHelper.getMisPostulaciones(nombrePro);
+        setConteoPostulantes(await dbHelper.getConteoPostulantesPorEmpleo());
+      } catch (e) {
+        console.error("Error al cargar conteo de postulantes:", e);
+      }
+
+      // 1c. Rating de cada empleador -- para que el candidato sepa cómo
+      // trata a los postulantes antes de aplicar.
+      try {
+        setRatingsEmpleadores(await dbHelper.getRatingsEmpleadores());
+      } catch (e) {
+        console.error("Error al cargar ratings de empleadores:", e);
+      }
+
+      // 2. Cargar postulaciones desde dbHelper
+      try {
+        const misPost = await dbHelper.getMisPostulaciones(authProfile.id);
         setPostulados(misPost.map((p: any) => p.empleoId || p.idPostulacion));
       } catch (e) {
         console.error(e);
@@ -76,7 +99,7 @@ export default function BolsaEmpleoPage() {
     };
     
     initData();
-  }, []);
+  }, [authProfile?.id]);
 
   const empleosFiltrados = empleos.filter(e => {
     const oficioNombre = e.oficio || e.categoria || e.rubro || 'General';
@@ -90,21 +113,22 @@ export default function BolsaEmpleoPage() {
   });
 
   const handlePostularse = async (empleo: any) => {
-    if (postulados.includes(empleo.id)) return;
-    
-    const nombrePro = perfil?.nombre || 'Usuario Profesional';
-    const avatarPro = perfil?.fotoPerfil || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBJFksOrbm_vwGQaTq5Vuqr1acUBEH2jxptCR5CusLDf2Sb5qZ8fqxqznYXUigT9dEfKpCENJlHaLhC_WoPDhEQJYKRkRbxGiFrH2Jf4hrRkaq4pffxxwX2ietvZfajbBEyvOb665wnkChMjc88JXD3dUq70dprcIy22fOVZalBnuC390ApdZb18RNQjeSD56KQnd4KnVj3W9Vf6W_rfyL2JkZDhnRQLKr0smIh2slCZIjrr0crl5Ri-6h1zRMK70Hxc9PXqDijgpuj';
+    if (postulados.includes(empleo.id) || !authProfile?.id) return;
 
+    // Antes el nombre/foto salían de una clave de localStorage que nadie
+    // escribe -- toda postulación quedaba guardada como "Usuario
+    // Profesional" con un avatar hardcodeado, sin importar quién se
+    // postulara de verdad.
     const nuevaPostulacion = {
       empleoId: empleo.id,
       tituloEmpleo: empleo.titulo,
       empleador: empleo.empleador,
       empleador_id: empleo.cliente_id,
-      candidato_id: authProfile?.id,
-      candidato: nombrePro,
-      candidatoAvatar: avatarPro,
-      candidatoRating: authProfile?.rating || perfil?.rating || 0,
-      candidatoVerificado: authProfile?.verificado || false,
+      candidato_id: authProfile.id,
+      candidato: authProfile.nombre || 'Profesional',
+      candidatoAvatar: authProfile.foto_perfil || authProfile.fotoPerfil || '',
+      candidatoRating: authProfile.rating || 0,
+      candidatoVerificado: authProfile.verificado || false,
       mensaje: 'Me interesa la propuesta, cuento con disponibilidad.',
       oficio: empleo.oficio,
       tipo: empleo.tipo,
@@ -112,28 +136,20 @@ export default function BolsaEmpleoPage() {
       fecha: new Date().toISOString(),
       estado: 'En revisión',
     };
-    
+
     try {
       setErrorPostulacion(null);
       await dbHelper.createPostulacion(nuevaPostulacion, authProfile?.plan || 'Gratis');
 
       setPostulados([...postulados, empleo.id]);
+      setConteoPostulantes(prev => ({ ...prev, [String(empleo.id)]: (prev[String(empleo.id)] || 0) + 1 }));
       setMostrandoExito(empleo.id);
       setTimeout(() => setMostrandoExito(null), 2500);
-
-      // Generar notificación de postulación (local por ahora)
-      const notif = {
-        id: Date.now(),
-        tipo: 'postulacion',
-        titulo: '¡Te postulaste exitosamente!',
-        mensaje: `Tu postulación para "${empleo.titulo}" fue enviada. El empleador revisará tu perfil.`,
-        fecha: new Date().toISOString(),
-        leida: false,
-        link: '/mis-postulaciones',
-      };
-      const nStored = localStorage.getItem('oficiosya_notificaciones');
-      const nExisting = nStored ? JSON.parse(nStored) : [];
-      localStorage.setItem('oficiosya_notificaciones', JSON.stringify([notif, ...nExisting]));
+      // createPostulacion ya le manda una notificación real (Supabase) al
+      // empleador -- antes acá abajo se guardaba además una "notificación"
+      // solo para el candidato en localStorage que ninguna pantalla leía
+      // nunca (ni la campana, ni /notificaciones); se sacó porque no hacía
+      // nada. La confirmación visual de arriba ya avisa que se envió.
     } catch (error: any) {
       console.error("Error al postularse:", error);
       setErrorPostulacion(error?.message || "Hubo un error al enviar tu postulación. Intentá nuevamente.");
@@ -344,7 +360,16 @@ export default function BolsaEmpleoPage() {
                       <h3 className="font-extrabold text-gray-900 text-sm leading-snug group-hover:text-[#00355f] transition-colors truncate">
                         {empleo.titulo}
                       </h3>
-                      <p className="text-[11px] text-gray-400 font-semibold mt-0.5">{empleo.empleador}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <p className="text-[11px] text-gray-400 font-semibold">{empleo.empleador}</p>
+                        {ratingsEmpleadores[String(empleo.cliente_id)] && (
+                          <span className="flex items-center gap-0.5 text-[11px] font-bold text-amber-600">
+                            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                            {ratingsEmpleadores[String(empleo.cliente_id)].promedio}
+                            <span className="text-gray-400 font-medium">({ratingsEmpleadores[String(empleo.cliente_id)].total})</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <button
@@ -395,7 +420,7 @@ export default function BolsaEmpleoPage() {
                   </div>
                   <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
                     <Users className="w-3.5 h-3.5 text-[#00355f]" />
-                    {empleo.postulantes + (postulados.includes(empleo.id) ? 1 : 0)} postulados
+                    {conteoPostulantes[String(empleo.id)] || 0} postulados
                   </div>
                   {empleo.salario && (
                     <div className="flex items-center gap-1.5 text-xs text-green-700 font-bold">

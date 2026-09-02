@@ -32,13 +32,20 @@ function AdminContent() {
   const handlePurgeAllData = async () => {
     setClearing(true);
     try {
-      await dbHelper.cleanAllData();
+      const resultado = await dbHelper.cleanAllData();
       await dbHelper.registrarAuditoria({
         admin_email: user?.email || 'admin',
         accion: 'Vació TODOS los datos de la plataforma',
         riesgo: 'Alto',
       });
-      alert('✅ Se borraron todos los datos correctamente. La plataforma quedó en cero.');
+      // Antes esto siempre decía "se borró todo correctamente" aunque
+      // cleanAllData() hubiera devuelto errores por tabla -- quedaban
+      // ocultos en la consola, invisibles para el admin.
+      if (resultado.errors.length > 0) {
+        alert(`⚠️ Se vació la mayoría de los datos, pero ${resultado.errors.length} tabla(s) tuvieron errores:\n\n${resultado.errors.join('\n')}`);
+      } else {
+        alert('✅ Se borraron todos los datos correctamente. La plataforma quedó en cero.');
+      }
       window.location.reload();
     } catch (err) {
       console.error('Error al vaciar BD:', err);
@@ -70,6 +77,12 @@ function AdminContent() {
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [denuncias, setDenuncias] = useState<any[]>([]);
   const [reportesUsuarios, setReportesUsuarios] = useState<any[]>([]);
+  const [oficios, setOficios] = useState<any[]>([]);
+  const [nuevoOficio, setNuevoOficio] = useState('');
+  const [guardandoOficio, setGuardandoOficio] = useState(false);
+  const [reglasPuntos, setReglasPuntos] = useState<any[]>([]);
+  const [reglasPuntosEdit, setReglasPuntosEdit] = useState<Record<string, string>>({});
+  const [guardandoReglas, setGuardandoReglas] = useState(false);
 
   // Sub-tabs and selectors for Bolsa de Empleo
   const [jobSubTab, setJobSubTab] = useState<'muro' | 'bolsa'>('muro');
@@ -316,7 +329,78 @@ function AdminContent() {
       }
     };
     loadDisputas();
+
+    // 10. Gestión de Oficios y Reglas de Puntos (antes eran listas
+    // hardcodeadas en el componente, sin tabla ni botones conectados).
+    const loadOficios = async () => {
+      try {
+        setOficios(await dbHelper.getOficiosAdmin());
+      } catch (err) {
+        console.error('Error al cargar oficios:', err);
+      }
+    };
+    loadOficios();
+
+    const loadReglasPuntos = async () => {
+      try {
+        const data = await dbHelper.getReglasPuntosAdmin();
+        setReglasPuntos(data);
+        setReglasPuntosEdit(Object.fromEntries(data.map((r: any) => [r.clave, String(r.puntos)])));
+      } catch (err) {
+        console.error('Error al cargar reglas de puntos:', err);
+      }
+    };
+    loadReglasPuntos();
   }, []);
+
+  const handleAgregarOficio = async () => {
+    const nombre = nuevoOficio.trim();
+    if (!nombre) return;
+    if (oficios.some(o => o.nombre.toLowerCase() === nombre.toLowerCase())) {
+      alert('Ese oficio ya existe.');
+      return;
+    }
+    setGuardandoOficio(true);
+    try {
+      const creado = await dbHelper.crearOficioAdmin(nombre);
+      setOficios(prev => [...prev, creado].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+      setNuevoOficio('');
+    } catch (err: any) {
+      alert('No se pudo agregar el oficio: ' + (err?.message || err));
+    } finally {
+      setGuardandoOficio(false);
+    }
+  };
+
+  const handleEliminarOficio = async (id: string) => {
+    const anterior = oficios;
+    setOficios(prev => prev.filter(o => o.id !== id));
+    try {
+      await dbHelper.eliminarOficioAdmin(id);
+    } catch (err: any) {
+      setOficios(anterior);
+      alert('No se pudo eliminar el oficio: ' + (err?.message || err));
+    }
+  };
+
+  const handleGuardarReglasPuntos = async () => {
+    setGuardandoReglas(true);
+    try {
+      const cambios = reglasPuntos.filter(r => Number(reglasPuntosEdit[r.clave]) !== r.puntos);
+      await Promise.all(cambios.map(r => dbHelper.actualizarReglaPuntoAdmin(r.clave, Number(reglasPuntosEdit[r.clave]))));
+      setReglasPuntos(prev => prev.map(r => ({ ...r, puntos: Number(reglasPuntosEdit[r.clave]) })));
+      await dbHelper.registrarAuditoria({
+        admin_email: user?.email || 'admin',
+        accion: `Actualizó las reglas de puntos (${cambios.length} cambio(s))`,
+        riesgo: 'Bajo',
+      });
+      alert('Reglas de puntos guardadas.');
+    } catch (err: any) {
+      alert('No se pudieron guardar las reglas: ' + (err?.message || err));
+    } finally {
+      setGuardandoReglas(false);
+    }
+  };
 
   // Update lists
   const saveUsers = async (updatedList: any[]) => {
@@ -397,6 +481,20 @@ function AdminContent() {
     }
   };
 
+  // Abre el modal de cotejo y trae las URLs firmadas del DNI (bucket privado,
+  // no tiene URL pública) -- antes el modal no mostraba nada porque el DNI
+  // nunca se había subido a Supabase en primer lugar.
+  const abrirVerificacion = async (verifUser: any) => {
+    setSelectedVerification(verifUser);
+    if (!verifUser.dniFrontalPath && !verifUser.dniDorsoPath) return;
+    try {
+      const urls = await dbHelper.getDniSignedUrls(verifUser.dniFrontalPath, verifUser.dniDorsoPath);
+      setSelectedVerification((prev: any) => (prev && prev.id === verifUser.id) ? { ...prev, dniFrontal: urls.frontal, dniDorso: urls.dorso } : prev);
+    } catch (e) {
+      console.warn('Error al obtener URLs firmadas del DNI:', e);
+    }
+  };
+
   // Verification actions for DNI & Certificates
   const handleApproveDNI = async (id: string) => {
     const updated = users.map(u => u.id === id ? { ...u, verificacion: 'Verificado', estadoDNI: 'Validado' } : u);
@@ -434,7 +532,10 @@ function AdminContent() {
     }
 
     try {
-      await dbHelper.updateUserVerification(id, true, undefined, true, 'Validado');
+      // No tocamos "verificado" (identidad) acá -- aprobar el certificado
+      // no implica que el DNI también esté validado, son dos cosas
+      // distintas y cada una tiene su propio botón.
+      await dbHelper.updateUserVerification(id, undefined, undefined, true, 'Validado');
       // Notificar al profesional que sus certificados fueron aprobados
       await dbHelper.crearNotificacion({
         usuario_id: id,
@@ -455,12 +556,19 @@ function AdminContent() {
   };
 
   const handleRejectVerification = async (id: string) => {
-    const updated = users.map(u => u.id === id ? { ...u, verificacion: 'Rechazado', estadoDNI: 'Pendiente', matriculadoVerificado: false, estadoCertificados: 'Pendiente' } : u);
+    // Antes esto guardaba estadoDNI/estadoCertificados como 'Pendiente' --
+    // como `verificacion` se deriva de esos mismos campos, un rechazo
+    // quedaba indistinguible de "nunca pidió nada" y la solicitud volvía a
+    // aparecer en la cola con cada recarga, como si el rechazo nunca
+    // hubiera pasado. 'Rechazado' es un estado real y distinto: solo
+    // vuelve a la cola cuando el profesional reenvía documentación nueva
+    // (subirDNI / subida de certificado lo mueven a 'En Revisión').
+    const updated = users.map(u => u.id === id ? { ...u, verificacion: 'Rechazado', estadoDNI: 'Rechazado', matriculadoVerificado: false, estadoCertificados: 'Rechazado' } : u);
     saveUsers(updated);
     setSelectedVerification(null);
 
     try {
-      await dbHelper.updateUserVerification(id, false, 'Pendiente', false, 'Pendiente');
+      await dbHelper.updateUserVerification(id, false, 'Rechazado', false, 'Rechazado');
       await dbHelper.crearNotificacion({
         usuario_id: id,
         tipo: 'sistema',
@@ -575,9 +683,17 @@ function AdminContent() {
   };
 
   // Support ticket actions
-  const handleResolveTicket = (id: string) => {
+  const handleResolveTicket = async (id: string) => {
+    // Antes esto solo tocaba el estado local -- ningún cambio llegaba a
+    // Supabase, así que el ticket volvía a aparecer como "Pendiente" en
+    // cada recarga (mismo patrón que el bug de aprobar/rechazar DNI).
     const updated = tickets.map(t => t.id === id ? { ...t, estado: 'Resuelto' } : t);
     saveTickets(updated);
+    try {
+      await dbHelper.responderTicketAdmin(id, '', 'Resuelto');
+    } catch (e) {
+      console.error('Error al resolver ticket en BD:', e);
+    }
   };
 
   const handleSendReply = async (id: string) => {
@@ -592,10 +708,15 @@ function AdminContent() {
     }
   };
 
-  const handleDeleteTicket = (id: string) => {
+  const handleDeleteTicket = async (id: string) => {
     if (!confirm('¿Deseas eliminar este ticket de la lista de administración?')) return;
     const updated = tickets.filter(t => t.id !== id);
     saveTickets(updated);
+    try {
+      await dbHelper.deleteTicketAdmin(id);
+    } catch (e) {
+      console.error('Error al eliminar ticket en BD:', e);
+    }
   };
 
   // Filtered Users logic
@@ -1003,7 +1124,7 @@ function AdminContent() {
                             <p className="text-sm font-bold text-gray-900">{user.name}</p>
                             <p className="text-xs text-[#fc8127] font-bold">{user.trade}</p>
                           </div>
-                          <button onClick={() => { setActiveTab('verificaciones'); setSelectedVerification(user); }} className="text-xs bg-[#00355f] text-white font-bold px-3 py-1.5 rounded-xl">Validar</button>
+                          <button onClick={() => { setActiveTab('verificaciones'); abrirVerificacion(user); }} className="text-xs bg-[#00355f] text-white font-bold px-3 py-1.5 rounded-xl">Validar</button>
                         </div>
                       ))
                     )}
@@ -1360,8 +1481,8 @@ function AdminContent() {
                         </div>
                       </div>
                       <div className="flex gap-3 shrink-0">
-                        <button 
-                          onClick={() => setSelectedVerification(user)}
+                        <button
+                          onClick={() => abrirVerificacion(user)}
                           className="bg-[#00355f] hover:bg-[#0f4c81] text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5"
                         >
                           <Eye className="w-4 h-4" /> Cotejar y Revisar Insignias
@@ -2326,14 +2447,29 @@ function AdminContent() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <input type="text" placeholder="Nuevo oficio (ej: Jardinero)" className="flex-1 p-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#fc8127]" />
-                    <button className="bg-[#fc8127] text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-[#e67320]">Añadir</button>
+                    <input
+                      type="text"
+                      value={nuevoOficio}
+                      onChange={e => setNuevoOficio(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAgregarOficio(); } }}
+                      placeholder="Nuevo oficio (ej: Jardinero)"
+                      className="flex-1 p-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#fc8127]"
+                    />
+                    <button
+                      onClick={handleAgregarOficio}
+                      disabled={guardandoOficio || !nuevoOficio.trim()}
+                      className="bg-[#fc8127] text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-[#e67320] disabled:opacity-50"
+                    >
+                      Añadir
+                    </button>
                   </div>
                   <div className="flex flex-wrap gap-2 pt-2">
-                    {['Electricista', 'Plomero', 'Albañil', 'Pintor', 'Gasista', 'Carpintero', 'Técnico PC'].map(cat => (
-                      <span key={cat} className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-700 text-[11px] font-bold rounded-full">
-                        {cat}
-                        <button className="text-gray-400 hover:text-red-500"><X className="w-3 h-3" /></button>
+                    {oficios.length === 0 ? (
+                      <p className="text-xs text-gray-400">No hay oficios cargados.</p>
+                    ) : oficios.map(o => (
+                      <span key={o.id} className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-700 text-[11px] font-bold rounded-full">
+                        {o.nombre}
+                        <button onClick={() => handleEliminarOficio(o.id)} className="text-gray-400 hover:text-red-500"><X className="w-3 h-3" /></button>
                       </span>
                     ))}
                   </div>
@@ -2349,21 +2485,29 @@ function AdminContent() {
                     </div>
                   </div>
                   <div className="space-y-3">
-                    {[
-                      { accion: 'Completar perfil al 100%', puntos: 50 },
-                      { accion: 'Publicar un trabajo (Cliente)', puntos: 10 },
-                      { accion: 'Recibir reseña 5 estrellas', puntos: 25 },
-                      { accion: 'Denuncia confirmada (Penalización)', puntos: -100 }
-                    ].map((regla, i) => (
-                      <div key={i} className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-gray-700">{regla.accion}</span>
+                    {reglasPuntos.length === 0 ? (
+                      <p className="text-xs text-gray-400">No hay reglas cargadas.</p>
+                    ) : reglasPuntos.map((regla) => (
+                      <div key={regla.clave} className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-gray-700">{regla.etiqueta}</span>
                         <div className="flex items-center gap-2">
-                          <input type="number" defaultValue={regla.puntos} className="w-16 p-1.5 text-center text-xs font-bold bg-gray-50 border border-gray-200 rounded-lg" />
+                          <input
+                            type="number"
+                            value={reglasPuntosEdit[regla.clave] ?? ''}
+                            onChange={e => setReglasPuntosEdit(prev => ({ ...prev, [regla.clave]: e.target.value }))}
+                            className="w-16 p-1.5 text-center text-xs font-bold bg-gray-50 border border-gray-200 rounded-lg"
+                          />
                           <span className="text-[10px] font-bold text-gray-400">pts</span>
                         </div>
                       </div>
                     ))}
-                    <button className="w-full mt-2 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-colors">Guardar Reglas</button>
+                    <button
+                      onClick={handleGuardarReglasPuntos}
+                      disabled={guardandoReglas || reglasPuntos.length === 0}
+                      className="w-full mt-2 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
+                    >
+                      {guardandoReglas ? 'Guardando...' : 'Guardar Reglas'}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -2979,6 +3123,15 @@ function AdminContent() {
                   <UserCheck className="w-4 h-4 text-[#fc8127]" /> Datos Registrados en Perfil
                 </span>
 
+                <div className="flex items-center gap-3 pb-1">
+                  <img
+                    src={selectedVerification.avatar || selectedVerification.fotoPerfil || 'https://i.pravatar.cc/150?u=' + selectedVerification.id}
+                    alt="Foto de perfil"
+                    className="w-16 h-16 rounded-xl object-cover border border-gray-300 shrink-0"
+                  />
+                  <p className="text-[10px] text-gray-400">Cotejá esta foto de perfil contra la del DNI subido a la derecha.</p>
+                </div>
+
                 <div className="space-y-2 text-xs">
                   <div>
                     <span className="text-gray-400 font-semibold block text-[10px] uppercase">Nombre Completo:</span>
@@ -3056,7 +3209,11 @@ function AdminContent() {
                     </div>
                   ) : (
                     <div className="p-3 bg-white border border-dashed border-gray-300 rounded-xl text-center">
-                      <p className="text-xs text-gray-400">DNI subido / pendiente de verificación visual.</p>
+                      <p className="text-xs text-gray-400">
+                        {selectedVerification.dniFrontalPath || selectedVerification.dniDorsoPath
+                          ? 'Cargando imágenes del DNI...'
+                          : 'El profesional todavía no subió su DNI.'}
+                      </p>
                     </div>
                   )}
 

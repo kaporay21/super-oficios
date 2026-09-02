@@ -269,12 +269,32 @@ export const dbHelper = {
       status: p.estado_cuenta || 'Activo',
       motivoEstado: p.motivo_estado || '',
       date: p.created_at ? new Date(p.created_at).toLocaleDateString() : 'Reciente',
-      verificacion: p.verificado ? 'Verificado' : (p.rol === 'profesional' ? 'Pendiente' : 'Sin Solicitud'),
+      // "Pendiente"/"Rechazado" salen de estado_dni/estado_certificados
+      // (no de `verificado`, que es un booleano y no puede distinguir
+      // "nunca pidió verificarse" de "lo rechazamos" -- antes ambos casos
+      // colapsaban al mismo estado y una solicitud rechazada volvía a
+      // aparecer como pendiente en cada recarga).
+      verificacion: p.verificado
+        ? 'Verificado'
+        : p.rol !== 'profesional'
+        ? 'Sin Solicitud'
+        : (p.estado_dni === 'Rechazado' || p.estado_certificados === 'Rechazado')
+        ? 'Rechazado'
+        : (p.estado_dni === 'En Revisión' || p.estado_certificados === 'En Revisión')
+        ? 'Pendiente'
+        : 'Sin Solicitud',
       trade: p.oficios && p.oficios.length > 0 ? p.oficios.join(', ') : '',
       rating: Number(p.rating) || 0,
       totalResenas: Number(p.total_resenas) || 0,
       fotoVerificada: !!p.foto_verificada_en,
       docMatricula: '-',
+      nroMatricula: p.nro_matricula || '',
+      matriculadoVerificado: !!p.matriculado_verificado,
+      estadoCertificados: p.estado_certificados || 'Pendiente',
+      estadoDNI: p.estado_dni || (p.verificado ? 'Validado' : 'Pendiente'),
+      certificados: p.certificados || [],
+      dniFrontalPath: p.dni_frontal_path || null,
+      dniDorsoPath: p.dni_dorso_path || null,
       avatar: p.foto_perfil || p.fotoperfil || 'https://i.pravatar.cc/150?u=' + p.id,
       location: p.ciudad && p.provincia ? `${p.ciudad}, ${p.provincia}` : (p.provincia || ''),
       category: p.oficios && p.oficios.length > 0 ? p.oficios[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '',
@@ -499,14 +519,65 @@ export const dbHelper = {
     if (error) throw error;
   },
 
-  async updateUserVerification(id: string, verificado: boolean, estadoDni?: string, matriculadoVerificado?: boolean, estadoCertificados?: string): Promise<void> {
-    const updates: any = { verificado };
+  async updateUserVerification(id: string, verificado?: boolean, estadoDni?: string, matriculadoVerificado?: boolean, estadoCertificados?: string): Promise<void> {
+    const updates: any = {};
+    if (verificado !== undefined) updates.verificado = verificado;
     if (estadoDni !== undefined) updates.estado_dni = estadoDni;
     if (matriculadoVerificado !== undefined) updates.matriculado_verificado = matriculadoVerificado;
     if (estadoCertificados !== undefined) updates.estado_certificados = estadoCertificados;
 
     const { error } = await supabase.from('perfiles').update(updates).eq('id', id);
     if (error) throw error;
+  },
+
+  /**
+   * Sube el frente y dorso del DNI a un bucket privado ("dni") y guarda la
+   * ruta en el perfil -- antes esto no subía nada a ningún lado, solo
+   * guardaba en localStorage del navegador, por eso el admin nunca lo veía.
+   */
+  async subirDNI(userId: string, frenteFile: File, dorsoFile: File): Promise<void> {
+    const extFrente = (frenteFile.name.split('.').pop() || 'jpg').toLowerCase();
+    const extDorso = (dorsoFile.name.split('.').pop() || 'jpg').toLowerCase();
+    const pathFrente = `${userId}/frente.${extFrente}`;
+    const pathDorso = `${userId}/dorso.${extDorso}`;
+
+    const [{ error: errFrente }, { error: errDorso }] = await Promise.all([
+      supabase.storage.from('dni').upload(pathFrente, frenteFile, { upsert: true }),
+      supabase.storage.from('dni').upload(pathDorso, dorsoFile, { upsert: true }),
+    ]);
+    if (errFrente) throw errFrente;
+    if (errDorso) throw errDorso;
+
+    const { error } = await supabase
+      .from('perfiles')
+      .update({ dni_frontal_path: pathFrente, dni_dorso_path: pathDorso, estado_dni: 'En Revisión' })
+      .eq('id', userId);
+    if (error) throw error;
+  },
+
+  /**
+   * Marca los certificados como "En Revisión" al subir uno nuevo -- antes
+   * nadie tocaba esta columna, así que el admin nunca los veía entrar a la
+   * cola de pendientes (quedaban en su valor por defecto para siempre).
+   */
+  async enviarCertificadoARevision(userId: string): Promise<void> {
+    const { error } = await supabase.from('perfiles').update({ estado_certificados: 'En Revisión' }).eq('id', userId);
+    if (error) throw error;
+  },
+
+  /**
+   * URLs firmadas de corta duración para que el admin vea el DNI de un
+   * profesional -- el bucket es privado, así que no existe URL pública.
+   */
+  async getDniSignedUrls(dniFrontalPath?: string | null, dniDorsoPath?: string | null): Promise<{ frontal: string | null; dorso: string | null }> {
+    const [frontalRes, dorsoRes] = await Promise.all([
+      dniFrontalPath ? supabase.storage.from('dni').createSignedUrl(dniFrontalPath, 3600) : Promise.resolve(null),
+      dniDorsoPath ? supabase.storage.from('dni').createSignedUrl(dniDorsoPath, 3600) : Promise.resolve(null),
+    ]);
+    return {
+      frontal: frontalRes?.data?.signedUrl || null,
+      dorso: dorsoRes?.data?.signedUrl || null,
+    };
   },
 
   async updateUserStatus(id: string, status: string, motivo?: string): Promise<void> {
@@ -562,6 +633,16 @@ export const dbHelper = {
     if (updates.portafolio !== undefined) dbUpdates.portafolio = updates.portafolio;
     if (updates.cobra_presupuesto !== undefined) dbUpdates.cobra_presupuesto = updates.cobra_presupuesto;
     if (updates.acepta_pagos_semanales !== undefined) dbUpdates.acepta_pagos_semanales = updates.acepta_pagos_semanales;
+    // Faltaban en esta lista: se guardaban en el estado local de React (se
+    // veían bien en pantalla) pero nunca llegaban a la base -- confirmado
+    // en vivo, "Información Personal" y "Agregar Certificado" no persistían.
+    if (updates.apellido !== undefined) dbUpdates.apellido = updates.apellido;
+    if (updates.fecha_nacimiento !== undefined) dbUpdates.fecha_nacimiento = updates.fecha_nacimiento;
+    if (updates.pais !== undefined) dbUpdates.pais = updates.pais;
+    if (updates.experiencia !== undefined) dbUpdates.experiencia = updates.experiencia;
+    if (updates.monto_minimo !== undefined) dbUpdates.monto_minimo = updates.monto_minimo;
+    if (updates.nro_matricula !== undefined) dbUpdates.nro_matricula = updates.nro_matricula;
+    if (updates.certificados !== undefined) dbUpdates.certificados = updates.certificados;
 
     // Tolerante a columnas que todavía no existen (ej. portafolio antes de
     // correr sprint0_portafolio.sql): sin esto, un solo campo nuevo tira
@@ -919,6 +1000,24 @@ export const dbHelper = {
   },
 
   // --- POSTULACIONES ---
+  /**
+   * Cuántas postulaciones reales tiene cada empleo -- trabajos.postulantes
+   * se crea en 0 y nunca se incrementa en ningún lado, así que la bolsa de
+   * empleo siempre mostraba "0 postulados" (o "1" solo para quien ya se
+   * había postulado él mismo). Se cuenta de la tabla real en vez de leer
+   * esa columna muerta.
+   */
+  async getConteoPostulantesPorEmpleo(): Promise<Record<string, number>> {
+    const { data, error } = await supabase.from('postulaciones').select('empleoid');
+    if (error) { console.warn('Error getConteoPostulantesPorEmpleo:', error); return {}; }
+    const counts: Record<string, number> = {};
+    (data || []).forEach((p: any) => {
+      const key = String(p.empleoid);
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  },
+
   async getAllPostulaciones(): Promise<any[]> {
     const { data, error } = await supabase.from('postulaciones').select('*');
     if (error) throw error;
@@ -930,14 +1029,18 @@ export const dbHelper = {
       candidatoAvatar: p.candidatoavatar,
       candidatoOficio: p.candidatooficio,
       empleador: p.empleador,
+      empleador_id: p.empleador_id,
       estado: p.estado || 'Pendiente',
       fecha: p.fecha || p.created_at,
       mensaje: p.mensaje
     }));
   },
 
-  async getPostulaciones(empleadorName: string): Promise<any[]> {
-    const { data, error } = await supabase.from('postulaciones').select('*').eq('empleador', empleadorName);
+  async getPostulaciones(empleadorId: string): Promise<any[]> {
+    // Antes filtraba por el nombre del empleador (string), así que un
+    // cambio de nombre en el perfil desconectaba silenciosamente todas sus
+    // postulaciones anteriores. empleador_id es estable.
+    const { data, error } = await supabase.from('postulaciones').select('*').eq('empleador_id', empleadorId);
     if (error) throw error;
     return (data || []).map(p => ({
       id: p.id || p.idpostulacion,
@@ -951,6 +1054,7 @@ export const dbHelper = {
       candidatoVerificado: p.candidatoverificado,
       candidatoOficio: p.candidatooficio,
       empleador: p.empleador,
+      empleador_id: p.empleador_id,
       estado: p.estado || 'Pendiente',
       fecha: p.fecha || p.created_at,
       mensaje: p.mensaje,
@@ -975,15 +1079,13 @@ export const dbHelper = {
 
   async createPostulacion(postulacion: any, planCandidato?: string): Promise<any> {
     // Límite real por plan (5 Gratis / 15 Pro / ilimitadas Master), como
-    // ya promete /planes pero nunca se aplicaba. postulaciones no tiene un
-    // id de candidato confiable todavía -- se cuenta igual que el resto
-    // del archivo lo hace hoy, por nombre (getMisPostulaciones).
+    // ya promete /planes pero nunca se aplicaba.
     if (planCandidato && planCandidato !== 'Master') {
       const limite = planCandidato === 'Pro' ? 15 : 5;
       const inicioMes = new Date();
       inicioMes.setDate(1);
       inicioMes.setHours(0, 0, 0, 0);
-      const existentes = await dbHelper.getMisPostulaciones(postulacion.candidato).catch(() => []);
+      const existentes = await dbHelper.getMisPostulaciones(postulacion.candidato_id).catch(() => []);
       const esteMes = existentes.filter(p => p.fecha && new Date(p.fecha) >= inicioMes).length;
       if (esteMes >= limite) {
         throw new Error(`Alcanzaste el límite de ${limite} postulaciones este mes de tu plan ${planCandidato}. Mejorá tu plan para postular sin límite.`);
@@ -1027,8 +1129,12 @@ export const dbHelper = {
     return creada;
   },
 
-  async getMisPostulaciones(candidatoName: string): Promise<any[]> {
-    const { data, error } = await supabase.from('postulaciones').select('*').eq('candidato', candidatoName).order('created_at', { ascending: false });
+  async getMisPostulaciones(candidatoId: string): Promise<any[]> {
+    // Antes filtraba por el nombre del candidato (string) leído de una
+    // clave de localStorage que ya nadie escribe -- "Mis Postulaciones"
+    // estaba efectivamente roto para todo el mundo. candidato_id es la
+    // columna real y estable para esto.
+    const { data, error } = await supabase.from('postulaciones').select('*').eq('candidato_id', candidatoId).order('created_at', { ascending: false });
     if (error) throw error;
     return (data || []).map(p => ({
       id: p.id || p.idpostulacion,
@@ -1042,15 +1148,85 @@ export const dbHelper = {
       candidatoVerificado: p.candidatoverificado,
       candidatoOficio: p.candidatooficio,
       empleador: p.empleador,
+      empleador_id: p.empleador_id,
       estado: p.estado || 'Pendiente',
       fecha: p.fecha || p.created_at,
       mensaje: p.mensaje,
     }));
   },
 
-  async deletePostulacion(empleoId: number | string, candidatoName: string): Promise<void> {
-    const { error } = await supabase.from('postulaciones').delete().match({ empleoid: empleoId, candidato: candidatoName });
+  async deletePostulacion(empleoId: number | string, candidatoId: string): Promise<void> {
+    const { data: postulacion } = await supabase
+      .from('postulaciones')
+      .select('empleador_id, tituloempleo, candidato')
+      .match({ empleoid: empleoId, candidato_id: candidatoId })
+      .maybeSingle();
+
+    const { error } = await supabase.from('postulaciones').delete().match({ empleoid: empleoId, candidato_id: candidatoId });
     if (error) throw error;
+
+    // El empleador antes no se enteraba nunca de que un candidato retiró
+    // su postulación -- podía seguir esperando una respuesta de alguien
+    // que ya no está disponible.
+    if (postulacion?.empleador_id) {
+      dbHelper.crearNotificacion({
+        usuario_id: postulacion.empleador_id,
+        tipo: 'trabajo',
+        titulo: 'Un candidato retiró su postulación',
+        descripcion: `${postulacion.candidato || 'Un candidato'} retiró su postulación a "${postulacion.tituloempleo || 'tu empleo'}".`,
+      }).catch((e: any) => console.warn('Error notificando retiro de postulación:', e));
+    }
+  },
+
+  // --- RESEÑAS DE EMPLEADOR (Bolsa de Empleo) ---
+  /**
+   * El candidato califica al empleador una vez que hay resultado
+   * (Aceptado/Rechazado) -- no existía ningún flujo de reseña en la bolsa
+   * de empleo, a diferencia del Muro de servicios.
+   */
+  async crearResenaEmpleo(resena: {
+    postulacionId: number | string;
+    empleoId: number | string;
+    empleadorId: string;
+    candidatoId: string;
+    rating: number;
+    comentario?: string;
+  }): Promise<any> {
+    const { data, error } = await supabase.from('resenas_empleo').insert({
+      postulacion_id: resena.postulacionId,
+      empleo_id: resena.empleoId,
+      empleador_id: resena.empleadorId,
+      candidato_id: resena.candidatoId,
+      rating: resena.rating,
+      comentario: resena.comentario || null,
+    }).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  /** IDs de postulaciones que este candidato ya calificó, para no mostrarle el formulario dos veces. */
+  async getPostulacionesYaResenadas(candidatoId: string): Promise<(number | string)[]> {
+    const { data, error } = await supabase.from('resenas_empleo').select('postulacion_id').eq('candidato_id', candidatoId);
+    if (error) { console.warn('Error getPostulacionesYaResenadas:', error); return []; }
+    return (data || []).map((r: any) => r.postulacion_id);
+  },
+
+  /** Rating promedio por empleador -- para mostrar en cada aviso de la bolsa de empleo. */
+  async getRatingsEmpleadores(): Promise<Record<string, { promedio: number; total: number }>> {
+    const { data, error } = await supabase.from('resenas_empleo').select('empleador_id, rating');
+    if (error) { console.warn('Error getRatingsEmpleadores:', error); return {}; }
+    const acumulado: Record<string, { suma: number; total: number }> = {};
+    (data || []).forEach((r: any) => {
+      const key = String(r.empleador_id);
+      if (!acumulado[key]) acumulado[key] = { suma: 0, total: 0 };
+      acumulado[key].suma += r.rating;
+      acumulado[key].total += 1;
+    });
+    const resultado: Record<string, { promedio: number; total: number }> = {};
+    Object.entries(acumulado).forEach(([key, { suma, total }]) => {
+      resultado[key] = { promedio: Math.round((suma / total) * 10) / 10, total };
+    });
+    return resultado;
   },
 
   // --- REVIEWS ---
@@ -2205,19 +2381,49 @@ export const dbHelper = {
     const errors: string[] = [];
     const currentUser = await getCurrentUser();
     
+    // Orden pensado para respetar las foreign keys (hijas antes que padres)
+    // -- antes esta lista tenía la mitad de las tablas que existen hoy
+    // (databases agregadas durante todo este sprint: expedientes, favoritos,
+    // Mi Hogar, gamificación, tienda de canje, etc. nunca se sumaron), así
+    // que "Vaciar TODOS los datos" no vaciaba ni cerca de todo.
+    // "oficios", "reglas_puntos" y "premios_canje" quedan afuera a propósito:
+    // son catálogos que administra el propio admin, no datos de usuario.
     const tables = [
       'mensajes',
-      'messages',
-      'conversaciones',
-      'reviews',
+      'preguntas_trabajo',
+      'presupuestos_muro',
+      'resenas_inteligentes',
+      'canjes_profesional',
+      'transacciones_puntos',
+      'logros_profesional',
+      'calculadoras_profesional',
+      'profile_views',
+      'reportes',
+      'notificaciones',
+      'disputas_resolucion',
       'postulaciones',
-      'job_postings',
+      'mi_hogar_comprobantes',
+      'mi_hogar_mantenimientos',
+      'favoritos_profesional',
       'trabajos',
-      'jobs',
+      'expedientes_trabajo',
+      'ordenes_trabajo',
+      'presupuestos_estructurados',
+      'mi_hogar_propiedades',
+      'conversaciones',
+      'campanas_masivas_historial',
       'tickets_soporte',
       'clientes',
       'obras',
       'presupuestos',
+      'presupuestos_obra',
+      'puntos_profesional',
+      // Nombres de un esquema anterior -- se mantienen por si algo quedó
+      // de esa época; el catch por tabla ya tolera que no existan.
+      'messages',
+      'reviews',
+      'job_postings',
+      'jobs',
       'quotes',
       'quote_items',
       'profesionales',
@@ -2589,6 +2795,11 @@ export const dbHelper = {
     return data;
   },
 
+  async deleteTicketAdmin(ticketId: string): Promise<void> {
+    const { error } = await supabase.from('tickets_soporte').delete().eq('id', ticketId);
+    if (error) throw error;
+  },
+
   /**
    * Convierte un ticket de Soporte ya vinculado a un profesional en un caso
    * real del Centro de Disputas, para que entre al mismo flujo de dos
@@ -2873,14 +3084,32 @@ export const dbHelper = {
     return data;
   },
 
+  /**
+   * Busca el valor configurado en "Reglas de Puntos" (admin) para esta
+   * acción; si no hay fila (o falla la consulta) usa el valor por defecto
+   * que pasa el llamador. Los referidos usan una accion dinámica
+   * (`referido_{userId}`) para que otorgarPuntosUnaVez los distinga por
+   * invitado, así que se normalizan a la clave fija 'referido'.
+   */
+  async _obtenerPuntosConfigurados(accion: string, valorPorDefecto: number): Promise<number> {
+    try {
+      const clave = accion.startsWith('referido_') ? 'referido' : accion;
+      const { data } = await supabase.from('reglas_puntos').select('puntos').eq('clave', clave).maybeSingle();
+      return typeof data?.puntos === 'number' ? data.puntos : valorPorDefecto;
+    } catch {
+      return valorPorDefecto;
+    }
+  },
+
   async registrarPuntos(profesionalId: string, accion: string, puntos: number, descripcion?: string): Promise<void> {
     try {
+      const puntosReales = await dbHelper._obtenerPuntosConfigurados(accion, puntos);
       await supabase.from('transacciones_puntos').insert({
-        profesional_id: profesionalId, tipo: 'ganado', accion, puntos,
+        profesional_id: profesionalId, tipo: 'ganado', accion, puntos: puntosReales,
         descripcion: descripcion || accion,
       });
       const actual = await dbHelper.getOrCreatePuntosProfesional(profesionalId);
-      const nuevosTotal = (actual?.puntos_totales || 0) + puntos;
+      const nuevosTotal = (actual?.puntos_totales || 0) + puntosReales;
       let nivel = 'Bronce';
       if (nuevosTotal >= 1000) nivel = 'Platino';
       else if (nuevosTotal >= 500) nivel = 'Oro';
@@ -3182,6 +3411,36 @@ export const dbHelper = {
     }).select().single();
     if (error) throw error;
     return data;
+  },
+
+  // --- GESTIÓN DE OFICIOS (admin, Configuración) ---
+  async getOficiosAdmin(): Promise<any[]> {
+    const { data, error } = await supabase.from('oficios').select('*').order('nombre', { ascending: true });
+    if (error) { console.warn('Error getOficiosAdmin:', error); return []; }
+    return data || [];
+  },
+
+  async crearOficioAdmin(nombre: string): Promise<any> {
+    const { data, error } = await supabase.from('oficios').insert({ nombre: nombre.trim() }).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  async eliminarOficioAdmin(id: string): Promise<void> {
+    const { error } = await supabase.from('oficios').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  // --- REGLAS DE PUNTOS (admin, Configuración) ---
+  async getReglasPuntosAdmin(): Promise<any[]> {
+    const { data, error } = await supabase.from('reglas_puntos').select('*').order('puntos', { ascending: false });
+    if (error) { console.warn('Error getReglasPuntosAdmin:', error); return []; }
+    return data || [];
+  },
+
+  async actualizarReglaPuntoAdmin(clave: string, puntos: number): Promise<void> {
+    const { error } = await supabase.from('reglas_puntos').update({ puntos, updated_at: new Date().toISOString() }).eq('clave', clave);
+    if (error) throw error;
   },
 
   async registrarAuditoria(log: {

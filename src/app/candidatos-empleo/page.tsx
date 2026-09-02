@@ -11,25 +11,36 @@ import Tooltip from '@/components/Tooltip';
 import Logo from '@/components/Logo';
 import { useAuth } from '@/components/AuthContext';
 import { dbHelper } from '@/lib/supabase';
+import AuthGuard from '@/components/AuthGuard';
 
 export default function CandidatosEmpleoPage() {
+  return (
+    <AuthGuard>
+      <CandidatosEmpleoContent />
+    </AuthGuard>
+  );
+}
+
+function CandidatosEmpleoContent() {
   const router = useRouter();
   const { profile: perfil } = useAuth();
 
   // Estado local
   const [postulaciones, setPostulaciones] = useState<any[]>([]);
-  const [empleosPropios, setEmpleosPropios] = useState<any[]>([]);
   const [busqueda, setBusqueda] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('Todos');
   const [error, setError] = useState<string | null>(null);
   const [contactandoId, setContactandoId] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!perfil?.nombre) return;
+    // Antes filtraba por perfil.nombre -- si el empleador cambiaba su
+    // nombre de perfil, dejaba de ver a todos sus postulantes anteriores
+    // de un día para el otro. empleador_id no cambia nunca.
+    if (!perfil?.id) return;
 
     const loadPostulaciones = async () => {
       try {
-        const data = await dbHelper.getPostulaciones(perfil.nombre);
+        const data = await dbHelper.getPostulaciones(perfil.id);
         setPostulaciones(data);
       } catch (err) {
         console.error("Error al cargar postulaciones:", err);
@@ -38,7 +49,7 @@ export default function CandidatosEmpleoPage() {
     };
 
     loadPostulaciones();
-  }, [perfil?.nombre]);
+  }, [perfil?.id]);
 
   /** Abre (o crea) la conversación real con el candidato -- antes mandaba siempre a la bandeja general. */
   const handleChatearConCandidato = async (postulacion: any) => {

@@ -36,6 +36,13 @@ function ChatIDContent() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Evita crear la tarjeta de presupuesto del Muro duplicada cuando este
+  // efecto corre más de una vez para la misma conversación (StrictMode en
+  // dev, o `user` cambiando de referencia). El chequeo+set es sincrónico
+  // (sin await entre medio), así que es imposible que dos corridas se
+  // intercalen -- a diferencia de chequear contra la base, que sí corría
+  // en paralelo y no evitaba el duplicado.
+  const tarjetaPresupuestoCreada = useRef<Set<string>>(new Set());
 
   // Formulario para emitir Presupuesto Estructurado (Profesional)
   const [showPresupuestoModal, setShowPresupuestoModal] = useState(false);
@@ -80,7 +87,8 @@ function ChatIDContent() {
         let msgs = await dbHelper.getMensajes(conversacionId);
 
         // Si la conversación no tiene mensajes pero corresponde a un presupuesto del Muro
-        if (msgs.length === 0 && conv) {
+        if (msgs.length === 0 && conv && !tarjetaPresupuestoCreada.current.has(conversacionId)) {
+          tarjetaPresupuestoCreada.current.add(conversacionId);
           const partnerId = conv.usuario1_id === user.id ? conv.usuario2_id : conv.usuario1_id;
           const { data: presMuro } = await supabase
             .from('presupuestos_muro')
@@ -91,36 +99,50 @@ function ChatIDContent() {
             .maybeSingle();
 
           if (presMuro) {
-            const cardPayload = JSON.stringify({
-              tipo: 'presupuesto_card',
-              presupuesto_id: presMuro.id,
-              profesional_id: presMuro.profesional_id,
-              monto: presMuro.monto,
-              detalle: presMuro.descripcion,
-              tiempo_estimado: presMuro.tiempo_estimado || 'A convenir',
-              garantia: presMuro.garantia || 'sin_garantia',
-              materiales_incluidos: presMuro.materiales_incluidos || false,
-              estado: presMuro.estado || 'pendiente'
-            });
+            // Chequeo justo antes de insertar: este efecto puede correr más de
+            // una vez (StrictMode en dev, o `user` cambiando de referencia) y
+            // sin esto se duplicaba la tarjeta del presupuesto en el chat.
+            const { data: yaExiste } = await supabase
+              .from('mensajes')
+              .select('*')
+              .eq('conversacion_id', conversacionId)
+              .ilike('texto', `%"presupuesto_id":"${presMuro.id}"%`)
+              .maybeSingle();
 
-            // Actualizar la conversación para vincularla si estaba suelta
-            if (!presMuro.conversacion_id) {
-              await supabase
-                .from('presupuestos_muro')
-                .update({ conversacion_id: conversacionId })
-                .eq('id', presMuro.id);
-            }
+            if (yaExiste) {
+              msgs = [yaExiste];
+            } else {
+              const cardPayload = JSON.stringify({
+                tipo: 'presupuesto_card',
+                presupuesto_id: presMuro.id,
+                profesional_id: presMuro.profesional_id,
+                monto: presMuro.monto,
+                detalle: presMuro.descripcion,
+                tiempo_estimado: presMuro.tiempo_estimado || 'A convenir',
+                garantia: presMuro.garantia || 'sin_garantia',
+                materiales_incluidos: presMuro.materiales_incluidos || false,
+                estado: presMuro.estado || 'pendiente'
+              });
 
-            const { data: autoMsg } = await supabase.from('mensajes').insert([{
-              conversacion_id: conversacionId,
-              emisor_id: presMuro.profesional_id,
-              receptor_id: presMuro.cliente_id,
-              texto: cardPayload,
-              leido: false
-            }]).select().single();
+              // Actualizar la conversación para vincularla si estaba suelta
+              if (!presMuro.conversacion_id) {
+                await supabase
+                  .from('presupuestos_muro')
+                  .update({ conversacion_id: conversacionId })
+                  .eq('id', presMuro.id);
+              }
 
-            if (autoMsg) {
-              msgs = [autoMsg];
+              const { data: autoMsg } = await supabase.from('mensajes').insert([{
+                conversacion_id: conversacionId,
+                emisor_id: presMuro.profesional_id,
+                receptor_id: presMuro.cliente_id,
+                texto: cardPayload,
+                leido: false
+              }]).select().single();
+
+              if (autoMsg) {
+                msgs = [autoMsg];
+              }
             }
           }
         }
@@ -174,7 +196,11 @@ function ChatIDContent() {
           filter: `conversacion_id=eq.${conversacionId}`,
         },
         async (payload) => {
-          setMensajes(prev => [...prev, payload.new]);
+          // Sin el chequeo de id, un mensaje que esta misma pestaña acaba de
+          // insertar (p. ej. la tarjeta de presupuesto auto-generada, o un
+          // mensaje propio) se duplicaba visualmente: ya estaba en el estado
+          // por la carga inicial y el evento realtime lo volvía a agregar.
+          setMensajes(prev => prev.some(m => m.id === payload.new.id) ? prev : [...prev, payload.new]);
 
           if (payload.new.texto?.startsWith('📄 PRESUPUESTO_ENVIADO:')) {
             const pId = payload.new.texto.replace('📄 PRESUPUESTO_ENVIADO:', '');

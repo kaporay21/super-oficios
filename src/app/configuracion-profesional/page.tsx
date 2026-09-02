@@ -12,7 +12,7 @@ import {
 import Tooltip from '@/components/Tooltip';
 import { PanelIcon, MuroIcon, TrabajosIcon, MensajesIcon, SoporteIcon, ConfiguracionIcon, HerramientasIcon } from '@/components/ModernIcons';
 import Logo from '@/components/Logo';
-import { uploadImageToSupabase } from '@/lib/supabaseStorage';
+import { uploadImageToSupabase, compressImage } from '@/lib/supabaseStorage';
 
 // Lista cerrada de oficios para estandarizar el buscador
 const OFICIOS_PRECARGADOS = [
@@ -101,6 +101,7 @@ function PerfilProfesionalContent() {
   // Estados para archivos del DNI temporal
   const [dniFrenteFile, setDniFrenteFile] = useState<File | null>(null);
   const [dniDorsoFile, setDniDorsoFile] = useState<File | null>(null);
+  const [subiendoDNI, setSubiendoDNI] = useState(false);
 
   // Estado con los datos del usuario real
   const [perfil, setPerfil] = useState({
@@ -266,9 +267,12 @@ function PerfilProfesionalContent() {
             archivoBase64: publicUrl
           };
           const nuevosCerts = [...perfil.certificados, nuevoCert];
-          const nuevoPerfil = { ...perfil, certificados: nuevosCerts };
+          const nuevoPerfil = { ...perfil, certificados: nuevosCerts, estadoCertificados: 'En Revisión' };
           setPerfil(nuevoPerfil);
-          if (user) await dbHelper.updateProfile(user.id, { certificados: nuevosCerts });
+          if (user) {
+            await dbHelper.updateProfile(user.id, { certificados: nuevosCerts });
+            await dbHelper.enviarCertificadoARevision(user.id);
+          }
           alert('Certificado / Matrícula guardado correctamente.');
         }
         setIsSaving(false);
@@ -304,35 +308,33 @@ function PerfilProfesionalContent() {
     }
   };
 
-  const handleSubirDNI = (e: React.FormEvent) => {
+  const handleSubirDNI = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!dniFrenteFile || !dniDorsoFile) {
       alert("Por favor, sube ambas fotos (Frente y Dorso) del DNI.");
       return;
     }
-    
-    // Al subir DNI, actualizamos el estado del perfil
-    const nuevoPerfil = { ...perfil, estadoDNI: 'En Revisión' };
-    setPerfil(nuevoPerfil);
-    localStorage.setItem('oficiosya_profesional_perfil', JSON.stringify(nuevoPerfil));
-    
-    // Inyectamos también una solicitud de verificación en localStorage para el panel de administración
-    const verificaciones = JSON.parse(localStorage.getItem('oficiosya_verificaciones') || '[]');
-    const nuevaSol = {
-      id: Date.now().toString(),
-      nombre: perfil.nombre,
-      email: perfil.correo,
-      oficio: perfil.especialidades[0] || 'Profesional',
-      fecha: new Date().toLocaleDateString('es-AR'),
-      estado: 'Pendiente'
-    };
-    verificaciones.unshift(nuevaSol);
-    localStorage.setItem('oficiosya_verificaciones', JSON.stringify(verificaciones));
+    if (!user) return;
 
-    setModalDNI(false);
-    setDniFrenteFile(null);
-    setDniDorsoFile(null);
-    alert('DNI enviado para verificación. Te notificaremos cuando sea validado.');
+    setSubiendoDNI(true);
+    try {
+      const [frenteComprimido, dorsoComprimido] = await Promise.all([
+        compressImage(dniFrenteFile),
+        compressImage(dniDorsoFile),
+      ]);
+      await dbHelper.subirDNI(user.id, frenteComprimido, dorsoComprimido);
+      setPerfil(prev => ({ ...prev, estadoDNI: 'En Revisión' }));
+      await refreshProfile();
+
+      setModalDNI(false);
+      setDniFrenteFile(null);
+      setDniDorsoFile(null);
+      alert('DNI enviado para verificación. Te notificaremos cuando sea validado.');
+    } catch (err: any) {
+      alert('No pudimos subir el DNI: ' + (err?.message || err));
+    } finally {
+      setSubiendoDNI(false);
+    }
   };
 
   // Oficios disponibles que el usuario aún NO ha agregado
@@ -1031,12 +1033,13 @@ function PerfilProfesionalContent() {
               </div>
             </div>
 
-            <button 
-              type="submit" 
-              disabled={!dniFrenteFile || !dniDorsoFile}
-              className={`w-full h-12 text-white font-bold rounded-xl mt-4 transition-all ${(!dniFrenteFile || !dniDorsoFile) ? 'bg-gray-300 cursor-not-allowed' : 'bg-[#00355f] hover:bg-[#0f4c81]'}`}
+            <button
+              type="submit"
+              disabled={!dniFrenteFile || !dniDorsoFile || subiendoDNI}
+              className={`w-full h-12 text-white font-bold rounded-xl mt-4 transition-all flex items-center justify-center gap-2 ${(!dniFrenteFile || !dniDorsoFile || subiendoDNI) ? 'bg-gray-300 cursor-not-allowed' : 'bg-[#00355f] hover:bg-[#0f4c81]'}`}
             >
-              Enviar para Revisión
+              {subiendoDNI ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {subiendoDNI ? 'Subiendo...' : 'Enviar para Revisión'}
             </button>
           </form>
         </ModalWrapper>
