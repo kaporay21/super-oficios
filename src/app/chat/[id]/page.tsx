@@ -534,8 +534,14 @@ function ChatIDContent() {
                       )}
                     </div>
 
-                    {/* Botones — solo cliente, solo si pendiente */}
-                    {!isProfesional && estaPendiente && (
+                    {/* Botones — quien no mandó este presupuesto, mientras esté pendiente.
+                        Antes era "!isProfesional" (asumía que el que recibe un
+                        presupuesto nunca es profesional) -- se rompía apenas
+                        dos profesionales se contactaban entre sí (uno
+                        contratando al otro para su propia casa): el que
+                        recibía la oferta nunca veía los botones de
+                        Aceptar/Rechazar porque también era profesional. */}
+                    {!isMe && estaPendiente && (
                       <div className="flex gap-2 pt-2 border-t border-slate-800">
                         <button
                           onClick={() => handleAceptarCard(msg, cardData)}
@@ -606,7 +612,7 @@ function ChatIDContent() {
                         <p className="text-[11px] text-emerald-400 font-bold">✓ Incluye materiales de trabajo</p>
                       )}
                     </div>
-                    {!isProfesional && estaPendiente && (
+                    {!isMe && estaPendiente && (
                       <div className="flex gap-2 pt-2 border-t border-slate-800">
                         <button
                           onClick={() => handleAceptarPresupuesto(presData.id)}

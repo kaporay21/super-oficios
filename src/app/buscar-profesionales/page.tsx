@@ -282,20 +282,25 @@ function BuscadorContenido() {
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => router.push('/')}>
             <Logo size="md" theme="light" />
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push('/bienvenida')}
-              className="text-[#00355f] font-bold text-sm hover:underline hidden md:block"
-            >
-              Crear cuenta
-            </button>
-            <button
-              onClick={() => router.push('/login')}
-              className="bg-[#00355f] text-white px-5 py-2 rounded-xl font-bold text-sm hover:bg-[#0f4c81] transition-colors shadow-sm active:scale-95"
-            >
-              Ingresar
-            </button>
-          </div>
+          {/* Antes esto se mostraba siempre, sin chequear sesión -- un
+              cliente o profesional que ya tenía la sesión abierta veía
+              "Ingresar" igual, como si hubiera cerrado sesión al entrar acá. */}
+          {!user && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => router.push('/bienvenida')}
+                className="text-[#00355f] font-bold text-sm hover:underline hidden md:block"
+              >
+                Crear cuenta
+              </button>
+              <button
+                onClick={() => router.push('/login')}
+                className="bg-[#00355f] text-white px-5 py-2 rounded-xl font-bold text-sm hover:bg-[#0f4c81] transition-colors shadow-sm active:scale-95"
+              >
+                Ingresar
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -304,7 +309,7 @@ function BuscadorContenido() {
         {/* ── Título ─────────────────────────────────────────────── */}
         <section className="text-center bg-white py-12 px-4 rounded-3xl border border-gray-100 shadow-sm space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <h1 className="text-3xl md:text-4xl font-extrabold text-[#00355f] leading-tight">
-            Directorio de Profesionales
+            Los mejores profesionales, a un clic
           </h1>
           <p className="text-sm md:text-base text-gray-500 max-w-2xl mx-auto leading-relaxed px-2">
             Explorá los perfiles de nuestros expertos verificados. Para solicitar presupuestos y gestionar tus trabajos, crea tu cuenta gratuita.
@@ -356,6 +361,11 @@ function BuscadorContenido() {
         </section>
 
         {/* ── CTA: Publicar Trabajo ──────────────────────────────── */}
+        {/* Antes se mostraba siempre, aunque ya hubiera sesión -- no tiene
+            sentido invitar a "registrarte gratis" a alguien que ya tiene
+            cuenta (cliente o profesional), y reforzaba la sensación de
+            haber salido de la app. */}
+        {!user && (
         <section className="bg-gradient-to-r from-[#fc8127] to-[#e67320] rounded-3xl p-1 shadow-lg animate-in fade-in slide-in-from-bottom-6 duration-700">
           <div className="bg-white/95 backdrop-blur-md rounded-[22px] p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 overflow-hidden relative">
             <div className="absolute -right-10 -top-10 text-[#fc8127] opacity-10 pointer-events-none">
@@ -383,6 +393,7 @@ function BuscadorContenido() {
             </div>
           </div>
         </section>
+        )}
 
         {/* ── Buscador y Filtros ─────────────────────────────────── */}
         <section className="space-y-4">
@@ -740,6 +751,7 @@ function BuscadorContenido() {
         </section>
 
         {/* ── CTA Profesional ──────────────────────────────────── */}
+        {!user && (
         <section className="bg-[#00355f] text-white p-8 md:p-10 rounded-3xl relative overflow-hidden shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="relative z-10 max-w-2xl">
             <h3 className="text-2xl font-bold mb-3">¿Sos profesional?</h3>
@@ -757,6 +769,7 @@ function BuscadorContenido() {
           </div>
           <div className="absolute -right-20 -bottom-20 w-64 h-64 bg-white opacity-5 rounded-full blur-3xl" />
         </section>
+        )}
 
       </div>
     </main>

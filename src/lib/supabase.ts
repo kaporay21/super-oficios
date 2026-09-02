@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { resolverOficiosPorTexto } from './constants';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -366,10 +367,20 @@ export const dbHelper = {
         query = query.ilike('provincia', `%${provincia}%`);
       }
 
-      // ── Filtro por Texto Libre (nombre) ────────────────────────────
-      // Buscamos por nombre del perfil con coincidencia parcial
+      // ── Filtro por Texto Libre (nombre u oficio) ────────────────────
+      // El placeholder invita a escribir tanto un nombre ("Juan") como un
+      // oficio en su forma de persona ("electricista", "plomero"). Antes
+      // esto solo hacía ILIKE contra `nombre`, así que buscar "electricista"
+      // no traía ningún resultado aunque hubiera decenas de electricistas
+      // (la categoría real se llama "Electricidad", una palabra distinta).
+      // Ahora también matcheamos contra `oficios` resolviendo sinónimos.
       if (busqueda && busqueda.trim() !== '') {
-        query = query.ilike('nombre', `%${busqueda.trim()}%`);
+        const termino = busqueda.trim().replace(/[,()]/g, '');
+        const condiciones = [`nombre.ilike.%${termino}%`];
+        for (const oficioCoincidente of resolverOficiosPorTexto(termino)) {
+          condiciones.push(`oficios.cs.{"${oficioCoincidente}"}`);
+        }
+        query = query.or(condiciones.join(','));
       }
 
       // ── Filtro: Solo Verificados (DNI aprobado) ────────────────────

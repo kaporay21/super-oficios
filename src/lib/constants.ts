@@ -17,6 +17,88 @@ export const OFICIOS_CORE = [
   'Otro'
 ];
 
+// Mapea la forma en que la gente busca un oficio ("electricista", "plomero")
+// al nombre de categoría real guardado en `perfiles.oficios` ("Electricidad",
+// "Plomería") -- son palabras distintas, así que un ILIKE/contains directo
+// contra el nombre de la categoría nunca matchea el término de búsqueda.
+export const SINONIMOS_OFICIO: Record<string, string> = {
+  plomero: 'Plomería',
+  plomera: 'Plomería',
+  gasfiter: 'Plomería',
+  electricista: 'Electricidad',
+  albañil: 'Albañilería',
+  albanil: 'Albañilería',
+  pintor: 'Pintura',
+  pintora: 'Pintura',
+  carpintero: 'Carpintería',
+  carpintera: 'Carpintería',
+  cerrajero: 'Cerrajería',
+  cerrajera: 'Cerrajería',
+  durlock: 'Durlock / Yeso',
+  yesero: 'Durlock / Yeso',
+  yesera: 'Durlock / Yeso',
+  yeso: 'Durlock / Yeso',
+  climatizacion: 'Aire Acondicionado',
+  climatización: 'Aire Acondicionado',
+  aire: 'Aire Acondicionado',
+  jardinero: 'Jardinería',
+  jardinera: 'Jardinería',
+  jardin: 'Jardinería',
+  fumigador: 'Fumigación',
+  fumigadora: 'Fumigación',
+  herrero: 'Herrería',
+  herrera: 'Herrería',
+  techista: 'Techista / Impermeabilización',
+  techador: 'Techista / Impermeabilización',
+  impermeabilizacion: 'Techista / Impermeabilización',
+  impermeabilización: 'Techista / Impermeabilización',
+  fletero: 'Fletes y Mudanzas',
+  flete: 'Fletes y Mudanzas',
+  mudanza: 'Fletes y Mudanzas',
+  mudanzas: 'Fletes y Mudanzas',
+  limpiador: 'Limpieza',
+  limpiadora: 'Limpieza',
+  mucama: 'Limpieza',
+};
+
+function normalizarTexto(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[áàäâã]/g, 'a')
+    .replace(/[éèëê]/g, 'e')
+    .replace(/[íìïî]/g, 'i')
+    .replace(/[óòöôõ]/g, 'o')
+    .replace(/[úùüû]/g, 'u')
+    .replace(/ñ/g, 'n')
+    .trim();
+}
+
+// Dado lo que alguien escribió en el buscador, devuelve las categorías de
+// `OFICIOS_CORE` que probablemente esté buscando -- ya sea porque escribió
+// el nombre de la categoría directamente (parcial), o porque escribió el
+// nombre del oficio en su forma de persona ("plomero" en vez de "Plomería").
+export function resolverOficiosPorTexto(termino: string): string[] {
+  const t = normalizarTexto(termino);
+  if (!t) return [];
+
+  const coincidencias = new Set<string>();
+
+  for (const oficio of OFICIOS_CORE) {
+    const oficioNorm = normalizarTexto(oficio);
+    if (oficioNorm.includes(t) || t.includes(oficioNorm)) {
+      coincidencias.add(oficio);
+    }
+  }
+
+  for (const [sinonimo, oficio] of Object.entries(SINONIMOS_OFICIO)) {
+    if (sinonimo.includes(t) || t.includes(sinonimo)) {
+      coincidencias.add(oficio);
+    }
+  }
+
+  return Array.from(coincidencias);
+}
+
 export const PROVINCIAS_Y_CIUDADES: Record<string, string[]> = {
   'Buenos Aires': ['La Plata', 'Mar del Plata', 'Bahía Blanca', 'Tandil', 'Pilar', 'Campana'],
   'CABA (Ciudad Autónoma de Buenos Aires)': ['Palermo', 'Caballito', 'Belgrano', 'Recoleta', 'Flores', 'Almagro', 'Villa Urquiza'],
