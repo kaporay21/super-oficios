@@ -255,6 +255,23 @@ async function insertarTolerante(tabla: string, fila: Record<string, any>): Prom
   }
 }
 
+/**
+ * Adónde debe llevar el push nativo según el tipo de notificación -- mismo
+ * mapeo que `destinoNotificacion` en NotificationProvider.tsx, para que el
+ * toast in-app y el push del celular lleven exactamente al mismo lugar.
+ */
+function _destinoPush(tipo: string, referenciaId?: string): string {
+  const ref = referenciaId ? String(referenciaId) : '';
+  switch (tipo) {
+    case 'presupuesto':
+      return ref ? `/comparar-presupuestos?trabajoId=${ref}` : '/notificaciones';
+    case 'mensaje':
+      return ref ? `/chat/${ref}` : '/chat';
+    default:
+      return '/notificaciones';
+  }
+}
+
 export const dbHelper = {
   // --- USERS / PROFILES ---
   async getAllUsers(): Promise<any[]> {
@@ -3344,9 +3361,22 @@ export const dbHelper = {
     }
   },
 
+  /** Guarda (o actualiza) la suscripción push del navegador para este usuario. */
+  async guardarPushSubscription(userId: string, subscription: { endpoint: string; keys?: { p256dh: string; auth: string } }): Promise<void> {
+    if (!subscription?.endpoint || !subscription?.keys) return;
+    const { error } = await supabase.from('push_subscriptions').upsert({
+      user_id: userId,
+      endpoint: subscription.endpoint,
+      p256dh: subscription.keys.p256dh,
+      auth: subscription.keys.auth,
+      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+    }, { onConflict: 'endpoint' });
+    if (error) console.error('Error al guardar suscripción push:', error);
+  },
+
   async crearNotificacion(notificacion: {
     usuario_id: string;
-    tipo: 'trabajo' | 'mensaje' | 'sistema' | 'alerta';
+    tipo: 'trabajo' | 'mensaje' | 'sistema' | 'alerta' | 'presupuesto';
     titulo: string;
     descripcion: string;
     referencia_id?: string;
@@ -3356,6 +3386,24 @@ export const dbHelper = {
         .from('notificaciones')
         .insert(notificacion);
       if (error) throw error;
+
+      // Push real al celular -- best effort. Si el usuario no tiene
+      // ninguna suscripción activa (o /api/push/send no está configurado
+      // todavía) esto no debe romper la notificación in-app, que ya se
+      // guardó arriba.
+      if (typeof window !== 'undefined') {
+        fetch('/api/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            usuario_id: notificacion.usuario_id,
+            titulo: notificacion.titulo,
+            descripcion: notificacion.descripcion,
+            url: _destinoPush(notificacion.tipo, notificacion.referencia_id),
+          }),
+        }).catch(() => {});
+      }
+
       return true;
     } catch (e) {
       console.error('Error crearNotificacion:', e);
@@ -3642,14 +3690,13 @@ export const dbHelper = {
     const nombrePro = perfil?.nombre || 'Un profesional';
 
     // Notificar al cliente
-    await supabase.from('notificaciones').insert([{
+    await dbHelper.crearNotificacion({
       usuario_id: oferta.cliente_id,
       tipo: 'presupuesto',
       titulo: '💰 Nueva oferta recibida',
       descripcion: `${nombrePro} te envió una oferta para "${oferta.titulo_trabajo || 'tu trabajo'}". ¡Revisá tus presupuestos!`,
       referencia_id: String(oferta.trabajo_id),
-      leida: false,
-    }]);
+    });
 
     return data;
   },
@@ -3695,14 +3742,13 @@ export const dbHelper = {
 
     // Notificar al cliente que hubo una actualización
     if (updates.cliente_id) {
-      await supabase.from('notificaciones').insert([{
+      await dbHelper.crearNotificacion({
         usuario_id: updates.cliente_id,
         tipo: 'presupuesto',
         titulo: '🔄 Oferta actualizada',
         descripcion: `${updates.profesional_nombre || 'Un profesional'} actualizó su oferta para "${updates.titulo_trabajo || 'tu trabajo'}". Revisá los nuevos detalles.`,
         referencia_id: String(actual?.trabajo_id || ''),
-        leida: false,
-      }]);
+      });
     }
 
     return data;

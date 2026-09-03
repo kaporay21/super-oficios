@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { MessageSquare, Bell, X, ArrowRight, Volume2 } from 'lucide-react';
-import { supabase, getCurrentProfile } from '@/lib/supabase';
+import { supabase, getCurrentProfile, dbHelper } from '@/lib/supabase';
 
 interface NotificationToast {
   id: string;
@@ -72,6 +72,45 @@ function playNotificationSound() {
     osc2.onended = () => { ctx.close().catch(() => {}); };
   } catch (e) {
     // Ignorar si el audio aún no fue desbloqueado por interacción del usuario
+  }
+}
+
+/** La VAPID public key llega en Base64 URL-safe; pushManager.subscribe() la necesita como Uint8Array. */
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+/**
+ * Suscribe este navegador a notificaciones push reales (sobreviven a cerrar
+ * la app, a diferencia del `new Notification()` de más abajo que solo
+ * funciona con la pestaña abierta en segundo plano) y guarda la suscripción
+ * en Supabase para que el servidor le pueda mandar avisos a este usuario.
+ */
+async function subscribirAPush(userId: string) {
+  try {
+    if (typeof window === 'undefined') return;
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!vapidPublicKey) return;
+
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) as BufferSource,
+      });
+    }
+    await dbHelper.guardarPushSubscription(userId, subscription.toJSON() as any);
+  } catch (e) {
+    console.error('Error al suscribir a push:', e);
   }
 }
 
@@ -150,11 +189,20 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         const perm = await Notification.requestPermission();
         setPermissionState(perm);
         setShowPermissionBanner(false);
+        if (perm === 'granted' && user?.id) await subscribirAPush(user.id);
       } catch (e) {
         console.error('Error al pedir permiso de notificaciones:', e);
       }
     }
   };
+
+  // Si el usuario ya había dado el permiso ANTES de que existiera el push
+  // real (o lo dio en otro dispositivo), lo suscribimos igual apenas
+  // sepamos quién es -- sin esto, quedaría recibiendo solo el aviso
+  // "mientras la pestaña está abierta" para siempre.
+  useEffect(() => {
+    if (user?.id && permissionState === 'granted') subscribirAPush(user.id);
+  }, [user?.id, permissionState]);
 
   // Cargar usuario autenticado y mantenerlo sincronizado con la sesión.
   // Antes se resolvía una sola vez al montar: si el usuario iniciaba sesión
