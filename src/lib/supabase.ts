@@ -260,6 +260,25 @@ async function insertarTolerante(tabla: string, fila: Record<string, any>): Prom
  * mapeo que `destinoNotificacion` en NotificationProvider.tsx, para que el
  * toast in-app y el push del celular lleven exactamente al mismo lugar.
  */
+/**
+ * Convierte el `texto` crudo de un mensaje en algo legible para el
+ * resumen de la conversación y la descripción de la notificación/push.
+ * Sin esto, compartir ubicación o un adjunto mostraba el JSON crudo
+ * (`{"tipo":"ubicacion","lat":...`) en vez de un texto entendible.
+ */
+function _resumirTextoMensaje(texto: string): string {
+  if (!texto) return '';
+  if (texto.startsWith('📄')) return 'Presupuesto enviado';
+  if (texto.trimStart().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(texto);
+      if (parsed?.tipo === 'ubicacion') return '📍 Compartió su ubicación';
+      if (parsed?.tipo === 'adjunto') return parsed.archivoTipo === 'imagen' ? '📷 Envió una foto' : '📎 Envió un archivo';
+    } catch {}
+  }
+  return texto.substring(0, 100);
+}
+
 function _destinoPush(tipo: string, referenciaId?: string): string {
   const ref = referenciaId ? String(referenciaId) : '';
   switch (tipo) {
@@ -606,6 +625,33 @@ export const dbHelper = {
       frontal: frontalRes?.data?.signedUrl || null,
       dorso: dorsoRes?.data?.signedUrl || null,
     };
+  },
+
+  /**
+   * Sube una foto o PDF adjunto al chat. Bucket privado, scopeado por RLS
+   * a los dos participantes de la conversación (ver sprint0_chat_adjuntos.sql).
+   */
+  async subirAdjuntoChat(conversacionId: string, file: File): Promise<string> {
+    const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
+    const path = `${conversacionId}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from('chat-adjuntos').upload(path, file);
+    if (error) throw error;
+    return path;
+  },
+
+  /**
+   * URLs firmadas para uno o varios adjuntos del chat de una sola vez
+   * (evita N llamadas cuando se cargan todos los mensajes de golpe).
+   */
+  async getAdjuntosChatSignedUrls(paths: string[]): Promise<Record<string, string>> {
+    if (paths.length === 0) return {};
+    const { data, error } = await supabase.storage.from('chat-adjuntos').createSignedUrls(paths, 86400);
+    if (error || !data) return {};
+    const mapa: Record<string, string> = {};
+    for (const item of data) {
+      if (item.path && item.signedUrl) mapa[item.path] = item.signedUrl;
+    }
+    return mapa;
   },
 
   async updateUserStatus(id: string, status: string, motivo?: string): Promise<void> {
@@ -1601,7 +1647,7 @@ export const dbHelper = {
     // Update conversation's ultimo_mensaje
     await supabase.from('conversaciones')
       .update({
-        ultimo_mensaje: texto.startsWith('📄') ? 'Presupuesto enviado' : texto.substring(0, 100),
+        ultimo_mensaje: _resumirTextoMensaje(texto),
         ultimo_mensaje_fecha: new Date().toISOString(),
         // Cada mensaje nuevo reinicia el reloj de los recordatorios de
         // "sin responder" -- ahora quien tiene que contestar es el otro.
@@ -1616,7 +1662,7 @@ export const dbHelper = {
         usuario_id: receptorId,
         tipo: 'mensaje',
         titulo: 'Nuevo mensaje',
-        descripcion: `Recibiste un nuevo mensaje: "${texto.substring(0, 50)}..."`,
+        descripcion: `Recibiste un nuevo mensaje: "${_resumirTextoMensaje(texto)}"`,
         referencia_id: conversacionId
       });
     } catch (e) {
@@ -1734,25 +1780,89 @@ export const dbHelper = {
   /**
    * Actualiza el estado de una Orden de Trabajo.
    */
+  /**
+   * Cambia el estado de una orden -- para transiciones que NO necesitan
+   * confirmación del cliente (iniciar trabajo, cancelar). Para marcar como
+   * finalizado/con garantía usar `solicitarFinalizacionTrabajo`: eso ahora
+   * pasa primero por el cliente en vez de cerrarse directo.
+   */
   async updateOrdenTrabajoEstado(id: string, estado: string, fechaFin?: string): Promise<void> {
     const updates: any = { estado };
     if (fechaFin) updates.fecha_fin = fechaFin;
     const { error } = await supabase.from('ordenes_trabajo').update(updates).eq('id', id);
     if (error) throw error;
+  },
 
-    if (estado === 'finalizado' || estado === 'con_garantia') {
-      const { data: orden } = await supabase.from('ordenes_trabajo').select('cliente_id, profesional_id, titulo').eq('id', id).maybeSingle();
-      if (orden?.cliente_id) {
+  /**
+   * El profesional pide cerrar el trabajo -- antes esto marcaba el trabajo
+   * como finalizado directamente, sin que el cliente tuviera ninguna
+   * instancia para decir "todavía no terminó". Ahora queda en un estado
+   * transitorio hasta que el cliente confirme (`confirmarFinalizacionTrabajo`).
+   */
+  async solicitarFinalizacionTrabajo(ordenId: string, estadoSolicitado: 'finalizado' | 'con_garantia'): Promise<void> {
+    const { data: orden, error } = await supabase
+      .from('ordenes_trabajo')
+      .update({ estado: 'esperando_confirmacion', estado_solicitado: estadoSolicitado })
+      .eq('id', ordenId)
+      .select('cliente_id, titulo')
+      .single();
+    if (error) throw error;
+
+    if (orden?.cliente_id) {
+      await dbHelper.crearNotificacion({
+        usuario_id: orden.cliente_id,
+        tipo: 'trabajo',
+        titulo: '🏁 Tu profesional dice que terminó el trabajo',
+        descripcion: `Confirmá que "${orden.titulo}" quedó como corresponde para poder dejar tu reseña.`,
+      });
+    }
+  },
+
+  /**
+   * El cliente confirma (o rechaza) que el trabajo está realmente
+   * terminado. Si confirma, recién ahí pasa al estado que había pedido el
+   * profesional y se habilita la reseña; si dice que no, vuelve a "en
+   * progreso" y se avisa al profesional para que retome.
+   */
+  async confirmarFinalizacionTrabajo(ordenId: string, confirma: boolean): Promise<void> {
+    const { data: orden, error } = await supabase
+      .from('ordenes_trabajo')
+      .select('profesional_id, titulo, estado_solicitado')
+      .eq('id', ordenId)
+      .single();
+    if (error) throw error;
+
+    if (confirma) {
+      const nuevoEstado = orden.estado_solicitado === 'con_garantia' ? 'con_garantia' : 'finalizado';
+      const { error: updateError } = await supabase
+        .from('ordenes_trabajo')
+        .update({ estado: nuevoEstado, estado_solicitado: null, fecha_fin: new Date().toISOString().split('T')[0] })
+        .eq('id', ordenId);
+      if (updateError) throw updateError;
+
+      if (orden.profesional_id) {
         await dbHelper.crearNotificacion({
-          usuario_id: orden.cliente_id,
+          usuario_id: orden.profesional_id,
           tipo: 'trabajo',
-          titulo: '🎉 Tu trabajo fue finalizado',
-          descripcion: `"${orden.titulo}" ya está terminado. Contanos cómo te fue dejando una reseña.`,
-          referencia_id: id,
+          titulo: '✅ El cliente confirmó el trabajo',
+          descripcion: `"${orden.titulo}" quedó marcado como terminado. ¡Ya podés recibir su reseña!`,
         });
-      }
-      if (orden?.profesional_id) {
         await dbHelper.registrarPuntos(orden.profesional_id, 'trabajo_finalizado', 20, `Finalizaste "${orden.titulo}"`);
+      }
+    } else {
+      const { error: updateError } = await supabase
+        .from('ordenes_trabajo')
+        .update({ estado: 'en_progreso', estado_solicitado: null })
+        .eq('id', ordenId);
+      if (updateError) throw updateError;
+
+      if (orden.profesional_id) {
+        await dbHelper.crearNotificacion({
+          usuario_id: orden.profesional_id,
+          tipo: 'alerta',
+          titulo: '⚠️ El cliente dice que el trabajo no está terminado',
+          descripcion: `Revisá "${orden.titulo}" con el cliente y volvé a marcarlo como finalizado cuando esté listo.`,
+        });
       }
     }
   },

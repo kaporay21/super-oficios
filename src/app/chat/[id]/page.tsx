@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import {
   ArrowLeft, Phone, MoreVertical, Send, CheckCheck, Loader2,
   FileText, ShieldCheck, Clock, CheckCircle2, XCircle, DollarSign,
-  Plus, AlertCircle, FolderCheck, Lock, AlertTriangle
+  Plus, AlertCircle, FolderCheck, Lock, AlertTriangle, MapPin, Paperclip, Image as ImageIcon, X
 } from 'lucide-react';
 import AuthGuard from '@/components/AuthGuard';
 import { useAuth } from '@/components/AuthContext';
@@ -17,6 +17,57 @@ export default function ChatIDPage() {
     <AuthGuard>
       <ChatIDContent />
     </AuthGuard>
+  );
+}
+
+/**
+ * Muestra una foto o PDF adjuntado al chat. El bucket es privado (scopeado
+ * a los dos participantes de la conversación por RLS), así que cada burbuja
+ * resuelve su propia URL firmada en vez de depender de un estado compartido
+ * que habría que mantener sincronizado con la carga inicial Y con los
+ * mensajes que llegan por Realtime.
+ */
+function AdjuntoChatBubble({ path, archivoTipo, nombre }: { path: string; archivoTipo: string; nombre?: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelado = false;
+    dbHelper.getAdjuntosChatSignedUrls([path]).then((mapa) => {
+      if (!cancelado) setUrl(mapa[path] || null);
+    });
+    return () => { cancelado = true; };
+  }, [path]);
+
+  if (!url) {
+    return (
+      <div className="w-48 h-32 bg-slate-800 rounded-2xl animate-pulse flex items-center justify-center text-slate-500 text-[10px] font-bold">
+        Cargando adjunto...
+      </div>
+    );
+  }
+
+  if (archivoTipo === 'imagen') {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer">
+        <img
+          src={url}
+          alt={nombre || 'Foto adjunta'}
+          className="max-w-[220px] max-h-64 rounded-2xl object-cover border border-slate-700 shadow-md"
+        />
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-2 bg-[#001529] hover:bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 text-xs font-bold text-white transition-colors shadow-md max-w-[220px]"
+    >
+      <FileText className="w-5 h-5 text-[#fc8127] shrink-0" />
+      <span className="truncate">{nombre || 'Ver documento PDF'}</span>
+    </a>
   );
 }
 
@@ -59,6 +110,12 @@ function ChatIDContent() {
   // Presupuestos guardados indexados por ID
   const [presupuestosCache, setPresupuestosCache] = useState<Record<string, any>>({});
   const [procesandoAceptacion, setProcesandoAceptacion] = useState<string | null>(null);
+
+  // Compartir ubicación / adjuntar foto o PDF
+  const [mostrarMenuAdjuntos, setMostrarMenuAdjuntos] = useState(false);
+  const [obteniendoUbicacion, setObteniendoUbicacion] = useState(false);
+  const [subiendoAdjunto, setSubiendoAdjunto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isProfesional = profile?.rol === 'profesional';
 
@@ -249,6 +306,73 @@ function ChatIDContent() {
     }
   };
 
+  /** Pide la ubicación actual del navegador y la manda como un mensaje con link a Google Maps. */
+  const handleCompartirUbicacion = () => {
+    if (!user || !partner || estadoChat === 'finalizado') return;
+    setMostrarMenuAdjuntos(false);
+    if (!navigator.geolocation) {
+      alert('Tu navegador no permite compartir ubicación.');
+      return;
+    }
+    setObteniendoUbicacion(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        try {
+          await dbHelper.enviarMensaje(
+            conversacionId,
+            user.id,
+            partner.id,
+            JSON.stringify({ tipo: 'ubicacion', lat: latitude, lng: longitude, mapsUrl: `https://www.google.com/maps?q=${latitude},${longitude}` })
+          );
+        } catch (err) {
+          console.error('Error al compartir ubicación:', err);
+          alert('No pudimos enviar tu ubicación. Probá de nuevo.');
+        } finally {
+          setObteniendoUbicacion(false);
+        }
+      },
+      () => {
+        setObteniendoUbicacion(false);
+        alert('No pudimos acceder a tu ubicación. Revisá los permisos del navegador.');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  /** Sube la foto/PDF elegido y lo manda como mensaje. */
+  const handleSeleccionarArchivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite volver a elegir el mismo archivo después
+    if (!file || !user || !partner) return;
+
+    const esImagen = file.type.startsWith('image/');
+    const esPdf = file.type === 'application/pdf';
+    if (!esImagen && !esPdf) {
+      alert('Solo se pueden adjuntar fotos o archivos PDF.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert('El archivo no puede superar los 10 MB.');
+      return;
+    }
+
+    setSubiendoAdjunto(true);
+    try {
+      const path = await dbHelper.subirAdjuntoChat(conversacionId, file);
+      await dbHelper.enviarMensaje(
+        conversacionId,
+        user.id,
+        partner.id,
+        JSON.stringify({ tipo: 'adjunto', archivoTipo: esImagen ? 'imagen' : 'pdf', path, nombre: file.name })
+      );
+    } catch (err: any) {
+      alert(err?.message || 'No pudimos subir el archivo.');
+    } finally {
+      setSubiendoAdjunto(false);
+    }
+  };
+
   const handleEnviarPresupuesto = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !partner || !presupuestoForm.monto || !presupuestoForm.detalle.trim()) return;
@@ -339,8 +463,21 @@ function ChatIDContent() {
     return null;
   };
 
+  /** Mismo patrón que parsePresupuestoCard, para ubicación y adjuntos. */
+  const parseMensajeJSON = (texto: string, tipoEsperado: string): any | null => {
+    if (!texto) return null;
+    try {
+      const parsed = JSON.parse(texto);
+      if (parsed?.tipo === tipoEsperado) return parsed;
+    } catch {}
+    return null;
+  };
+
   const handleAceptarCard = async (msg: any, cardData: any) => {
     if (!user?.id || !partner?.id) return;
+    // Si ya se procesó (doble click, o la card quedó desactualizada un
+    // instante), no volvemos a crear la Orden de Trabajo de nuevo.
+    if (cardData.estado !== 'pendiente') return;
     setProcesandoAceptacion(msg.id);
     try {
       // Crear Orden de Trabajo directamente
@@ -362,12 +499,15 @@ function ChatIDContent() {
         referencia_id: conversacionId,
       });
 
-      // Actualizar estado local del mensaje
-      setMensajes(prev => prev.map(m =>
-        m.id === msg.id
-          ? { ...m, texto: JSON.stringify({ ...cardData, estado: 'aceptado' }) }
-          : m
-      ));
+      // Guardar el nuevo estado en el mensaje -- antes esto solo se
+      // actualizaba en el estado de React (setMensajes) y nunca se
+      // escribía en la base. Al salir y volver a entrar, `mensajes` se
+      // recargaba desde Supabase con el JSON original ("pendiente"), el
+      // botón "Aceptar" reaparecía, y cada click volvía a crear una
+      // Orden de Trabajo nueva -- indefinidamente.
+      const nuevoTexto = JSON.stringify({ ...cardData, estado: 'aceptado' });
+      await supabase.from('mensajes').update({ texto: nuevoTexto }).eq('id', msg.id);
+      setMensajes(prev => prev.map(m => (m.id === msg.id ? { ...m, texto: nuevoTexto } : m)));
     } catch (err: any) {
       alert(err?.message || 'Error al aceptar el presupuesto.');
     } finally {
@@ -377,6 +517,7 @@ function ChatIDContent() {
 
   const handleRechazarCard = async (msg: any, cardData: any) => {
     if (!user?.id) return;
+    if (cardData.estado !== 'pendiente') return;
     // Notificar al profesional
     await dbHelper.crearNotificacion({
       usuario_id: cardData.profesional_id || msg.emisor_id,
@@ -385,12 +526,11 @@ function ChatIDContent() {
       descripcion: `El cliente rechazó tu presupuesto de $${Number(cardData.monto).toLocaleString('es-AR')}.`,
       referencia_id: conversacionId,
     });
-    // Actualizar estado local
-    setMensajes(prev => prev.map(m =>
-      m.id === msg.id
-        ? { ...m, texto: JSON.stringify({ ...cardData, estado: 'rechazado' }) }
-        : m
-    ));
+    // Mismo fix que handleAceptarCard: persistir en la base, no solo en
+    // memoria, para que no reaparezca el botón al volver a entrar.
+    const nuevoTexto = JSON.stringify({ ...cardData, estado: 'rechazado' });
+    await supabase.from('mensajes').update({ texto: nuevoTexto }).eq('id', msg.id);
+    setMensajes(prev => prev.map(m => (m.id === msg.id ? { ...m, texto: nuevoTexto } : m)));
   };
 
   if (loading) {
@@ -642,16 +782,51 @@ function ChatIDContent() {
                   <div className="bg-emerald-500/10 border-2 border-emerald-500/30 rounded-3xl p-5 max-w-md w-full shadow-2xl space-y-3 text-center">
                     <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
                     <p className="text-sm font-black text-white">Presupuesto aceptado</p>
-                    <p className="text-xs text-slate-400">Se generó tu expediente digital con el historial, la garantía y los datos del trabajo.</p>
+                    <p className="text-xs text-slate-400">Se agregó a tu historial de trabajos, con la garantía y los datos completos.</p>
                     {expedienteId && (
                       <button
                         onClick={() => router.push(`/expediente/${expedienteId}`)}
                         className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl transition-all flex items-center justify-center gap-1.5"
                       >
-                        <FolderCheck className="w-4 h-4" /> Ver expediente
+                        <FolderCheck className="w-4 h-4" /> Ver historial
                       </button>
                     )}
                   </div>
+                </div>
+              );
+            }
+
+            // ── Ubicación compartida ──
+            const ubicacionData = parseMensajeJSON(msg.texto, 'ubicacion');
+            if (ubicacionData) {
+              return (
+                <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                  <a
+                    href={ubicacionData.mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`max-w-[80%] px-4 py-3 rounded-2xl text-xs leading-relaxed shadow-md flex items-center gap-2.5 transition-colors ${
+                      isMe
+                        ? 'bg-[#fc8127] hover:bg-[#e06d19] text-white rounded-br-none'
+                        : 'bg-[#001529] hover:bg-slate-900 text-slate-200 border border-slate-800 rounded-bl-none'
+                    }`}
+                  >
+                    <MapPin className={`w-6 h-6 shrink-0 ${isMe ? 'text-white' : 'text-[#fc8127]'}`} />
+                    <div>
+                      <p className="font-bold">📍 Ubicación compartida</p>
+                      <p className={`text-[10px] ${isMe ? 'text-orange-100' : 'text-slate-400'}`}>Tocá para ver en Google Maps</p>
+                    </div>
+                  </a>
+                </div>
+              );
+            }
+
+            // ── Foto o PDF adjunto ──
+            const adjuntoData = parseMensajeJSON(msg.texto, 'adjunto');
+            if (adjuntoData) {
+              return (
+                <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                  <AdjuntoChatBubble path={adjuntoData.path} archivoTipo={adjuntoData.archivoTipo} nombre={adjuntoData.nombre} />
                 </div>
               );
             }
@@ -681,7 +856,46 @@ function ChatIDContent() {
 
       {/* Input Area */}
       <div className="bg-[#001b33] border-t border-slate-800 px-4 py-3 shrink-0">
-        <div className="flex items-center gap-3 max-w-3xl mx-auto">
+        <div className="flex items-center gap-3 max-w-3xl mx-auto relative">
+          {/* Menú de "compartir ubicación" / "adjuntar foto o PDF" */}
+          {mostrarMenuAdjuntos && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMostrarMenuAdjuntos(false)} />
+              <div className="absolute bottom-14 left-0 z-20 bg-[#001529] border border-slate-700 rounded-2xl shadow-2xl overflow-hidden w-56 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                <button
+                  type="button"
+                  onClick={handleCompartirUbicacion}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-white hover:bg-slate-800 transition-colors"
+                >
+                  <MapPin className="w-4 h-4 text-[#fc8127]" /> Compartir ubicación
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMostrarMenuAdjuntos(false); fileInputRef.current?.click(); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-white hover:bg-slate-800 transition-colors border-t border-slate-800"
+                >
+                  <ImageIcon className="w-4 h-4 text-[#fc8127]" /> Foto o PDF
+                </button>
+              </div>
+            </>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,application/pdf"
+            className="hidden"
+            onChange={handleSeleccionarArchivo}
+          />
+
+          <button
+            onClick={() => setMostrarMenuAdjuntos(v => !v)}
+            disabled={estadoChat === 'finalizado' || obteniendoUbicacion || subiendoAdjunto}
+            title="Compartir ubicación o adjuntar archivo"
+            className="w-11 h-12 shrink-0 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-[#fc8127] hover:border-[#fc8127]/40 flex items-center justify-center transition-all disabled:opacity-40"
+          >
+            {obteniendoUbicacion || subiendoAdjunto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
+          </button>
+
           <input
             className="flex-1 h-12 px-4 rounded-xl border border-slate-800 bg-slate-900 text-white placeholder-slate-500 focus:outline-none focus:border-[#fc8127] text-xs"
             placeholder={estadoChat === 'finalizado' ? 'Este chat se encuentra bloqueado para nuevas consultas...' : 'Escribí un mensaje...'}

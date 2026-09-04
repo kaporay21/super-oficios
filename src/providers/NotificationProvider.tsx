@@ -136,6 +136,8 @@ function resumirMensaje(texto?: string | null): string {
         const monto = Number(parsed.monto || 0).toLocaleString('es-AR');
         return `💰 Presupuesto de $${monto}`;
       }
+      if (parsed?.tipo === 'ubicacion') return '📍 Compartió su ubicación';
+      if (parsed?.tipo === 'adjunto') return parsed.archivoTipo === 'imagen' ? '📷 Envió una foto' : '📎 Envió un archivo';
     } catch {
       // No era JSON válido: cae al texto plano de abajo.
     }

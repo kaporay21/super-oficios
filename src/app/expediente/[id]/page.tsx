@@ -63,7 +63,7 @@ function ExpedienteContent() {
       setExpediente(data);
     } catch (err: any) {
       console.warn('Error al cargar expediente:', err);
-      setError('Expediente no encontrado o sin permisos.');
+      setError('Historial no encontrado o sin permisos.');
     } finally {
       setLoading(false);
     }
@@ -82,8 +82,8 @@ function ExpedienteContent() {
       <div className="min-h-screen bg-[#001b33] flex items-center justify-center p-4">
         <div className="bg-[#001529] border border-slate-800 rounded-3xl p-8 text-center max-w-sm w-full space-y-4">
           <Folder className="w-12 h-12 text-slate-700 mx-auto" />
-          <h2 className="text-xl font-black text-white">Expediente No Encontrado</h2>
-          <p className="text-xs text-slate-400">{error || 'No pudimos acceder a este expediente digital.'}</p>
+          <h2 className="text-xl font-black text-white">Historial No Encontrado</h2>
+          <p className="text-xs text-slate-400">{error || 'No pudimos acceder a este historial de trabajo.'}</p>
           <button
             onClick={() => router.back()}
             className="w-full py-3 bg-[#fc8127] text-white font-black text-xs rounded-xl"
@@ -109,7 +109,7 @@ function ExpedienteContent() {
           <div className="flex items-center gap-2">
             <Logo size="sm" theme="dark" />
             <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-black uppercase tracking-wider flex items-center gap-1">
-              <Folder className="w-3.5 h-3.5" /> Expediente Digital
+              <Folder className="w-3.5 h-3.5" /> Historial del Trabajo
             </span>
           </div>
         </div>
@@ -131,7 +131,7 @@ function ExpedienteContent() {
         <section className="bg-gradient-to-r from-[#001529] via-[#002547] to-[#001529] border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-800 pb-4">
             <div>
-              <span className="text-[10px] font-black text-[#fc8127] uppercase tracking-widest">Expediente #{expediente.id.slice(0, 8)}</span>
+              <span className="text-[10px] font-black text-[#fc8127] uppercase tracking-widest">Historial #{expediente.id.slice(0, 8)}</span>
               <h1 className="text-2xl md:text-3xl font-black text-white mt-0.5">{expediente.titulo}</h1>
             </div>
             <div className="text-right">
@@ -171,6 +171,25 @@ function ExpedienteContent() {
             </div>
           </div>
         </section>
+
+        {/* Aviso: el profesional pidió cerrar el trabajo, falta que el
+            cliente lo confirme. El confirmar/rechazar en sí vive en
+            Historial de Trabajos (perfil-cliente) -- acá solo avisamos y
+            llevamos para allá, para no duplicar esa lógica en dos lugares. */}
+        {orden?.estado === 'esperando_confirmacion' && user?.id === expediente.cliente_id && (
+          <section className="bg-orange-500/10 border-2 border-orange-500/30 rounded-3xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-black text-orange-400">🏁 Tu profesional marcó este trabajo como terminado</p>
+              <p className="text-xs text-slate-300 mt-1">Confirmalo desde tu historial para poder dejar tu reseña.</p>
+            </div>
+            <button
+              onClick={() => router.push('/perfil-cliente?tab=expedientes')}
+              className="shrink-0 bg-orange-500 hover:bg-orange-600 text-slate-950 font-black text-xs px-5 py-2.5 rounded-xl transition-all"
+            >
+              Ir a confirmar
+            </button>
+          </section>
+        )}
 
         {/* Presupuesto Aprobado & Garantía */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -182,6 +182,33 @@ function PerfilClienteContent() {
     }
   };
 
+  const [confirmandoId, setConfirmandoId] = useState<string | null>(null);
+
+  /**
+   * El profesional pidió cerrar el trabajo -- el cliente confirma que
+   * realmente está terminado (y se lo lleva directo a calificarlo) o dice
+   * que todavía no, lo que devuelve el trabajo a "en progreso".
+   */
+  const handleConfirmarFinalizacion = async (exp: any, confirma: boolean) => {
+    if (!exp.orden_trabajo_id) return;
+    setConfirmandoId(exp.id);
+    try {
+      await dbHelper.confirmarFinalizacionTrabajo(exp.orden_trabajo_id, confirma);
+      const nuevoEstado = confirma
+        ? (exp.ordenes_trabajo?.estado_solicitado === 'con_garantia' ? 'con_garantia' : 'finalizado')
+        : 'en_progreso';
+      setExpedientes(prev => prev.map(e =>
+        e.id === exp.id ? { ...e, ordenes_trabajo: { ...e.ordenes_trabajo, estado: nuevoEstado } } : e
+      ));
+      // Si confirmó, lo llevamos directo al formulario de reseña.
+      if (confirma) setResenandoExpId(exp.id);
+    } catch (err: any) {
+      setError(err?.message || 'Error al confirmar el trabajo.');
+    } finally {
+      setConfirmandoId(null);
+    }
+  };
+
   const handleRecontratar = async (profesionalId: string) => {
     if (!user?.id || !profesionalId || recontratandoId) return;
     setRecontratandoId(profesionalId);
@@ -327,7 +354,7 @@ function PerfilClienteContent() {
               </div>
               <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 text-center">
                 <p className="text-2xl font-black text-[#fc8127]">{expedientes.length}</p>
-                <p className="text-[10px] font-bold text-slate-400 mt-0.5">Expedientes</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5">Historial</p>
               </div>
               <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3.5 text-center">
                 <p className="text-2xl font-black text-emerald-400">{conversaciones.length}</p>
@@ -342,7 +369,7 @@ function PerfilClienteContent() {
           {[
             { id: 'resumen', label: 'Resumen General', icon: <User className="w-4 h-4" /> },
             { id: 'hogar', label: `Mi Hogar (${propiedades.length})`, icon: <Building className="w-4 h-4" /> },
-            { id: 'expedientes', label: `Expedientes (${expedientes.length})`, icon: <Folder className="w-4 h-4" /> },
+            { id: 'expedientes', label: `Historial (${expedientes.length})`, icon: <Folder className="w-4 h-4" /> },
             { id: 'favoritos', label: `Favoritos (${favoritos.length})`, icon: <Heart className="w-4 h-4" /> },
             { id: 'mensajes', label: `Mensajes (${conversaciones.length})`, icon: <MessageSquare className="w-4 h-4" /> },
             { id: 'soporte', label: `Soporte & Resolución`, icon: <ShieldAlert className="w-4 h-4" /> },
@@ -431,11 +458,11 @@ function PerfilClienteContent() {
               </div>
             </div>
 
-            {/* Resumen de Expedientes Recientes */}
+            {/* Resumen de Historial Reciente */}
             <div className="bg-[#001529] border border-slate-800 rounded-3xl p-6 space-y-4">
               <div className="flex justify-between items-center">
                 <h3 className="font-black text-base text-white flex items-center gap-2">
-                  <Folder className="w-5 h-5 text-[#fc8127]" /> Expedientes Digitales Recientes
+                  <Folder className="w-5 h-5 text-[#fc8127]" /> Historial Reciente de Trabajos
                 </h3>
                 <button onClick={() => setActiveTab('expedientes')} className="text-xs font-bold text-[#fc8127] hover:underline">
                   Ver todos
@@ -445,7 +472,7 @@ function PerfilClienteContent() {
               {expedientes.length === 0 ? (
                 <div className="bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl p-8 text-center space-y-2">
                   <Folder className="w-10 h-10 text-slate-700 mx-auto" />
-                  <p className="text-xs font-bold text-slate-400">No tenés expedientes de trabajo aún</p>
+                  <p className="text-xs font-bold text-slate-400">No tenés trabajos en tu historial todavía</p>
                   <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
                     Cuando aceptes un presupuesto con un profesional, se creará su carpeta digital con contrato, chat y factura.
                   </p>
@@ -548,16 +575,16 @@ function PerfilClienteContent() {
         {activeTab === 'expedientes' && (
           <div className="space-y-4">
             <div>
-              <h3 className="font-black text-lg text-white">📁 Expedientes Digitales del Trabajo</h3>
-              <p className="text-xs text-slate-400">Carpetas únicas de tus contrataciones (presupuesto, chat, garantía y factura)</p>
+              <h3 className="font-black text-lg text-white">📁 Historial de Trabajos</h3>
+              <p className="text-xs text-slate-400">Registro de tus contrataciones (presupuesto, chat, garantía y factura)</p>
             </div>
 
             {expedientes.length === 0 ? (
               <div className="bg-[#001529] border border-slate-800 rounded-3xl p-12 text-center space-y-3">
                 <Folder className="w-12 h-12 text-slate-700 mx-auto" />
-                <h4 className="font-black text-base text-white">No tenés expedientes guardados</h4>
+                <h4 className="font-black text-base text-white">Todavía no tenés trabajos en tu historial</h4>
                 <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                  Cada vez que aceptás un presupuesto, se genera automáticamente un expediente digital con el historial garantizado.
+                  Cada vez que aceptás un presupuesto, se agrega automáticamente a tu historial con la garantía y el seguimiento completo.
                 </p>
               </div>
             ) : (
@@ -574,6 +601,8 @@ function PerfilClienteContent() {
                     ? { label: '🛡️ Con garantía', cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' }
                     : estadoOrden === 'finalizado'
                     ? { label: '🟢 Finalizado', cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' }
+                    : estadoOrden === 'esperando_confirmacion'
+                    ? { label: '🏁 Esperando tu confirmación', cls: 'bg-orange-500/10 text-orange-400 border-orange-500/30' }
                     : { label: '🔵 En curso', cls: 'bg-blue-500/10 text-blue-400 border-blue-500/30' };
                   return (
                   <div
@@ -607,6 +636,32 @@ function PerfilClienteContent() {
                         <Calendar className="w-4 h-4 text-[#fc8127]" /> {new Date(exp.created_at).toLocaleDateString('es-AR')}
                       </span>
                     </div>
+
+                    {exp.ordenes_trabajo?.estado === 'esperando_confirmacion' && (
+                      <div onClick={e => e.stopPropagation()} className="pt-3 border-t border-slate-800/80 space-y-2.5">
+                        <p className="text-xs font-bold text-orange-400">
+                          🏁 Tu profesional marcó este trabajo como terminado. ¿Confirmás?
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmarFinalizacion(exp, true)}
+                            disabled={confirmandoId === exp.id}
+                            className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl flex items-center justify-center gap-1.5"
+                          >
+                            {confirmandoId === exp.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Sí, está terminado
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmarFinalizacion(exp, false)}
+                            disabled={confirmandoId === exp.id}
+                            className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl"
+                          >
+                            Todavía no
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {['finalizado', 'con_garantia'].includes(exp.ordenes_trabajo?.estado) && (
                       <div onClick={e => e.stopPropagation()} className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center gap-3">

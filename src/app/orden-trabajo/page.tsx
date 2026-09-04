@@ -22,6 +22,7 @@ export default function OrdenTrabajoPage() {
 const ESTADOS = [
   { value: 'pendiente', label: 'Pendiente', color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' },
   { value: 'en_progreso', label: 'En progreso', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
+  { value: 'esperando_confirmacion', label: 'Esperando confirmación', color: 'text-orange-400 bg-orange-500/10 border-orange-500/30' },
   { value: 'finalizado', label: 'Finalizado', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' },
   { value: 'con_garantia', label: 'Con garantía', color: 'text-purple-400 bg-purple-500/10 border-purple-500/30' },
   { value: 'cancelado', label: 'Cancelado', color: 'text-red-400 bg-red-500/10 border-red-500/30' },
@@ -124,11 +125,25 @@ function OrdenTrabajoContent() {
 
   const handleCambiarEstado = async (id: string, nuevoEstado: string) => {
     try {
-      const fechaFin = ['finalizado', 'con_garantia'].includes(nuevoEstado) ? new Date().toISOString().split('T')[0] : undefined;
-      await dbHelper.updateOrdenTrabajoEstado(id, nuevoEstado, fechaFin);
+      await dbHelper.updateOrdenTrabajoEstado(id, nuevoEstado);
       setOrdenes(prev => prev.map(o => o.id === id ? { ...o, estado: nuevoEstado } : o));
     } catch (err: any) {
       setError('Error al cambiar el estado.');
+    }
+  };
+
+  /**
+   * Pedir el cierre del trabajo ya no lo cierra directo -- el cliente tiene
+   * que confirmar primero (ver sprint0_confirmacion_finalizacion.sql). Sin
+   * esto, un profesional podía marcar "Finalizado" aunque el cliente no
+   * estuviera de acuerdo, sin ninguna instancia para objetarlo.
+   */
+  const handleSolicitarFinalizacion = async (id: string, estadoSolicitado: 'finalizado' | 'con_garantia') => {
+    try {
+      await dbHelper.solicitarFinalizacionTrabajo(id, estadoSolicitado);
+      setOrdenes(prev => prev.map(o => o.id === id ? { ...o, estado: 'esperando_confirmacion', estado_solicitado: estadoSolicitado } : o));
+    } catch (err: any) {
+      setError('Error al pedir la confirmación del cliente.');
     }
   };
 
@@ -296,7 +311,11 @@ function OrdenTrabajoContent() {
                 </div>
 
                 {/* Cambiar estado */}
-                {orden.estado !== 'finalizado' && orden.estado !== 'cancelado' && orden.estado !== 'con_garantia' && (
+                {orden.estado === 'esperando_confirmacion' ? (
+                  <div className="py-1.5 text-[10px] font-bold bg-orange-500/10 border border-orange-500/30 text-orange-400 rounded-lg text-center">
+                    ⏳ Esperando que el cliente confirme
+                  </div>
+                ) : orden.estado !== 'finalizado' && orden.estado !== 'cancelado' && orden.estado !== 'con_garantia' && (
                   <div className="flex gap-2">
                     {orden.estado === 'pendiente' && (
                       <button onClick={() => handleCambiarEstado(orden.id, 'en_progreso')}
@@ -306,11 +325,11 @@ function OrdenTrabajoContent() {
                     )}
                     {orden.estado === 'en_progreso' && (
                       <>
-                        <button onClick={() => handleCambiarEstado(orden.id, 'finalizado')}
+                        <button onClick={() => handleSolicitarFinalizacion(orden.id, 'finalizado')}
                           className="flex-1 py-1.5 text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-lg hover:bg-emerald-500/20 transition-all">
-                          ✓ Finalizar
+                          ✓ Pedir cierre
                         </button>
-                        <button onClick={() => handleCambiarEstado(orden.id, 'con_garantia')}
+                        <button onClick={() => handleSolicitarFinalizacion(orden.id, 'con_garantia')}
                           className="flex-1 py-1.5 text-[10px] font-bold bg-purple-500/10 border border-purple-500/30 text-purple-400 rounded-lg hover:bg-purple-500/20 transition-all">
                           🛡 Con garantía
                         </button>
